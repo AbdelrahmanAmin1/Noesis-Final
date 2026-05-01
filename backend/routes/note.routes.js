@@ -18,8 +18,8 @@ router.get('/', requireAuth, (req, res, next) => {
     const db = getDb();
     const folder = req.query.folder;
     const rows = folder
-      ? db.prepare('SELECT id, folder, title, body_md, tags_json, updated_at FROM notes WHERE user_id=? AND folder=? ORDER BY updated_at DESC').all(req.user.id, folder)
-      : db.prepare('SELECT id, folder, title, body_md, tags_json, updated_at FROM notes WHERE user_id=? ORDER BY updated_at DESC').all(req.user.id);
+      ? db.prepare('SELECT id, material_id, folder, title, body_md, tags_json, updated_at FROM notes WHERE user_id=? AND folder=? ORDER BY updated_at DESC').all(req.user.id, folder)
+      : db.prepare('SELECT id, material_id, folder, title, body_md, tags_json, updated_at FROM notes WHERE user_id=? ORDER BY updated_at DESC').all(req.user.id);
     const folders = db.prepare('SELECT folder, COUNT(*) AS count FROM notes WHERE user_id=? GROUP BY folder').all(req.user.id);
     res.json({ notes: rows, folders });
   } catch (e) { next(e); }

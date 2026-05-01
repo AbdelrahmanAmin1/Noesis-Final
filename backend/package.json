@@ -13,6 +13,9 @@
     "seed:force": "node scripts/seed-tutor-corpus.js --force"
   },
   "dependencies": {
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
+    "@ffprobe-installer/ffprobe": "^2.1.2",
+    "adm-zip": "^0.5.17",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^11.3.0",
     "cookie-parser": "^1.4.7",

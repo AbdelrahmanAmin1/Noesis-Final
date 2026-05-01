@@ -19,8 +19,27 @@ const FlashSchema = z.object({
   cards: z.array(z.object({
     question: z.string().min(1),
     answer: z.string().min(1),
+    difficulty: z.enum(['easy', 'medium', 'hard']).optional().default('medium'),
+    topic: z.string().optional().default('General'),
     source_chunk_id: z.number().int().nullable().optional(),
   })).min(1),
+});
+
+router.get('/', requireAuth, (req, res, next) => {
+  try {
+    const db = getDb();
+    const materialId = req.query.material_id ? parseInt(req.query.material_id, 10) : null;
+    if (materialId) {
+      const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(materialId, req.user.id);
+      if (!m) throw new HttpError(404, 'material_not_found');
+    }
+    const rows = materialId
+      ? db.prepare(`SELECT id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at
+                    FROM flashcards WHERE user_id=? AND material_id=? ORDER BY created_at DESC`).all(req.user.id, materialId)
+      : db.prepare(`SELECT id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at
+                    FROM flashcards WHERE user_id=? ORDER BY created_at DESC LIMIT 200`).all(req.user.id);
+    res.json({ cards: rows });
+  } catch (e) { next(e); }
 });
 
 router.get('/due', requireAuth, (req, res, next) => {
@@ -29,7 +48,7 @@ router.get('/due', requireAuth, (req, res, next) => {
     const now = nowIso();
     // Cards with no review yet are immediately "due"
     const rows = db.prepare(`
-      SELECT f.id, f.deck, f.question, f.answer, f.material_id,
+      SELECT f.id, f.deck, f.question, f.answer, f.material_id, f.difficulty, f.topic,
              (SELECT due_at FROM flashcard_reviews r WHERE r.card_id=f.id ORDER BY reviewed_at DESC LIMIT 1) AS due_at,
              (SELECT ease FROM flashcard_reviews r WHERE r.card_id=f.id ORDER BY reviewed_at DESC LIMIT 1) AS ease
       FROM flashcards f
@@ -53,12 +72,13 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     const chunks = await retrieve(material_id, m.title, 8);
     const raw = await ai.generate(prompts.FLASHCARDS(chunks, n), { format: 'json', temperature: 0.4 });
     const data = await parseJsonSafe(raw, FlashSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0 }));
-    const ins = db.prepare(`INSERT INTO flashcards (user_id, material_id, deck, question, answer, source_chunk_id, created_at)
-                            VALUES (?,?,?,?,?,?,?)`);
+    const ins = db.prepare(`INSERT INTO flashcards (user_id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at)
+                            VALUES (?,?,?,?,?,?,?,?,?)`);
     const ids = [];
+    const cards = data.cards.slice(0, n);
     db.transaction(() => {
-      for (const c of data.cards) {
-        const r = ins.run(req.user.id, material_id, m.title, c.question, c.answer, c.source_chunk_id || null, nowIso());
+      for (const c of cards) {
+        const r = ins.run(req.user.id, material_id, m.title, c.question, c.answer, c.difficulty || 'medium', c.topic || m.title, c.source_chunk_id || null, nowIso());
         ids.push(r.lastInsertRowid);
       }
     })();

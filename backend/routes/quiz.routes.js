@@ -10,6 +10,7 @@ const ai = require('../services/ai.service');
 const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
 const { retrieve } = require('../services/rag.service');
+const log = require('../utils/logger');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -20,9 +21,68 @@ const QuizSchema = z.object({
     options: z.array(z.string()).length(4),
     correct_idx: z.number().int().min(0).max(3),
     explanation: z.string().optional().default(''),
+    difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
+    topic: z.string().optional(),
     concept: z.string().optional().default(''),
   })).min(1),
 });
+
+function fallbackQuizFromChunks(chunks, count, difficulty) {
+  const facts = chunks
+    .flatMap(c => String(c.text || '').split(/[\n.?!]+/))
+    .map(s => s.replace(/\s+/g, ' ').trim())
+    .filter(s => s.length >= 18 && s.length <= 180)
+    .slice(0, 24);
+  const sourceFacts = facts.length ? facts : ['The uploaded material did not provide enough extractable detail for a stronger question.'];
+  const genericDistractors = [
+    'The uploaded material does not state this relationship.',
+    'This option is not supported by the extracted source text.',
+    'The source material points to a different operation or concept.',
+  ];
+  const questions = [];
+  for (let i = 0; i < count; i++) {
+    const correct = sourceFacts[i % sourceFacts.length];
+    const topic = inferTopic(correct);
+    const distractors = sourceFacts.filter(f => f !== correct).slice(i + 1, i + 4);
+    while (distractors.length < 3) distractors.push(genericDistractors[distractors.length]);
+    const correctIdx = i % 4;
+    const options = distractors.slice(0, 3);
+    options.splice(correctIdx, 0, correct);
+    questions.push({
+      question: `According to the uploaded material, which statement best describes ${topic}?`,
+      options,
+      correct_idx: correctIdx,
+      explanation: `This answer is grounded in the extracted source text: "${correct}"`,
+      difficulty,
+      topic,
+    });
+  }
+  return { questions };
+}
+
+function ensureQuizCount(data, chunks, count, difficulty) {
+  const questions = Array.isArray(data && data.questions) ? data.questions.slice(0, count) : [];
+  if (questions.length >= count) return { questions };
+  const fallback = fallbackQuizFromChunks(chunks, count, difficulty).questions;
+  const seen = new Set(questions.map(q => String(q.question || '').toLowerCase()));
+  for (const q of fallback) {
+    if (questions.length >= count) break;
+    const key = String(q.question || '').toLowerCase();
+    if (seen.has(key)) continue;
+    questions.push(q);
+    seen.add(key);
+  }
+  return { questions };
+}
+
+function inferTopic(text) {
+  const cleaned = String(text || '').replace(/[^A-Za-z0-9 +#-]/g, ' ');
+  const known = ['Big O', 'Array', 'Arrays', 'Stack', 'Stacks', 'Queue', 'Queues', 'Class', 'Object', 'Inheritance', 'Polymorphism', 'Encapsulation', 'Tree', 'Graph', 'Hash'];
+  const hit = known.find(k => new RegExp(`\\b${k}\\b`, 'i').test(cleaned));
+  if (hit) return hit;
+  const words = cleaned.split(/\s+/).filter(w => w.length > 3).slice(0, 3);
+  return words.length ? words.join(' ') : 'this concept';
+}
 
 router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
   try {
@@ -34,20 +94,28 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     const m = db.prepare('SELECT id, title FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
     const chunks = await retrieve(material_id, m.title, 8);
-    const raw = await ai.generate(prompts.QUIZ_MCQ(chunks, n, diff), { format: 'json', temperature: 0.4 });
-    const data = await parseJsonSafe(raw, QuizSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0 }));
+    let data;
+    try {
+      const raw = await ai.generate(prompts.QUIZ_MCQ(chunks, n, diff), { format: 'json', temperature: 0.4 });
+      data = await parseJsonSafe(raw, QuizSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0 }));
+    } catch (e) {
+      log.warn('quiz_generation_fallback', e.message || e);
+      data = fallbackQuizFromChunks(chunks, n, diff);
+    }
+    data = ensureQuizCount(data, chunks, n, diff);
 
     const qIns = db.prepare(`INSERT INTO quizzes (user_id, material_id, title, difficulty, created_at) VALUES (?,?,?,?,?)`);
     const qqIns = db.prepare(`INSERT INTO quiz_questions (quiz_id, idx, question, options_json, correct_idx, explanation, concept) VALUES (?,?,?,?,?,?,?)`);
+    const questions = data.questions.slice(0, n);
     let quizId;
     db.transaction(() => {
       const qr = qIns.run(req.user.id, material_id, m.title + ' Quiz', diff, nowIso());
       quizId = qr.lastInsertRowid;
-      data.questions.forEach((q, i) => {
-        qqIns.run(quizId, i, q.question, JSON.stringify(q.options), q.correct_idx, q.explanation || '', q.concept || '');
+      questions.forEach((q, i) => {
+        qqIns.run(quizId, i, q.question, JSON.stringify(q.options), q.correct_idx, q.explanation || '', q.topic || q.concept || '');
       });
     })();
-    res.json({ quiz_id: quizId, count: data.questions.length });
+    res.json({ quiz_id: quizId, count: questions.length });
   } catch (e) { next(e); }
 });
 
@@ -69,7 +137,7 @@ router.get('/wrong-answers', requireAuth, (req, res, next) => {
     const db = getDb();
     const rows = db.prepare(`
       SELECT qa.attempt_id, qq.id AS question_id, qq.question, qq.options_json, qq.correct_idx, qq.explanation, qq.concept,
-             qa.selected_idx, q.id AS quiz_id, q.title AS quiz_title
+             qa.selected_idx, q.id AS quiz_id, q.title AS quiz_title, q.difficulty
       FROM quiz_answers qa
       JOIN quiz_questions qq ON qq.id = qa.question_id
       JOIN quiz_attempts at ON at.id = qa.attempt_id
@@ -77,7 +145,7 @@ router.get('/wrong-answers', requireAuth, (req, res, next) => {
       WHERE at.user_id=? AND qa.is_correct=0
       ORDER BY at.started_at DESC
       LIMIT 50`).all(req.user.id);
-    res.json({ wrong: rows.map(r => ({ ...r, options: JSON.parse(r.options_json) })) });
+    res.json({ wrong: rows.map(r => ({ ...r, topic: r.concept, options: JSON.parse(r.options_json) })) });
   } catch (e) { next(e); }
 });
 
@@ -88,7 +156,7 @@ router.get('/:id', requireAuth, (req, res, next) => {
     const q = db.prepare('SELECT * FROM quizzes WHERE id=? AND user_id=?').get(id, req.user.id);
     if (!q) throw new HttpError(404, 'quiz_not_found');
     const qs = db.prepare('SELECT id, idx, question, options_json, concept FROM quiz_questions WHERE quiz_id=? ORDER BY idx').all(id);
-    res.json({ quiz: q, questions: qs.map(qq => ({ ...qq, options: JSON.parse(qq.options_json) })) });
+    res.json({ quiz: q, questions: qs.map(qq => ({ ...qq, topic: qq.concept, difficulty: q.difficulty, options: JSON.parse(qq.options_json) })) });
   } catch (e) { next(e); }
 });
 

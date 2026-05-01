@@ -30,6 +30,15 @@ app.use(express.json({ limit: '2mb' }));
 app.use(globalLimiter);
 
 let _healthCache = { at: 0, ollama: false };
+app.get('/', (req, res) => {
+  res.json({
+    ok: true,
+    name: 'Noesis API',
+    health: '/api/health',
+    frontend: 'http://localhost:5173/Noesis.html',
+  });
+});
+
 app.get('/api/health', async (req, res) => {
   const now = Date.now();
   if (now - _healthCache.at > 5000) {

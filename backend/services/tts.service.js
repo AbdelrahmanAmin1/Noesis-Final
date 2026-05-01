@@ -45,6 +45,40 @@ function synthSay(text, outPath) {
   });
 }
 
+function synthSapi(text, outPath) {
+  return new Promise((resolve, reject) => {
+    const textPath = outPath.replace(/\.[^.]+$/i, '') + '.txt';
+    const scriptPath = outPath.replace(/\.[^.]+$/i, '') + '.ps1';
+    fs.writeFileSync(textPath, text, 'utf8');
+    const script = [
+      "$ErrorActionPreference='Stop'",
+      'Add-Type -AssemblyName System.Speech',
+      '$text = Get-Content -LiteralPath $args[0] -Raw',
+      '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer',
+      '$s.Rate = 0',
+      '$s.Volume = 100',
+      '$s.SetOutputToWaveFile($args[1])',
+      '$s.Speak($text)',
+      '$s.Dispose()',
+    ].join('; ');
+    fs.writeFileSync(scriptPath, script, 'utf8');
+    const p = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, textPath, outPath]);
+    let stderr = '';
+    p.stderr.on('data', d => { stderr += d.toString(); });
+    p.on('error', (err) => {
+      try { fs.unlinkSync(textPath); } catch (_) {}
+      try { fs.unlinkSync(scriptPath); } catch (_) {}
+      reject(err);
+    });
+    p.on('close', code => {
+      try { fs.unlinkSync(textPath); } catch (_) {}
+      try { fs.unlinkSync(scriptPath); } catch (_) {}
+      if (code === 0 && fs.existsSync(outPath) && fs.statSync(outPath).size > 1024) resolve(outPath);
+      else reject(new Error(`sapi_failed_${code}: ${stderr.slice(0, 200)}`));
+    });
+  });
+}
+
 function silenceDuration(text) {
   const words = String(text || '').trim().split(/\s+/).filter(Boolean).length;
   return Math.max(3, Math.min(20, Math.ceil(words / 2.6)));
@@ -86,8 +120,9 @@ async function synthesize(text, outPath) {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const safe = clipNarration(text);
   const engine = (env.TTS_ENGINE || 'piper').toLowerCase();
+  let lastErr = null;
   if (engine === 'piper' && env.TTS_VOICE_PATH && fs.existsSync(env.TTS_VOICE_PATH)) {
-    return synthPiper(safe, outPath);
+    try { return await synthPiper(safe, outPath); } catch (e) { lastErr = e; }
   }
   if (engine === 'espeak') {
     return synthEspeak(safe, outPath);
@@ -95,9 +130,18 @@ async function synthesize(text, outPath) {
   if (engine === 'say') {
     return synthSay(safe, outPath);
   }
-  try { return await synthEspeak(safe, outPath); } catch (_) {}
-  try { return await synthSay(safe, outPath); } catch (_) {}
-  return synthSilence(safe, outPath);
+  if (engine === 'sapi') {
+    return synthSapi(safe, outPath);
+  }
+  if (process.platform === 'win32') {
+    try { return await synthSapi(safe, outPath); } catch (e) { lastErr = e; }
+  }
+  try { return await synthEspeak(safe, outPath); } catch (e) { lastErr = e; }
+  try { return await synthSay(safe, outPath); } catch (e) { lastErr = e; }
+  if (engine === 'silence' || process.env.NOESIS_ALLOW_SILENT_TTS === 'true') {
+    return synthSilence(safe, outPath);
+  }
+  throw new Error(`tts_unavailable: install Piper/espeak, set TTS_ENGINE=sapi on Windows, or provide TTS_BIN/TTS_VOICE_PATH. Last error: ${lastErr ? lastErr.message : 'none'}`);
 }
 
-module.exports = { synthesize };
+module.exports = { synthesize, _internals: { synthSapi, synthSilence } };

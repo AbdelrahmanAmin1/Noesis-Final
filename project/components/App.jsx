@@ -2,11 +2,13 @@
 const { useState, useEffect } = React;
 
 const App = () => {
-  const APP_ROUTES = ['dashboard','materials','material','tutor','notes','flashcards','quiz','progress','collab','settings'];
+  const APP_ROUTES = ['dashboard','materials','material','tutor','notes','flashcards','quiz','progress','settings'];
   const [route, setRoute] = useState(localStorage.getItem('noesis.route') || 'landing');
   const [prevRoute, setPrevRoute] = useState(null);
+  const [authMode, setAuthMode] = useState('signin');
   const [theme, setTheme] = useState(localStorage.getItem('noesis.theme') || 'dark');
   const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [authState, setAuthState] = useState('checking');
   // Show splash only on fresh session (not on every route change). Skip if ?nosplash.
   const splashSeen = sessionStorage.getItem('noesis.splashSeen');
   const urlSkip = new URLSearchParams(window.location.search).has('nosplash');
@@ -22,6 +24,7 @@ const App = () => {
   // Auto-logout on 401 from the API helper
   useEffect(() => {
     const onLogout = () => {
+      setAuthState('guest');
       setPrevRoute(route);
       setRoute('landing');
       window.scrollTo({ top: 0, behavior: 'instant' });
@@ -30,19 +33,24 @@ const App = () => {
     return () => window.removeEventListener('noesis:logout', onLogout);
   }, [route]);
 
-  // Boot probe: confirm cookie session against the server before showing app routes.
   useEffect(() => {
-    if (!APP_ROUTES.includes(route)) return;
     let cancelled = false;
     window.NoesisAPI.auth.me().then(() => {
       if (cancelled) return;
+      setAuthState('authed');
     }).catch(() => {
       if (cancelled) return;
-      setRoute('landing');
+      setAuthState('guest');
+      if (APP_ROUTES.includes(route)) setRoute('landing');
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (authState !== 'guest') return;
+    if (APP_ROUTES.includes(route)) setRoute('landing');
+  }, [authState, route]);
 
   // Tweaks protocol
   useEffect(() => {
@@ -72,8 +80,13 @@ const App = () => {
     setRoute(r);
     window.scrollTo({ top: 0, behavior: 'instant' });
   };
+  const openAuth = (mode = 'signin') => {
+    setAuthMode(mode);
+    goto('auth');
+  };
   const logout = async () => {
     try { await window.NoesisAPI.auth.signout(); } catch (_) {}
+    setAuthState('guest');
     goto('landing');
   };
   const home = () => goto('landing');
@@ -82,18 +95,14 @@ const App = () => {
     setSplashActive(false);
   };
 
-  const marketingRoutes = ['landing', 'product', 'students', 'method', 'pricing'];
-  const bareRoutes = ['auth', 'onboarding', ...marketingRoutes];
-  const isMarketing = marketingRoutes.includes(route);
+  const publicRoutes = ['landing'];
+  const bareRoutes = ['auth', 'onboarding', ...publicRoutes];
+  const isPublicLanding = publicRoutes.includes(route);
   const showShell = !bareRoutes.includes(route);
 
   const screens = {
-    landing: <window.Landing onEnter={goto}/>,
-    product: <window.ProductPage onEnter={goto}/>,
-    students: <window.StudentsPage onEnter={goto}/>,
-    method: <window.MethodPage onEnter={goto}/>,
-    pricing: <window.PricingPage onEnter={goto}/>,
-    auth: <window.Auth onComplete={(isSignin) => goto(isSignin ? 'dashboard' : 'onboarding')} onBack={() => goto('landing')}/>,
+    landing: <window.Landing onEnter={goto} onAuth={openAuth} isAuthed={authState === 'authed'}/>,
+    auth: <window.Auth initialMode={authMode} onComplete={(isSignin) => { setAuthState('authed'); goto(isSignin ? 'dashboard' : 'onboarding'); }} onBack={() => goto('landing')}/>,
     onboarding: <window.Onboarding onComplete={() => goto('dashboard')}/>,
     dashboard: <window.Dashboard onNav={goto}/>,
     materials: <window.Materials onNav={(r) => goto(r === 'material' ? 'material' : r)}/>,
@@ -103,25 +112,28 @@ const App = () => {
     flashcards: <window.Flashcards onNav={goto}/>,
     quiz: <window.Quiz onNav={goto}/>,
     progress: <window.Progress onNav={goto}/>,
-    collab: <window.Collab onNav={goto}/>,
     settings: <window.Settings theme={theme} setTheme={setTheme} onLogout={logout}/>,
   };
+  const activeScreen = screens[route] || screens.dashboard;
+  const protectedLoading = APP_ROUTES.includes(route) && authState === 'checking';
 
   return (
     <div data-screen-label={route} style={{ minHeight: '100vh', background: 'var(--bg-0)', position: 'relative' }}>
-      {/* Ambient 3D bg only for marketing pages */}
-      {isMarketing && window.Ambient3D && <window.Ambient3D opacity={0.35}/>}
+      {/* Ambient 3D bg only for the public landing page. */}
+      {isPublicLanding && window.Ambient3D && <window.Ambient3D opacity={0.35}/>}
 
       <div style={{ position: 'relative', zIndex: 1 }}>
         {showShell ? (
           <div style={{ display: 'flex' }}>
             <window.Sidebar current={route} onNav={goto} onSettings={() => goto('settings')} onLogout={logout} onHome={home}/>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div key={route} className="route-in">{screens[route]}</div>
+              <div key={route} className="route-in">
+                {protectedLoading ? <AppLoading /> : activeScreen}
+              </div>
             </div>
           </div>
         ) : (
-          <div key={route} className="route-in">{screens[route]}</div>
+          <div key={route} className="route-in">{activeScreen}</div>
         )}
       </div>
 
@@ -131,6 +143,12 @@ const App = () => {
     </div>
   );
 };
+
+const AppLoading = () => (
+  <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-3)', fontSize: 13 }}>
+    Checking your session...
+  </div>
+);
 
 const TweaksPanel = ({ theme, setTheme, route, setRoute, onClose }) => {
   const Icon = window.Icon;
@@ -171,14 +189,14 @@ const TweaksPanel = ({ theme, setTheme, route, setRoute, onClose }) => {
 
       <div style={{ fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Jump to screen</div>
       <select value={route} onChange={e => setRoute(e.target.value)} className="input" style={{ fontSize: 12, width: '100%' }}>
-        <optgroup label="Marketing">
-          {['landing','product','students','method','pricing'].map(r => <option key={r} value={r}>{r}</option>)}
+        <optgroup label="Public">
+          {['landing'].map(r => <option key={r} value={r}>{r}</option>)}
         </optgroup>
         <optgroup label="Auth">
           {['auth','onboarding'].map(r => <option key={r} value={r}>{r}</option>)}
         </optgroup>
         <optgroup label="App">
-          {['dashboard','materials','material','tutor','notes','flashcards','quiz','progress','collab','settings'].map(r => <option key={r} value={r}>{r}</option>)}
+          {['dashboard','materials','material','tutor','notes','flashcards','quiz','progress','settings'].map(r => <option key={r} value={r}>{r}</option>)}
         </optgroup>
       </select>
 

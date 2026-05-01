@@ -6,6 +6,7 @@ const Materials = ({ onNav }) => {
   const [items, setItems] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  const [uploadStatus, setUploadStatus] = React.useState('');
   const fileRef = React.useRef(null);
 
   const refresh = React.useCallback(() => {
@@ -26,15 +27,32 @@ const Materials = ({ onNav }) => {
 
   const onUpload = async (file) => {
     if (!file) return;
-    setBusy(true); setErr('');
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const allowed = ['pdf', 'docx', 'doc', 'txt', 'md', 'pptx', 'ppt'];
+    if (!allowed.includes(ext)) {
+      setErr('Unsupported file type. Upload PDF, DOCX, TXT, Markdown, PPTX, or PPT.');
+      return;
+    }
+    setBusy(true); setErr(''); setUploadStatus(`Uploading ${file.name}...`);
     try {
       const r = await window.NoesisAPI.materials.upload(file);
+      setUploadStatus(ext === 'pptx' || ext === 'ppt' ? 'Upload accepted. Extracting slides...' : 'Upload accepted. Indexing material...');
       if (r && r.job_id) {
-        await window.NoesisAPI.pollJob(r.job_id, { intervalMs: 1500, onProgress: () => refresh() });
+        await window.NoesisAPI.pollJob(r.job_id, { intervalMs: 1500, onProgress: (j) => {
+          const verb = ext === 'pptx' || ext === 'ppt' ? 'Extracting slides' : 'Indexing material';
+          setUploadStatus(`${verb} ${j.progress || 0}%...`);
+          refresh();
+        } });
       }
       await refresh();
-    } catch (e) { setErr(e.message || 'upload failed'); }
-    finally { setBusy(false); }
+      setUploadStatus('Material ready.');
+    } catch (e) {
+      setErr(e.message || 'Upload failed');
+      setUploadStatus('');
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = '';
+    }
   };
 
   const typeIcon = { pdf: 'File', slides: 'Layers', video: 'Play', note: 'PenNib', pset: 'Code' };
@@ -43,7 +61,7 @@ const Materials = ({ onNav }) => {
     <div>
       <window.Topbar title="Materials" crumbs={['Library']}
         right={<>
-          <input ref={fileRef} type="file" accept=".pdf,.docx,.doc,.txt,.md" style={{ display: 'none' }}
+          <input ref={fileRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.pptx,.ppt" style={{ display: 'none' }}
                  onChange={(e) => onUpload(e.target.files && e.target.files[0])}/>
           <button className="btn btn-accent" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>
             <Icon.Upload size={12}/> {busy ? 'Uploading…' : 'Upload'}
@@ -56,6 +74,7 @@ const Materials = ({ onNav }) => {
             <div style={ms.eyebrow}>Library · {materials.length} materials</div>
             <h1 style={ms.title}>What are we learning?</h1>
             {err && <div style={{ fontSize: 11, color: 'var(--err)', marginTop: 4 }}>{err}</div>}
+            {uploadStatus && <div style={{ fontSize: 11, color: uploadStatus.includes('ready') ? 'var(--ok)' : 'var(--fg-3)', marginTop: 4 }}>{uploadStatus}</div>}
           </div>
           <div style={{ display: 'flex', gap: 4, padding: 2, background: 'var(--bg-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--line)' }}>
             {['grid', 'list'].map(v => (
@@ -75,8 +94,8 @@ const Materials = ({ onNav }) => {
               <Icon.Upload size={16} style={{ color: 'var(--accent)' }}/>
             </div>
             <div>
-              <div style={{ fontSize: 13.5, color: 'var(--fg-0)', fontWeight: 500 }}>Drop a PDF, slide deck, video, or code file</div>
-              <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 2 }}>Noēsis will extract concepts, write summary notes, and generate flashcards in ~90 seconds.</div>
+              <div style={{ fontSize: 13.5, color: 'var(--fg-0)', fontWeight: 500 }}>Drop a PDF, DOCX, TXT, Markdown, PPTX, or PPT file</div>
+              <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 2 }}>Noesis extracts documents and PowerPoint slides for notes, flashcards, quizzes, and tutoring. PPTX is recommended for slide decks.</div>
             </div>
           </div>
           <button className="btn btn-ghost" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}>{busy ? 'Working…' : 'Choose file'}</button>
@@ -157,6 +176,7 @@ const MaterialDetail = ({ onNav }) => {
   const [chapterIds, setChapterIds] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const [genStatus, setGenStatus] = React.useState('');
+  const [activeAction, setActiveAction] = React.useState('');
   const [video, setVideo] = React.useState(null);
   const id = parseInt(sessionStorage.getItem('noesis.materialId') || '0', 10);
 
@@ -183,8 +203,10 @@ const MaterialDetail = ({ onNav }) => {
   }, [id, active, chapterIds]);
 
   const generate = async (kind) => {
-    if (!id) return;
-    setBusy(true); setGenStatus(`Generating ${kind}…`);
+    if (!id || busy) return false;
+    const labels = { notes: 'notes', flashcards: 'flashcards', quiz: 'quiz' };
+    setActiveAction(kind);
+    setBusy(true); setGenStatus(`Generating ${labels[kind] || kind}...`);
     try {
       if (kind === 'notes') await window.NoesisAPI.notes.generate({ material_id: id, chapter_id: chapterIds[active] });
       if (kind === 'flashcards') await window.NoesisAPI.flashcards.generate({ material_id: id, count: 8 });
@@ -192,33 +214,58 @@ const MaterialDetail = ({ onNav }) => {
         const r = await window.NoesisAPI.quizzes.generate({ material_id: id, count: 6, difficulty: 'medium' });
         sessionStorage.setItem('noesis.quizId', String(r.quiz_id));
       }
-      setGenStatus('Done.');
-    } catch (e) { setGenStatus('Failed: ' + (e.message || 'error')); }
-    finally { setBusy(false); }
+      setGenStatus(`${labels[kind] || kind} generated successfully.`);
+      return true;
+    } catch (e) {
+      setGenStatus('Failed: ' + (e.message || 'error'));
+      return false;
+    } finally {
+      setBusy(false);
+      setActiveAction('');
+    }
   };
 
   const generateVideo = async () => {
     if (!id || !material) return;
-    setBusy(true); setGenStatus('Queuing video…');
+    setActiveAction('video');
+    setBusy(true); setGenStatus('Generating tutor video...');
     try {
       const r = await window.NoesisAPI.videos.generate({ material_id: id, concept: chapters[active] || material.title });
       setVideo({ id: r.video_id, status: 'queued' });
-      const job = await window.NoesisAPI.pollJob(r.job_id, { intervalMs: 3000, onProgress: (j) => setGenStatus(`Video ${j.progress || 0}%…`) });
+      await window.NoesisAPI.pollJob(r.job_id, { intervalMs: 3000, onProgress: (j) => setGenStatus(j.stage || `Rendering video ${j.progress || 0}%...`) });
       const file = await window.NoesisAPI.videos.fileBlobUrl(r.video_id);
       setVideo({ id: r.video_id, status: 'ready', file });
-      setGenStatus('Video ready.');
+      setGenStatus('Tutor video ready with narration.');
     } catch (e) { setGenStatus('Video failed: ' + (e.message || 'error')); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setActiveAction(''); }
   };
 
   const articleText = chunks.length ? chunks.map(c => c.text).join('\n\n') : '';
+  const deleteMaterial = async () => {
+    if (!id || !window.confirm('Delete this material and its generated study data?')) return;
+    setActiveAction('delete');
+    setBusy(true); setGenStatus('Deleting material...');
+    try {
+      await window.NoesisAPI.materials.remove(id);
+      sessionStorage.removeItem('noesis.materialId');
+      onNav('materials');
+    } catch (e) {
+      setGenStatus('Delete failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy(false);
+      setActiveAction('');
+    }
+  };
 
   return (
     <div>
       <window.Topbar
         title={chapters[active] || (material && material.title) || 'Material'}
         crumbs={['Library', material ? material.title : '...']}
-        right={<button className="btn btn-accent" onClick={() => { sessionStorage.setItem('noesis.tutorConcept', chapters[active] || (material && material.title) || ''); sessionStorage.setItem('noesis.tutorMaterialId', String(id)); onNav('tutor'); }}><Icon.Sparkle size={12}/> Study with tutor</button>}
+        right={<>
+          <button className="btn btn-ghost" disabled={busy} onClick={deleteMaterial} style={{ color: 'var(--err)' }}>{activeAction === 'delete' ? 'Deleting...' : 'Delete'}</button>
+          <button className="btn btn-accent" onClick={() => { sessionStorage.setItem('noesis.tutorConcept', chapters[active] || (material && material.title) || ''); sessionStorage.setItem('noesis.tutorMaterialId', String(id)); onNav('tutor'); }}><Icon.Sparkle size={12}/> Study with tutor</button>
+        </>}
       />
       <div style={mds.layout}>
         {/* Chapter nav */}
@@ -237,7 +284,6 @@ const MaterialDetail = ({ onNav }) => {
               }}>
                 <span className="mono" style={{ fontSize: 9.5, color: 'var(--fg-3)', width: 20 }}>{String(i+1).padStart(2,'0')}</span>
                 <span style={{ flex: 1 }}>{c}</span>
-                {i < 3 && <Icon.Check size={11} style={{ color: 'var(--ok)' }}/>}
               </button>
             ))}
           </div>
@@ -262,40 +308,6 @@ const MaterialDetail = ({ onNav }) => {
               </p>
             )}
 
-            <div style={mds.callout}>
-              <Icon.Sparkle size={14} style={{ color: 'var(--accent)', flexShrink: 0, marginTop: 2 }}/>
-              <div>
-                <div style={{ fontSize: 11, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>Tutor note</div>
-                <div style={{ fontSize: 13, color: 'var(--fg-1)' }}>You've tagged this paragraph for review twice. Want me to quiz you on <em>load factor</em> before you continue?</div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button className="btn btn-accent" style={{ padding: '5px 10px', fontSize: 11.5 }}>Quick quiz · 2m</button>
-                  <button className="btn btn-bare" style={{ padding: '5px 10px', fontSize: 11.5 }}>Dismiss</button>
-                </div>
-              </div>
-            </div>
-
-            <h2 style={mds.h2}>Collision Resolution</h2>
-            <p style={mds.p}>
-              Two keys hashing to the same slot is a <em>collision</em>. The two dominant strategies are <mark style={mds.mark}>separate chaining</mark> (each slot holds a linked list of entries) and <mark style={mds.mark}>open addressing</mark> (probe for the next empty slot).
-            </p>
-
-            <pre style={mds.pre}>
-{`// Separate chaining
-class HashMap<K, V> {
-    private List<Entry<K,V>>[] buckets;
-    
-    public V get(K key) {
-        int i = hash(key) % buckets.length;
-        for (Entry<K,V> e : buckets[i])
-            if (e.key.equals(key)) return e.value;
-        return null;
-    }
-}`}
-            </pre>
-
-            <p style={mds.p}>
-              Open addressing — specifically <em>linear probing</em> — has better cache behavior but degrades to <code style={mds.code}>O(n)</code> under high load factors or poor hash distribution.
-            </p>
           </div>
         </main>
 
@@ -303,12 +315,9 @@ class HashMap<K, V> {
         <aside style={mds.rail}>
           <div style={mds.railBlock}>
             <div style={mds.railHead}>Key concepts</div>
-            {['Hash function', 'Load factor α', 'Separate chaining', 'Linear probing', 'Resizing / rehashing'].map((k, i) => (
-              <button key={i} style={mds.concept}>
-                <span>{k}</span>
-                <Icon.ChevronRight size={11} style={{ color: 'var(--fg-3)' }}/>
-              </button>
-            ))}
+            <div style={{ fontSize: 12, color: 'var(--fg-3)', padding: '4px 0' }}>
+              Concepts will appear after AI generation.
+            </div>
           </div>
 
           <div style={mds.railBlock}>
@@ -316,28 +325,28 @@ class HashMap<K, V> {
             <button style={mds.gen} disabled={busy} onClick={() => generate('notes')}>
               <Icon.PenNib size={13} style={{ color: 'var(--accent)' }}/>
               <div style={{ flex: 1, textAlign: 'left' }}>
-                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>Summary notes</div>
+                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>{activeAction === 'notes' ? 'Generating notes...' : 'Summary notes'}</div>
                 <div style={{ fontSize: 11, color: 'var(--fg-3)' }}>From this chapter</div>
               </div>
             </button>
-            <button style={mds.gen} disabled={busy} onClick={async () => { await generate('flashcards'); onNav('flashcards'); }}>
+            <button style={mds.gen} disabled={busy} onClick={async () => { const ok = await generate('flashcards'); if (ok) onNav('flashcards'); }}>
               <Icon.Cards size={13} style={{ color: 'var(--accent)' }}/>
               <div style={{ flex: 1, textAlign: 'left' }}>
-                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>Flashcards</div>
+                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>{activeAction === 'flashcards' ? 'Generating flashcards...' : 'Flashcards'}</div>
                 <div style={{ fontSize: 11, color: 'var(--fg-3)' }}>Generate 8 cards</div>
               </div>
             </button>
-            <button style={mds.gen} disabled={busy} onClick={async () => { await generate('quiz'); onNav('quiz'); }}>
+            <button style={mds.gen} disabled={busy} onClick={async () => { const ok = await generate('quiz'); if (ok) onNav('quiz'); }}>
               <Icon.Target size={13} style={{ color: 'var(--accent)' }}/>
               <div style={{ flex: 1, textAlign: 'left' }}>
-                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>Practice quiz</div>
+                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>{activeAction === 'quiz' ? 'Generating quiz...' : 'Practice quiz'}</div>
                 <div style={{ fontSize: 11, color: 'var(--fg-3)' }}>6 questions</div>
               </div>
             </button>
             <button style={mds.gen} disabled={busy} onClick={generateVideo}>
               <Icon.Play size={13} style={{ color: 'var(--accent)' }}/>
               <div style={{ flex: 1, textAlign: 'left' }}>
-                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>Video explanation</div>
+                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>{activeAction === 'video' ? 'Generating video...' : 'Video explanation'}</div>
                 <div style={{ fontSize: 11, color: 'var(--fg-3)' }}>{video && video.status === 'ready' ? 'Ready — play below' : (video ? 'Processing…' : 'Generate narrated video')}</div>
               </div>
             </button>
@@ -349,12 +358,9 @@ class HashMap<K, V> {
 
           <div style={mds.railBlock}>
             <div style={mds.railHead}>Your highlights</div>
-            {['"expected O(1) time"', '"probe for the next empty slot"', '"degrades under high load factors"'].map((h, i) => (
-              <div key={i} style={mds.highlight}>
-                <span style={{ width: 2, background: 'var(--accent)', alignSelf: 'stretch', borderRadius: 1 }}/>
-                <span style={{ fontSize: 11.5, color: 'var(--fg-1)', fontStyle: 'italic' }}>{h}</span>
-              </div>
-            ))}
+            <div style={{ fontSize: 12, color: 'var(--fg-3)', padding: '4px 0' }}>
+              No highlights yet.
+            </div>
           </div>
         </aside>
       </div>

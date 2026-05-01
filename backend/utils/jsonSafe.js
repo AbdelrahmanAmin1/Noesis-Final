@@ -11,22 +11,9 @@ class JsonSafeError extends Error {
   }
 }
 
-// Extract first balanced JSON object/array from a model response.
-function extractJson(text) {
-  if (!text) return null;
-  // Strip code fences
-  const cleaned = String(text).replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-  // Find first '{' or '['
-  const startObj = cleaned.indexOf('{');
-  const startArr = cleaned.indexOf('[');
-  let start = -1;
-  let openCh, closeCh;
-  if (startObj === -1 && startArr === -1) return null;
-  if (startObj === -1) { start = startArr; openCh = '['; closeCh = ']'; }
-  else if (startArr === -1) { start = startObj; openCh = '{'; closeCh = '}'; }
-  else if (startObj < startArr) { start = startObj; openCh = '{'; closeCh = '}'; }
-  else { start = startArr; openCh = '['; closeCh = ']'; }
-
+function readBalanced(cleaned, start) {
+  const openCh = cleaned[start];
+  const closeCh = openCh === '{' ? '}' : ']';
   let depth = 0;
   let inStr = false;
   let escape = false;
@@ -43,6 +30,28 @@ function extractJson(text) {
     }
   }
   return null;
+}
+
+// Extract a balanced JSON object/array from a model response.
+function extractJson(text) {
+  if (!text) return null;
+  // Strip code fences
+  const cleaned = String(text).replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+  let fallback = null;
+  for (let i = 0; i < cleaned.length; i++) {
+    const c = cleaned[i];
+    if (c !== '{' && c !== '[') continue;
+    const candidate = readBalanced(cleaned, i);
+    if (!candidate) continue;
+    if (!fallback || candidate.length > fallback.length) fallback = candidate;
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch (_) {
+      // Keep scanning; model outputs often contain bracketed citations before JSON.
+    }
+  }
+  return fallback;
 }
 
 async function parseJsonSafe(text, schema, repairFn) {

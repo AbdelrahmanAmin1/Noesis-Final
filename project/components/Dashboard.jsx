@@ -21,6 +21,8 @@ const Dashboard = ({ onNav }) => {
   const conceptList = (data && data.concept_map) || [];
   const upcomingItems = (data && data.upcoming) || [];
   const insightItems = (data && data.insights) || [];
+  const summary = (data && data.summary) || {};
+  const recentActivity = (data && data.recent_activity) || [];
 
   return (
     <div style={{ background: 'var(--bg-0)', minHeight: '100vh', position: 'relative' }}>
@@ -66,13 +68,28 @@ const Dashboard = ({ onNav }) => {
           </div>
         </section>
 
+        <section style={ds.metrics} className="reveal">
+          {[
+            { l: 'Materials', v: summary.materials || 0 },
+            { l: 'Notes', v: summary.notes || 0 },
+            { l: 'Flashcards', v: summary.flashcards || 0 },
+            { l: 'Quizzes completed', v: summary.quizzes_completed || 0 },
+            { l: 'Average score', v: (summary.average_score ?? summary.avg_score) == null ? '-' : `${summary.average_score ?? summary.avg_score}%` },
+          ].map((m) => (
+            <div key={m.l} className="card" style={ds.metricCard}>
+              <div style={ds.metricValue}>{m.v}</div>
+              <div style={ds.metricLabel}>{m.l}</div>
+            </div>
+          ))}
+        </section>
+
         {/* Three-column work grid */}
         <section style={ds.grid} className="reveal">
           {/* Continue where you left off */}
           <div className="card" style={{ padding: 22, gridColumn: 'span 2' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>Pick up where you left</span>
-              <button className="btn btn-bare" style={{ fontSize: 11.5 }}>See library <Icon.ArrowRight size={11}/></button>
+              <button className="btn btn-bare" onClick={() => onNav('materials')} style={{ fontSize: 11.5 }}>See library <Icon.ArrowRight size={11}/></button>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
               {(resumeItems.length ? resumeItems : [{ t: 'Upload material to get started', src: 'Library', prog: 0, chip: 'New' }]).slice(0, 2).map((c, i) => (
@@ -163,7 +180,7 @@ const Dashboard = ({ onNav }) => {
               <span style={ds.cardTitle}>On the horizon</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
-              {(upcomingItems.length ? upcomingItems : [{ d: '—', dn: '·', t: 'No upcoming items', sub: 'Add courses in Settings', tint: 'default' }]).map((u, i) => (
+              {(upcomingItems.length ? upcomingItems : [{ d: 'Course', dn: '-', t: 'No active course tracks', sub: 'Complete onboarding to add OOP and Data Structures', tint: 'default' }]).map((u, i) => (
                 <div key={i} style={ds.upcoming}>
                   <div style={{ ...ds.dateBox, borderColor: u.tint === 'warn' ? 'var(--warn)' : u.tint === 'accent' ? 'var(--accent-soft)' : 'var(--line-strong)' }}>
                     <div className="mono" style={{ fontSize: 9, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{u.d}</div>
@@ -183,23 +200,33 @@ const Dashboard = ({ onNav }) => {
         <section className="card" style={{ padding: 22, marginBottom: 40 }}>
           <div style={ds.cardHead}>
             <span style={ds.cardTitle}><Icon.Sparkle size={13} style={{ color: 'var(--accent)' }}/> Noēsis noticed</span>
-            <span style={{ fontSize: 11, color: 'var(--fg-3)' }}>updated 6 minutes ago</span>
+            <span style={{ fontSize: 11, color: 'var(--fg-3)' }}>{recentActivity.length} recent event{recentActivity.length === 1 ? '' : 's'}</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 14 }}>
             {insightItems.map((s, i) => {
-              const C = Icon[s.icon];
+              const C = Icon[s.icon] || Icon.Sparkle;
               return (
                 <div key={i} style={ds.insight}>
                   <C size={15} style={{ color: 'var(--accent)' }}/>
                   <div style={{ fontSize: 13, color: 'var(--fg-0)', fontWeight: 500, margin: '8px 0 4px' }}>{s.t}</div>
                   <div style={{ fontSize: 12, color: 'var(--fg-2)' }}>{s.d}</div>
-                  <button className="btn btn-bare" style={{ marginTop: 10, padding: '4px 0', fontSize: 12, color: 'var(--accent)' }}>
+                  <button className="btn btn-bare" onClick={() => s.route && onNav(s.route)} style={{ marginTop: 10, padding: '4px 0', fontSize: 12, color: 'var(--accent)' }}>
                     {s.cta} <Icon.ArrowRight size={11}/>
                   </button>
                 </div>
               );
             })}
           </div>
+          {recentActivity.length > 0 && (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+              {recentActivity.slice(0, 4).map((a, i) => (
+                <div key={i} style={{ fontSize: 11.5, color: 'var(--fg-2)' }}>
+                  <span style={{ color: 'var(--fg-0)', textTransform: 'capitalize' }}>{a.kind}</span>
+                  <div style={{ marginTop: 3, color: 'var(--fg-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title || 'Activity'}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
       </div>
     </div>
@@ -238,12 +265,10 @@ const ConceptMap = ({ concepts: input }) => {
     { x: 62, y: 72, r: 16 }, { x: 88, y: 80, r: 12 },
     { x: 12, y: 80, r: 14 }, { x: 70, y: 50, r: 18 },
   ];
-  const fallback = [
-    { name: 'Arrays', m: 0 }, { name: 'Linked Lists', m: 0 },
-    { name: 'Stacks', m: 0 }, { name: 'Hash Tables', m: 0 },
-    { name: 'Trees', m: 0 }, { name: 'Graphs', m: 0 },
-  ];
-  const src = (input && input.length ? input : fallback).slice(0, positions.length);
+  const src = (input && input.length ? input : []).slice(0, positions.length);
+  if (!src.length) {
+    return <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-3)', fontSize: 12 }}>No concept data yet.</div>;
+  }
   const concepts = src.map((c, i) => ({ ...positions[i], name: c.name, m: c.mastery_pct ?? c.m ?? 0 }));
   const color = (m) => m > 70 ? 'var(--ok)' : m > 45 ? 'var(--accent)' : m > 25 ? 'var(--warn)' : 'var(--err)';
   return (
@@ -278,6 +303,10 @@ const ds = {
     gap: 40, alignItems: 'center',
     padding: '24px 0 32px',
   },
+  metrics: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 14 },
+  metricCard: { padding: '14px 16px' },
+  metricValue: { fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 300, color: 'var(--fg-0)' },
+  metricLabel: { fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 4 },
   eyebrow: { fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 14 },
   heroTitle: { fontFamily: 'var(--font-display)', fontSize: 44, fontWeight: 300, letterSpacing: '-0.02em', lineHeight: 1.1, margin: '0 0 14px', maxWidth: 680 },
   heroSub: { fontSize: 14, color: 'var(--fg-2)', margin: 0, maxWidth: 560 },

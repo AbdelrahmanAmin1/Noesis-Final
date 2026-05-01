@@ -10,6 +10,7 @@ const ai = require('../services/ai.service');
 const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
 const { retrieve } = require('../services/rag.service');
+const log = require('../utils/logger');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -23,6 +24,43 @@ const PlanSchema = z.object({
     explanation: z.string().optional().default(''),
   })).length(5),
 });
+
+function fallbackTutorPlan(concept, mode, chunks) {
+  const facts = chunks
+    .flatMap(c => String(c.text || '').split(/[\n.?!]+/))
+    .map(s => s.replace(/\s+/g, ' ').trim())
+    .filter(s => s.length >= 18 && s.length <= 180)
+    .slice(0, 20);
+  const sourceFacts = facts.length ? facts : [`The uploaded material has limited extractable detail about ${concept}.`];
+  const titles = ['Warm-up', 'Intuition', 'Core idea', 'Formalize', 'Apply'];
+  const promptsByMode = {
+    socratic: 'Which statement is best supported by the source material?',
+    explain: 'Which explanation matches the source material?',
+    example: 'Which example or rule is grounded in the source material?',
+  };
+  const steps = titles.map((title, i) => {
+    const correct = sourceFacts[i % sourceFacts.length];
+    const distractors = sourceFacts.filter(f => f !== correct).slice(i + 1, i + 4);
+    while (distractors.length < 3) {
+      distractors.push([
+        'This is not stated by the extracted material.',
+        'This contradicts the source emphasis.',
+        'This is unrelated to the selected concept.',
+      ][distractors.length]);
+    }
+    const correctIdx = i % 4;
+    const options = distractors.slice(0, 3);
+    options.splice(correctIdx, 0, correct);
+    return {
+      t: title,
+      q: `${title}: ${promptsByMode[mode] || promptsByMode.socratic} (${concept})`,
+      options,
+      correct_idx: correctIdx,
+      explanation: `Grounded source point: "${correct}"`,
+    };
+  });
+  return { steps };
+}
 
 router.get('/sessions', requireAuth, (req, res, next) => {
   try {
@@ -49,8 +87,14 @@ router.post('/sessions', requireAuth, aiLimiter, async (req, res, next) => {
       // No user material (or empty result) — fall back to the seeded system curriculum.
       chunks = await retrieve('system', concept, 6);
     }
-    const raw = await ai.generate(prompts.TUTOR_PLAN(concept, m, chunks), { format: 'json', temperature: 0.5 });
-    const plan = await parseJsonSafe(raw, PlanSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0 }));
+    let plan;
+    try {
+      const raw = await ai.generate(prompts.TUTOR_PLAN(concept, m, chunks), { format: 'json', temperature: 0.5 });
+      plan = await parseJsonSafe(raw, PlanSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0 }));
+    } catch (e) {
+      log.warn('tutor_plan_fallback', e.message || e);
+      plan = fallbackTutorPlan(concept, m, chunks);
+    }
 
     const ins = db.prepare(`INSERT INTO tutor_sessions (user_id, material_id, concept, mode, plan_json, current_step, started_at) VALUES (?,?,?,?,?,?,?)`);
     const r = ins.run(req.user.id, material_id || null, concept, m, JSON.stringify(plan), 0, nowIso());

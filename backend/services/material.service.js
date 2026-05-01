@@ -15,7 +15,8 @@ function nowIso() { return new Date().toISOString(); }
 function fileTypeFromExt(ext) {
   const e = (ext || '').toLowerCase();
   if (e === '.pdf') return 'pdf';
-  if (e === '.docx' || e === '.doc') return 'slides';
+  if (e === '.pptx' || e === '.ppt') return 'slides';
+  if (e === '.docx' || e === '.doc') return 'doc';
   return 'note';
 }
 

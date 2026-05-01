@@ -10,11 +10,13 @@ const MIME_BY_EXT = {
   '.pdf': new Set(['application/pdf']),
   '.docx': new Set(['application/vnd.openxmlformats-officedocument.wordprocessingml.document']),
   '.doc': new Set(['application/msword', 'application/octet-stream']),
+  '.pptx': new Set(['application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/octet-stream']),
+  '.ppt': new Set(['application/vnd.ms-powerpoint', 'application/octet-stream']),
   '.txt': new Set(['text/plain']),
   '.md': new Set(['text/markdown', 'text/plain', 'application/octet-stream']),
 };
 const ALLOWED_MIME = new Set(Object.values(MIME_BY_EXT).flatMap(set => [...set]));
-const ALLOWED_EXT = new Set(['.pdf', '.docx', '.doc', '.txt', '.md']);
+const ALLOWED_EXT = new Set(['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.txt', '.md']);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

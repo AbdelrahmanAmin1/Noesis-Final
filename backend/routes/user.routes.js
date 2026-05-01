@@ -10,6 +10,10 @@ router.get('/prefs', requireAuth, (req, res, next) => {
   try { res.json(authSvc.getPrefs(req.user.id)); } catch (e) { next(e); }
 });
 
+router.put('/profile', requireAuth, (req, res, next) => {
+  try { res.json(authSvc.updateProfile(req.user.id, req.body || {})); } catch (e) { next(e); }
+});
+
 router.put('/prefs', requireAuth, (req, res, next) => {
   try { res.json(authSvc.updatePrefs(req.user.id, req.body || {})); } catch (e) { next(e); }
 });

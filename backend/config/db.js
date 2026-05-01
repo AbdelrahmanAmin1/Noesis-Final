@@ -32,6 +32,8 @@ function migrate() {
   const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '001_init.sql'), 'utf8');
   db.exec(sql);
   ensureColumn(db, 'flashcard_reviews', 'reps', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'flashcards', 'difficulty', "TEXT DEFAULT 'medium'");
+  ensureColumn(db, 'flashcards', 'topic', 'TEXT');
   return db;
 }
 

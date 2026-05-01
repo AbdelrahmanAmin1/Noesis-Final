@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS flashcards (
   deck TEXT DEFAULT 'General',
   question TEXT NOT NULL,
   answer TEXT NOT NULL,
+  difficulty TEXT DEFAULT 'medium',
+  topic TEXT,
   source_chunk_id INTEGER,
   created_at TEXT NOT NULL,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

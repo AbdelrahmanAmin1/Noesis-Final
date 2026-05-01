@@ -28,6 +28,7 @@ const env = {
   TTS_BIN: process.env.TTS_BIN || 'piper',
   TTS_VOICE_PATH: process.env.TTS_VOICE_PATH || '',
   FFMPEG_PATH: process.env.FFMPEG_PATH || 'ffmpeg',
+  FFPROBE_PATH: process.env.FFPROBE_PATH || 'ffprobe',
 };
 
 if (env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || env.JWT_SECRET === 'noesis-dev-secret-change-me' || env.JWT_SECRET.length < 32)) {

@@ -24,7 +24,7 @@
     } catch (networkErr) {
       throw new Error('Network error: ' + networkErr.message);
     }
-    if (res.status === 401) {
+    if (res.status === 401 && !opts.noLogout) {
       setToken('');
       window.dispatchEvent(new CustomEvent('noesis:logout'));
     }
@@ -50,8 +50,8 @@
     isAuthed: () => !!token(),
 
     auth: {
-      signup: (b) => req('POST', '/auth/signup', b),
-      signin: (b) => req('POST', '/auth/signin', b),
+      signup: (b) => req('POST', '/auth/signup', b, { noLogout: true }),
+      signin: (b) => req('POST', '/auth/signin', b, { noLogout: true }),
       signout: async () => {
         try { await req('POST', '/auth/signout'); } catch (_) {}
         setToken('');
@@ -66,6 +66,12 @@
     user: {
       getPrefs: () => req('GET', '/user/prefs'),
       updatePrefs: (b) => req('PUT', '/user/prefs', b),
+      updateProfile: (b) => req('PUT', '/user/profile', b),
+    },
+
+    profile: {
+      get: () => req('GET', '/auth/me'),
+      update: (b) => req('PUT', '/user/profile', b),
     },
 
     materials: {
@@ -90,12 +96,14 @@
     },
 
     flashcards: {
+      list: (materialId) => req('GET', '/flashcards' + (materialId ? '?material_id=' + encodeURIComponent(materialId) : '')),
       due: () => req('GET', '/flashcards/due'),
       generate: (b) => req('POST', '/flashcards/generate', b),
       review: (id, rating) => req('POST', '/flashcards/' + id + '/review', { rating }),
     },
 
     quizzes: {
+      list: () => req('GET', '/quizzes'),
       generate: (b) => req('POST', '/quizzes/generate', b),
       get: (id) => req('GET', '/quizzes/' + id),
       attempt: (id) => req('POST', '/quizzes/' + id + '/attempt'),

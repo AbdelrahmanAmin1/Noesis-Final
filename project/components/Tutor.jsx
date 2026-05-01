@@ -9,15 +9,17 @@ const Tutor = ({ onNav }) => {
   const [feedbacks, setFeedbacks] = React.useState({});
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
+  const [action, setAction] = React.useState('');
+  const [status, setStatus] = React.useState('');
 
   React.useEffect(() => {
     const concept = sessionStorage.getItem('noesis.tutorConcept') || 'Object-Oriented Programming basics';
     const matId = parseInt(sessionStorage.getItem('noesis.tutorMaterialId') || '0', 10) || null;
-    setBusy(true);
+    setBusy(true); setAction('start'); setError(''); setStatus('Starting tutor session...');
     window.NoesisAPI.tutor.start({ material_id: matId, concept, mode })
-      .then(s => { setSession(s); setStep(0); })
+      .then(s => { setSession(s); setStep(0); setStatus('Tutor session ready.'); })
       .catch(e => setError(e.message || 'failed to start'))
-      .finally(() => setBusy(false));
+      .finally(() => { setBusy(false); setAction(''); });
   }, [mode]);
 
   const lesson = {
@@ -28,14 +30,17 @@ const Tutor = ({ onNav }) => {
       { t: 'The trick', q: '...' }, { t: 'Formalize', q: '...' }, { t: 'Apply', q: '...' },
     ],
   };
+  const isLastStep = step >= Math.max(0, lesson.steps.length - 1);
 
   const submitChoice = async (i) => {
-    if (!session || picked[step] !== undefined) return;
+    if (!session || picked[step] !== undefined || busy) return;
     setPicked({ ...picked, [step]: i });
+    setAction('answer'); setError('');
     try {
       const res = await window.NoesisAPI.tutor.answer(session.session_id, step, { choice: i });
       setFeedbacks({ ...feedbacks, [step]: res });
     } catch (e) { setError(e.message || 'answer failed'); }
+    finally { setAction(''); }
   };
 
   // Live elapsed timer, anchored to the session start.
@@ -62,11 +67,29 @@ const Tutor = ({ onNav }) => {
   const addManualNote = async (e) => {
     if (e && e.key && e.key !== 'Enter') return;
     if (!session || !noteText.trim()) return;
+    setAction('note'); setStatus('Saving note...');
     try {
       await window.NoesisAPI.tutor.addNote(session.session_id, { body: noteText.trim(), flashcard_worthy: false });
       setNoteText('');
       refreshNotes();
-    } catch (_) {}
+      setStatus('Note saved.');
+    } catch (e) { setError(e.message || 'Note failed'); }
+    finally { setAction(''); }
+  };
+
+  const finishTutor = async () => {
+    if (!session || busy) return;
+    setBusy(true); setAction('finish'); setError(''); setStatus('Finishing session...');
+    try {
+      await window.NoesisAPI.tutor.finish(session.session_id);
+      setStatus('Session saved. Returning to dashboard...');
+      setTimeout(() => onNav('dashboard'), 350);
+    } catch (e) {
+      setError(e.message || 'Finish failed');
+      setStatus('');
+      setBusy(false);
+      setAction('');
+    }
   };
 
   return (
@@ -175,7 +198,7 @@ const Tutor = ({ onNav }) => {
                     const correct = fb && i === fb.correct_idx;
                     const wrong = fb && picked[step] === i && !correct;
                     return (
-                      <button key={i} onClick={() => submitChoice(i)} style={{
+                      <button key={i} onClick={() => submitChoice(i)} disabled={busy || action === 'answer' || picked[step] !== undefined} style={{
                         ...tu.choice,
                         borderColor: correct ? 'var(--accent-soft)' : (wrong ? 'var(--err)' : 'var(--line)'),
                         background: correct ? 'var(--accent-glow)' : (wrong ? 'color-mix(in oklab, var(--err) 10%, transparent)' : 'var(--bg-1)'),
@@ -199,20 +222,23 @@ const Tutor = ({ onNav }) => {
               </div>
 
               <div style={{ marginTop: 24, display: 'flex', gap: 10, paddingLeft: 34 }}>
-                <button className="btn btn-accent" onClick={async () => {
-                  if (step < 4) setStep(step + 1);
-                  else if (session) { await window.NoesisAPI.tutor.finish(session.session_id); onNav('dashboard'); }
+                <button className="btn btn-accent" disabled={busy || action === 'answer'} onClick={() => {
+                  if (!isLastStep) setStep(Math.min(step + 1, lesson.steps.length - 1));
+                  else finishTutor();
                 }}>
-                  {step < 4 ? <>Continue <Icon.ArrowRight size={12}/></> : <>Finish <Icon.Check size={12}/></>}
+                  {action === 'finish' ? <>Finishing... <Icon.Check size={12}/></> : !isLastStep ? <>Continue <Icon.ArrowRight size={12}/></> : <>Finish <Icon.Check size={12}/></>}
                 </button>
                 <button className="btn btn-bare" onClick={async () => {
-                  if (!session) return;
+                  if (!session || action === 'note') return;
+                  setAction('note'); setStatus('Saving note...');
                   const body = `Step ${step + 1} note on ${session.concept}: ${(lesson.steps[step] && lesson.steps[step].q) || ''}`;
-                  try { await window.NoesisAPI.tutor.addNote(session.session_id, { body, flashcard_worthy: true }); } catch (_) {}
-                }}>
-                  <Icon.Bookmark size={12}/> Save to notes
+                  try { await window.NoesisAPI.tutor.addNote(session.session_id, { body, flashcard_worthy: true }); setStatus('Note saved.'); refreshNotes(); } catch (e) { setError(e.message || 'Note failed'); }
+                  finally { setAction(''); }
+                }} disabled={busy || action === 'note'}>
+                  <Icon.Bookmark size={12}/> {action === 'note' ? 'Saving...' : 'Save to notes'}
                 </button>
               </div>
+              {status && <div style={{ marginTop: 12, paddingLeft: 34, color: status.includes('failed') ? 'var(--err)' : 'var(--fg-3)', fontSize: 12 }}>{status}</div>}
               {error && <div style={{ marginTop: 12, paddingLeft: 34, color: 'var(--err)', fontSize: 12 }}>{error}</div>}
             </div>
 

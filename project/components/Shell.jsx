@@ -40,12 +40,31 @@ const SIDEBAR = [
   { key: 'flashcards', label: 'Flashcards', icon: 'Cards' },
   { key: 'quiz', label: 'Quizzes', icon: 'Target' },
   { key: 'progress', label: 'Progress', icon: 'Chart' },
-  { key: 'collab', label: 'Study Rooms', icon: 'Users' },
 ];
 
 const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
   const Icon = window.Icon;
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [streakDays, setStreakDays] = React.useState(0);
+  const [weekBars, setWeekBars] = React.useState([0,0,0,0,0,0,0]);
+  const [userName, setUserName] = React.useState('');
+  const [userSub, setUserSub] = React.useState('');
+
+  React.useEffect(() => {
+    window.NoesisAPI.dashboard.get()
+      .then(d => {
+        setStreakDays(d.streak_days || 0);
+        setWeekBars((d.weekly_hours || [0,0,0,0,0,0,0]).map(h => h > 0 ? 1 : 0));
+      })
+      .catch(() => {});
+    window.NoesisAPI.auth.me()
+      .then(d => {
+        setUserName((d.user && d.user.name) || '');
+        setUserSub((d.prefs && d.prefs.subject) || '');
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <aside style={ss.sidebar}>
       <div style={{ padding: '22px 22px 16px' }}>
@@ -82,12 +101,12 @@ const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
             <Icon.Flame size={12} style={{ color: 'var(--accent)' }}/>
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, color: 'var(--fg-0)' }}>12</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, color: 'var(--fg-0)' }}>{streakDays}</span>
             <span style={{ fontSize: 11, color: 'var(--fg-2)' }}>days</span>
           </div>
           <div style={{ display: 'flex', gap: 2, marginTop: 8 }}>
             {Array.from({ length: 7 }).map((_, i) => (
-              <div key={i} style={{ flex: 1, height: 4, borderRadius: 2, background: i < 6 ? 'var(--accent)' : 'var(--line)' }} />
+              <div key={i} style={{ flex: 1, height: 4, borderRadius: 2, background: weekBars[i] > 0 ? 'var(--accent)' : 'var(--line)' }} />
             ))}
           </div>
         </div>
@@ -98,10 +117,10 @@ const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
         </button>
 
         <button onClick={() => setMenuOpen(v => !v)} style={ss.profile}>
-          <div style={ss.avatar}>M</div>
+          <div style={ss.avatar}>{(userName || 'N')[0].toUpperCase()}</div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0, flex: 1 }}>
-            <span style={{ fontSize: 12, color: 'var(--fg-0)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 }}>Maya Abdelrahman</span>
-            <span style={{ fontSize: 10, color: 'var(--fg-3)' }}>CS · Sophomore</span>
+            <span style={{ fontSize: 12, color: 'var(--fg-0)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 }}>{userName || 'User'}</span>
+            <span style={{ fontSize: 10, color: 'var(--fg-3)' }}>{userSub || 'Student'}</span>
           </div>
           <Icon.ChevronRight size={14} style={{ color: 'var(--fg-3)', transform: menuOpen ? 'rotate(90deg)' : 'none', transition: 'transform 160ms var(--ease-out)' }} />
         </button>
@@ -219,12 +238,11 @@ const Topbar = ({ title, crumbs = [], right = null }) => {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         {right}
-        <button className="btn btn-bare" style={{ padding: 7 }}>
+        <button className="btn btn-bare" style={{ padding: 7, opacity: 0.4 }} disabled>
           <Icon.Search size={15} />
         </button>
-        <button className="btn btn-bare" style={{ padding: 7, position: 'relative' }}>
+        <button className="btn btn-bare" style={{ padding: 7, opacity: 0.4 }} disabled>
           <Icon.Bell size={15} />
-          <span style={{ position: 'absolute', top: 6, right: 6, width: 5, height: 5, borderRadius: 3, background: 'var(--accent)' }} />
         </button>
       </div>
     </header>

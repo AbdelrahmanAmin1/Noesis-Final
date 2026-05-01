@@ -5,7 +5,7 @@ const { getDb } = require('../config/db');
 const { signToken } = require('../middleware/auth');
 const { HttpError } = require('../middleware/error');
 
-const DUMMY_HASH = '$2a$12$C0sGEj9xD2l2i4uE8.n1uO4m8XsOQ0vlX61e/1kvT2uVdxV.NgUKG';
+const TIMING_SAFE_BCRYPT_HASH = '$2a$12$C0sGEj9xD2l2i4uE8.n1uO4m8XsOQ0vlX61e/1kvT2uVdxV.NgUKG';
 const MAX_PASSWORD_LENGTH = 256;
 
 function nowIso() { return new Date().toISOString(); }
@@ -44,7 +44,7 @@ async function signin({ email, password }) {
   if (password.length > MAX_PASSWORD_LENGTH) throw new HttpError(400, 'password_too_long');
   const db = getDb();
   const u = db.prepare('SELECT * FROM users WHERE email=?').get(email.toLowerCase());
-  const ok = await bcrypt.compare(password, u ? u.password_hash : DUMMY_HASH);
+  const ok = await bcrypt.compare(password, u ? u.password_hash : TIMING_SAFE_BCRYPT_HASH);
   if (!u || !ok) throw new HttpError(401, 'invalid_credentials');
   const user = { id: u.id, email: u.email, name: u.name, major: u.major };
   return { user, token: signToken(user) };
@@ -76,6 +76,17 @@ function saveOnboarding(userId, payload) {
 function getPrefs(userId) {
   const db = getDb();
   return db.prepare('SELECT * FROM user_prefs WHERE user_id=?').get(userId) || null;
+}
+
+function updateProfile(userId, patch) {
+  const db = getDb();
+  const name = patch.name == null ? null : String(patch.name).trim();
+  const major = patch.major == null ? null : String(patch.major).trim();
+  if (name !== null && name.length < 2) throw new HttpError(400, 'name_too_short');
+  if (name !== null && name.length > 120) throw new HttpError(400, 'name_too_long');
+  db.prepare('UPDATE users SET name=COALESCE(?, name), major=COALESCE(?, major) WHERE id=?')
+    .run(name || null, major || null, userId);
+  return me(userId);
 }
 
 function updatePrefs(userId, patch) {
@@ -122,4 +133,4 @@ function exportData(userId) {
   };
 }
 
-module.exports = { signup, signin, me, saveOnboarding, getPrefs, updatePrefs, deleteAccount, exportData, SEED_CONCEPTS };
+module.exports = { signup, signin, me, saveOnboarding, getPrefs, updatePrefs, updateProfile, deleteAccount, exportData, SEED_CONCEPTS };

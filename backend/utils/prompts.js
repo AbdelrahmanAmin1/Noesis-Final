@@ -1,10 +1,10 @@
 'use strict';
 
-const SYSTEM_BASE = `You are Noesis, a focused academic tutor. Be precise, concise, and pedagogically clear. Never invent facts; if context is insufficient, say so.`;
+const SYSTEM_BASE = `You are Noesis, a focused academic tutor specializing in Computer Science — especially Object-Oriented Programming and Data Structures. Use proper CS terminology (classes, objects, inheritance, polymorphism, encapsulation, abstraction, interfaces, arrays, linked lists, stacks, queues, trees, graphs, hash tables, sorting, searching, Big-O notation) where applicable. Be precise, concise, and pedagogically clear. Never invent facts; if context is insufficient, say so.`;
 
 const NOTES_SUMMARY = (chunks, title) => `${SYSTEM_BASE}
 
-Task: Write a study-quality markdown note titled "${title}". Use the source excerpts below. Cite chunk ids inline as [chunk:ID] when grounding a claim. Use h2/h3 headings, short paragraphs, and bullet lists where helpful. End with a "Don't forget" section of 3 short bullets.
+Task: Write a study-quality markdown note titled "${title}". Use the source excerpts below. Cite chunk ids inline as [chunk:ID] when grounding a claim. Structure the note as: (1) Definition / Overview, (2) Key properties and characteristics, (3) Implementation details with code examples where relevant, (4) Time and space complexity analysis if applicable, (5) Common mistakes or misconceptions, (6) Exam-ready summary. Use h2/h3 headings, short paragraphs, and bullet lists where helpful.
 
 Source excerpts:
 ${chunks.map(c => `[chunk:${c.id}] ${c.text}`).join('\n\n')}
@@ -19,17 +19,17 @@ Source excerpts:
 ${chunks.map(c => `[chunk:${c.id}] ${c.text}`).join('\n\n')}
 
 Output STRICT JSON only, no commentary:
-{"cards":[{"question":"...","answer":"...","source_chunk_id": <id>}]}`;
+{"cards":[{"question":"...","answer":"...","source_chunk_id": <id>, "difficulty": "easy|medium|hard", "topic": "..."}]}`;
 
 const QUIZ_MCQ = (chunks, count, difficulty) => `${SYSTEM_BASE}
 
-Task: Generate ${count} multiple-choice quiz questions at ${difficulty} difficulty. Each question must have exactly 4 options with ONE correct answer (correct_idx 0-3). Each must include a short, helpful explanation that justifies the correct answer and addresses common misconceptions.
+Task: Generate ${count} multiple-choice quiz questions at ${difficulty} difficulty. Focus on conceptual understanding: ask about time complexity, design trade-offs, when to use which data structure, OOP design principles, and common pitfalls. Avoid purely syntactic questions. Each question must have exactly 4 options with ONE correct answer (correct_idx 0-3). Each must include a short, helpful explanation that justifies the correct answer and addresses common misconceptions. Include a difficulty field and a topic tag for every question.
 
 Source excerpts:
 ${chunks.map(c => `[chunk:${c.id}] ${c.text}`).join('\n\n')}
 
 Output STRICT JSON only:
-{"questions":[{"question":"...","options":["A","B","C","D"],"correct_idx":0,"explanation":"...","concept":"..."}]}`;
+{"questions":[{"question":"...","options":["A","B","C","D"],"correct_idx":0,"explanation":"...","difficulty":"${difficulty}","topic":"Arrays / Big-O / Encapsulation"}]}`;
 
 const TUTOR_PLAN = (concept, mode, chunks) => `${SYSTEM_BASE}
 
@@ -55,7 +55,7 @@ Output: only the markdown text.`;
 
 const VIDEO_SCRIPT = (concept, chunks) => `${SYSTEM_BASE}
 
-Task: Write a short narrated explainer video script (3-6 slides) on: "${concept}". Each slide must have: a short title, 2-4 bullet points (under 10 words each), and a narration paragraph (40-80 words) that a TTS engine will read.
+Task: Write a short narrated explainer video script (3-6 slides) on: "${concept}". Include code examples and visual diagrams where applicable. Each slide must have: a short title, 2-4 bullet points (under 10 words each), and a narration paragraph (40-80 words) that a TTS engine will read.
 
 Source excerpts:
 ${chunks.map(c => `[chunk:${c.id}] ${c.text}`).join('\n\n')}
