@@ -28,18 +28,18 @@ const Materials = ({ onNav }) => {
   const onUpload = async (file) => {
     if (!file) return;
     const ext = (file.name.split('.').pop() || '').toLowerCase();
-    const allowed = ['pdf', 'docx', 'doc', 'txt', 'md', 'pptx', 'ppt'];
+    const allowed = ['pdf', 'docx', 'doc', 'txt', 'md', 'pptx'];
     if (!allowed.includes(ext)) {
-      setErr('Unsupported file type. Upload PDF, DOCX, TXT, Markdown, PPTX, or PPT.');
+      setErr('Unsupported file type. Upload PDF, DOCX, TXT, Markdown, or PPTX. Save legacy PPT files as PPTX first.');
       return;
     }
     setBusy(true); setErr(''); setUploadStatus(`Uploading ${file.name}...`);
     try {
       const r = await window.NoesisAPI.materials.upload(file);
-      setUploadStatus(ext === 'pptx' || ext === 'ppt' ? 'Upload accepted. Extracting slides...' : 'Upload accepted. Indexing material...');
+      setUploadStatus(ext === 'pptx' ? 'Upload accepted. Extracting slides...' : 'Upload accepted. Indexing material...');
       if (r && r.job_id) {
         await window.NoesisAPI.pollJob(r.job_id, { intervalMs: 1500, onProgress: (j) => {
-          const verb = ext === 'pptx' || ext === 'ppt' ? 'Extracting slides' : 'Indexing material';
+          const verb = ext === 'pptx' ? 'Extracting slides' : 'Indexing material';
           setUploadStatus(`${verb} ${j.progress || 0}%...`);
           refresh();
         } });
@@ -61,7 +61,7 @@ const Materials = ({ onNav }) => {
     <div>
       <window.Topbar title="Materials" crumbs={['Library']}
         right={<>
-          <input ref={fileRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.pptx,.ppt" style={{ display: 'none' }}
+          <input ref={fileRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.pptx" style={{ display: 'none' }}
                  onChange={(e) => onUpload(e.target.files && e.target.files[0])}/>
           <button className="btn btn-accent" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>
             <Icon.Upload size={12}/> {busy ? 'Uploading…' : 'Upload'}
@@ -94,8 +94,8 @@ const Materials = ({ onNav }) => {
               <Icon.Upload size={16} style={{ color: 'var(--accent)' }}/>
             </div>
             <div>
-              <div style={{ fontSize: 13.5, color: 'var(--fg-0)', fontWeight: 500 }}>Drop a PDF, DOCX, TXT, Markdown, PPTX, or PPT file</div>
-              <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 2 }}>Noesis extracts documents and PowerPoint slides for notes, flashcards, quizzes, and tutoring. PPTX is recommended for slide decks.</div>
+              <div style={{ fontSize: 13.5, color: 'var(--fg-0)', fontWeight: 500 }}>Drop a PDF, DOCX, TXT, Markdown, or PPTX file</div>
+              <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 2 }}>Noesis extracts documents and PowerPoint slides for notes, flashcards, quizzes, and tutoring. Save legacy PPT decks as PPTX first.</div>
             </div>
           </div>
           <button className="btn btn-ghost" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}>{busy ? 'Working…' : 'Choose file'}</button>
@@ -315,9 +315,18 @@ const MaterialDetail = ({ onNav }) => {
         <aside style={mds.rail}>
           <div style={mds.railBlock}>
             <div style={mds.railHead}>Key concepts</div>
-            <div style={{ fontSize: 12, color: 'var(--fg-3)', padding: '4px 0' }}>
-              Concepts will appear after AI generation.
-            </div>
+            {material && material.concepts && material.concepts.length ? (
+              material.concepts.map(c => (
+                <div key={c.id || c.name} style={mds.concept}>
+                  <span>{c.name}</span>
+                  <span className="mono" style={{ fontSize: 10, color: 'var(--fg-3)' }}>{c.mastery_pct || 0}%</span>
+                </div>
+              ))
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--fg-3)', padding: '4px 0' }}>
+                Concepts will appear after AI generation.
+              </div>
+            )}
           </div>
 
           <div style={mds.railBlock}>

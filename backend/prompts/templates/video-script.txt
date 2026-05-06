@@ -1,0 +1,17 @@
+{{SYSTEM_BASE}}
+
+Task: Write a tutor-whiteboard narrated explainer video script (3-6 slides) on: "{{CONCEPT}}". Teach step by step from the source excerpts using mindmaps, process diagrams, comparisons, code/examples, visual callouts, and source-grounded narration. Each slide must feel like a tutor explaining the material at a board, not a plain bullet deck.
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Output STRICT JSON only:
+{"slides":[{"title":"...","visual_type":"mindmap|flow|comparison|code|summary","bullets":["...","..."],"visual_nodes":["central idea","related concept"],"visual_edges":[["central idea","related concept"]],"callouts":["..."],"example_code":"...","narration":"..."}]}
+
+Rules:
+- Use 2-4 short bullets per slide.
+- visual_nodes must name concrete concepts from the source.
+- visual_edges must connect node labels that appear in visual_nodes.
+- callouts should be short tutor hints or warnings.
+- example_code is optional and should be present only when code or pseudocode helps.
+- Cite chunk ids in narration when using source details, e.g. [chunk:12].

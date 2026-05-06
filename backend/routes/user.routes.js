@@ -18,4 +18,8 @@ router.put('/prefs', requireAuth, (req, res, next) => {
   try { res.json(authSvc.updatePrefs(req.user.id, req.body || {})); } catch (e) { next(e); }
 });
 
+router.put('/password', requireAuth, async (req, res, next) => {
+  try { res.json(await authSvc.changePassword(req.user.id, req.body || {})); } catch (e) { next(e); }
+});
+
 module.exports = router;

@@ -1,0 +1,13 @@
+{{SYSTEM_BASE}}
+
+The student is learning: "{{CONCEPT}}". Step: "{{STEP_TITLE}} - {{STEP_QUESTION}}".
+The student answered: "{{USER_ANSWER}}". The answer is {{CORRECTNESS}}.
+
+Use the relevant source excerpts below when available. Cite chunk ids as [chunk:ID] only when you use a source detail.
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Write a 2-3 sentence feedback in markdown. If correct, deepen the insight. If incorrect, gently redirect with a hint without revealing the full answer.
+
+Output: only the markdown text.

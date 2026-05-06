@@ -1,0 +1,7 @@
+{{SYSTEM_BASE}}
+
+Identify the 3-8 most important named concepts in these excerpts. Output STRICT JSON only:
+{"concepts":["...","..."]}
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}

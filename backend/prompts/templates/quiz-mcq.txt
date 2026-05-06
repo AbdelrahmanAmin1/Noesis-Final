@@ -1,0 +1,9 @@
+{{SYSTEM_BASE}}
+
+Task: Generate {{COUNT}} multiple-choice quiz questions at {{DIFFICULTY}} difficulty. Focus on conceptual understanding: ask about time complexity, design trade-offs, when to use which data structure, OOP design principles, and common pitfalls. Avoid purely syntactic questions. Each question must have exactly 4 options with ONE correct answer (correct_idx 0-3). Each must include a short, helpful explanation that justifies the correct answer and addresses common misconceptions. Include a difficulty field and a topic tag for every question.
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Output STRICT JSON only:
+{"questions":[{"question":"...","options":["A","B","C","D"],"correct_idx":0,"explanation":"...","difficulty":"{{DIFFICULTY}}","topic":"Arrays / Big-O / Encapsulation"}]}

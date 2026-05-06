@@ -11,16 +11,81 @@ const Tutor = ({ onNav }) => {
   const [error, setError] = React.useState('');
   const [action, setAction] = React.useState('');
   const [status, setStatus] = React.useState('');
+  const [materials, setMaterials] = React.useState([]);
+  const [selectedMaterialId, setSelectedMaterialId] = React.useState('');
+  const [conceptInput, setConceptInput] = React.useState('');
+  const [needsMaterialChoice, setNeedsMaterialChoice] = React.useState(false);
+  const [activeRailTab, setActiveRailTab] = React.useState('Notes');
+  const [paused, setPaused] = React.useState(false);
+  const [pauseStartedAt, setPauseStartedAt] = React.useState(null);
+  const [pausedMs, setPausedMs] = React.useState(0);
+
+  const startSession = async ({ materialId = null, concept = '', nextMode = mode } = {}) => {
+    const cleanConcept = (concept || '').trim() || 'Object-Oriented Programming basics';
+    setBusy(true); setAction('start'); setError(''); setStatus('Starting tutor session...');
+    try {
+      if (materialId) {
+        sessionStorage.setItem('noesis.tutorMaterialId', String(materialId));
+        sessionStorage.setItem('noesis.tutorConcept', cleanConcept);
+      } else {
+        sessionStorage.removeItem('noesis.tutorMaterialId');
+        sessionStorage.setItem('noesis.tutorConcept', cleanConcept);
+      }
+      const s = await window.NoesisAPI.tutor.start({ material_id: materialId, concept: cleanConcept, mode: nextMode });
+      setSession(s);
+      setMode(s.mode || nextMode);
+      setStep(0);
+      setPicked({});
+      setFeedbacks({});
+      setNotebook([]);
+      setActiveRailTab('Notes');
+      setPaused(false);
+      setPauseStartedAt(null);
+      setPausedMs(0);
+      setNow(Date.now());
+      setNeedsMaterialChoice(false);
+      setStatus('Tutor session ready.');
+    } catch (e) {
+      setError(e.message || 'failed to start');
+    } finally {
+      setBusy(false);
+      setAction('');
+    }
+  };
 
   React.useEffect(() => {
-    const concept = sessionStorage.getItem('noesis.tutorConcept') || 'Object-Oriented Programming basics';
-    const matId = parseInt(sessionStorage.getItem('noesis.tutorMaterialId') || '0', 10) || null;
-    setBusy(true); setAction('start'); setError(''); setStatus('Starting tutor session...');
-    window.NoesisAPI.tutor.start({ material_id: matId, concept, mode })
-      .then(s => { setSession(s); setStep(0); setStatus('Tutor session ready.'); })
-      .catch(e => setError(e.message || 'failed to start'))
-      .finally(() => { setBusy(false); setAction(''); });
-  }, [mode]);
+    let alive = true;
+    const storedConcept = sessionStorage.getItem('noesis.tutorConcept') || '';
+    const storedMatId = parseInt(sessionStorage.getItem('noesis.tutorMaterialId') || '0', 10) || null;
+    setConceptInput(storedConcept && storedConcept !== 'Document' ? storedConcept : '');
+
+    window.NoesisAPI.materials.list()
+      .then(d => {
+        if (!alive) return;
+        const ready = (d.materials || []).filter(m => m.status === 'ready');
+        setMaterials(ready);
+        const storedMaterial = ready.find(m => m.id === storedMatId);
+        if (storedMaterial) {
+          setSelectedMaterialId(String(storedMaterial.id));
+          startSession({ materialId: storedMaterial.id, concept: storedConcept || storedMaterial.title, nextMode: mode });
+          return;
+        }
+        sessionStorage.removeItem('noesis.tutorMaterialId');
+        if (ready.length) {
+          setSelectedMaterialId(String(ready[0].id));
+          setConceptInput(storedConcept && storedConcept !== 'Document' ? storedConcept : ready[0].title);
+          setNeedsMaterialChoice(true);
+          setStatus('Choose a material for this tutor session.');
+        } else {
+          startSession({ materialId: null, concept: storedConcept || 'Object-Oriented Programming basics', nextMode: mode });
+        }
+      })
+      .catch(() => {
+        if (!alive) return;
+        startSession({ materialId: null, concept: storedConcept || 'Object-Oriented Programming basics', nextMode: mode });
+      });
+    return () => { alive = false; };
+  }, []);
 
   const lesson = {
     title: session ? session.concept : 'Starting tutor…',
@@ -31,9 +96,12 @@ const Tutor = ({ onNav }) => {
     ],
   };
   const isLastStep = step >= Math.max(0, lesson.steps.length - 1);
+  const currentStep = lesson.steps[step] || null;
+  const currentAnswered = picked[step] !== undefined || !!feedbacks[step] || !((currentStep && currentStep.options && currentStep.options.length));
+  const sourceChunks = session ? (session.source_chunks || (session.plan && session.plan.source_chunks) || []) : [];
 
   const submitChoice = async (i) => {
-    if (!session || picked[step] !== undefined || busy) return;
+    if (!session || picked[step] !== undefined || busy || paused) return;
     setPicked({ ...picked, [step]: i });
     setAction('answer'); setError('');
     try {
@@ -46,12 +114,47 @@ const Tutor = ({ onNav }) => {
   // Live elapsed timer, anchored to the session start.
   const [now, setNow] = React.useState(Date.now());
   React.useEffect(() => {
+    if (paused) return undefined;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [paused]);
   const startedAt = session && session.started_at ? new Date(session.started_at).getTime() : now;
-  const elapsedS = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const timerNow = paused && pauseStartedAt ? pauseStartedAt : now;
+  const elapsedS = Math.max(0, Math.floor((timerNow - startedAt - pausedMs) / 1000));
   const fmtTime = (s) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  const togglePause = () => {
+    if (!session) return;
+    if (paused) {
+      const resumeAt = Date.now();
+      setPausedMs(ms => ms + Math.max(0, resumeAt - (pauseStartedAt || resumeAt)));
+      setPauseStartedAt(null);
+      setPaused(false);
+      setNow(resumeAt);
+      setStatus('Session resumed.');
+      return;
+    }
+    setPauseStartedAt(Date.now());
+    setPaused(true);
+    setStatus('Session paused.');
+  };
+  const changeMode = async (nextMode) => {
+    if (nextMode === mode || busy || paused) return;
+    if (!session) {
+      setMode(nextMode);
+      return;
+    }
+    setAction('mode'); setError(''); setStatus('Changing tutor mode...');
+    try {
+      const res = await window.NoesisAPI.tutor.changeMode(session.session_id, nextMode);
+      setMode(res.mode || nextMode);
+      setSession({ ...session, mode: res.mode || nextMode });
+      setStatus(`Mode changed to ${res.mode || nextMode}.`);
+    } catch (e) {
+      setError(e.message || 'Mode change failed');
+    } finally {
+      setAction('');
+    }
+  };
 
   // Real notebook from the session (loaded on demand).
   const [notebook, setNotebook] = React.useState([]);
@@ -66,7 +169,7 @@ const Tutor = ({ onNav }) => {
 
   const addManualNote = async (e) => {
     if (e && e.key && e.key !== 'Enter') return;
-    if (!session || !noteText.trim()) return;
+    if (!session || paused || !noteText.trim()) return;
     setAction('note'); setStatus('Saving note...');
     try {
       await window.NoesisAPI.tutor.addNote(session.session_id, { body: noteText.trim(), flashcard_worthy: false });
@@ -78,7 +181,7 @@ const Tutor = ({ onNav }) => {
   };
 
   const finishTutor = async () => {
-    if (!session || busy) return;
+    if (!session || busy || paused) return;
     setBusy(true); setAction('finish'); setError(''); setStatus('Finishing session...');
     try {
       await window.NoesisAPI.tutor.finish(session.session_id);
@@ -106,7 +209,7 @@ const Tutor = ({ onNav }) => {
             ].map(m => {
               const C = Icon[m.icon];
               return (
-                <button key={m.id} onClick={() => setMode(m.id)} style={{
+                <button key={m.id} disabled={busy || paused || action === 'mode'} onClick={() => changeMode(m.id)} style={{
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '5px 10px', fontSize: 11.5,
                   background: mode === m.id ? 'var(--bg-0)' : 'transparent',
@@ -118,9 +221,37 @@ const Tutor = ({ onNav }) => {
               );
             })}
           </div>
-          <button className="btn btn-ghost"><Icon.Pause size={11}/> Pause</button>
+          <button className="btn btn-ghost" onClick={togglePause} disabled={!session || busy}>
+            {paused ? <Icon.Play size={11}/> : <Icon.Pause size={11}/>} {paused ? 'Resume' : 'Pause'}
+          </button>
         </>}
       />
+
+      {needsMaterialChoice && !session && (
+        <div style={tu.contextBar}>
+          <div>
+            <div style={{ fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>Tutor source</div>
+            <div style={{ fontSize: 13, color: 'var(--fg-1)' }}>Choose which uploaded material should ground this session.</div>
+          </div>
+          <select className="input" value={selectedMaterialId} onChange={(e) => {
+            setSelectedMaterialId(e.target.value);
+            const m = materials.find(x => String(x.id) === e.target.value);
+            if (m && (!conceptInput || conceptInput === 'Object-Oriented Programming basics')) setConceptInput(m.title);
+          }} style={{ width: 260, fontSize: 12.5 }}>
+            {materials.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+          </select>
+          <input className="input" placeholder="Concept or topic" value={conceptInput} onChange={(e) => setConceptInput(e.target.value)} style={{ width: 260, fontSize: 12.5 }}/>
+          <button className="btn btn-accent" disabled={busy || !selectedMaterialId} onClick={() => {
+            const m = materials.find(x => String(x.id) === selectedMaterialId);
+            startSession({ materialId: parseInt(selectedMaterialId, 10), concept: conceptInput || (m && m.title) || 'Document' });
+          }}>
+            <Icon.Sparkle size={12}/> Start with material
+          </button>
+          <button className="btn btn-ghost" disabled={busy} onClick={() => startSession({ materialId: null, concept: conceptInput || 'Object-Oriented Programming basics' })}>
+            Core corpus
+          </button>
+        </div>
+      )}
 
       <div style={tu.layout}>
         {/* Left: lesson timeline */}
@@ -198,7 +329,7 @@ const Tutor = ({ onNav }) => {
                     const correct = fb && i === fb.correct_idx;
                     const wrong = fb && picked[step] === i && !correct;
                     return (
-                      <button key={i} onClick={() => submitChoice(i)} disabled={busy || action === 'answer' || picked[step] !== undefined} style={{
+                      <button key={i} onClick={() => submitChoice(i)} disabled={paused || busy || action === 'answer' || picked[step] !== undefined} style={{
                         ...tu.choice,
                         borderColor: correct ? 'var(--accent-soft)' : (wrong ? 'var(--err)' : 'var(--line)'),
                         background: correct ? 'var(--accent-glow)' : (wrong ? 'color-mix(in oklab, var(--err) 10%, transparent)' : 'var(--bg-1)'),
@@ -222,19 +353,19 @@ const Tutor = ({ onNav }) => {
               </div>
 
               <div style={{ marginTop: 24, display: 'flex', gap: 10, paddingLeft: 34 }}>
-                <button className="btn btn-accent" disabled={busy || action === 'answer'} onClick={() => {
+                <button className="btn btn-accent" disabled={!session || paused || busy || action === 'answer' || !currentAnswered} onClick={() => {
                   if (!isLastStep) setStep(Math.min(step + 1, lesson.steps.length - 1));
                   else finishTutor();
                 }}>
                   {action === 'finish' ? <>Finishing... <Icon.Check size={12}/></> : !isLastStep ? <>Continue <Icon.ArrowRight size={12}/></> : <>Finish <Icon.Check size={12}/></>}
                 </button>
                 <button className="btn btn-bare" onClick={async () => {
-                  if (!session || action === 'note') return;
+                  if (!session || paused || action === 'note') return;
                   setAction('note'); setStatus('Saving note...');
                   const body = `Step ${step + 1} note on ${session.concept}: ${(lesson.steps[step] && lesson.steps[step].q) || ''}`;
                   try { await window.NoesisAPI.tutor.addNote(session.session_id, { body, flashcard_worthy: true }); setStatus('Note saved.'); refreshNotes(); } catch (e) { setError(e.message || 'Note failed'); }
                   finally { setAction(''); }
-                }} disabled={busy || action === 'note'}>
+                }} disabled={!session || paused || busy || action === 'note'}>
                   <Icon.Bookmark size={12}/> {action === 'note' ? 'Saving...' : 'Save to notes'}
                 </button>
               </div>
@@ -249,11 +380,11 @@ const Tutor = ({ onNav }) => {
         <aside style={tu.rail}>
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--line)' }}>
             <div style={{ display: 'flex', gap: 2, padding: 2, background: 'var(--bg-2)', borderRadius: 'var(--r-sm)', border: '1px solid var(--line)' }}>
-              {['Trace', 'Notes', 'Sources'].map((t, i) => (
-                <button key={t} style={{
+              {['Trace', 'Notes', 'Sources'].map((t) => (
+                <button key={t} onClick={() => setActiveRailTab(t)} style={{
                   flex: 1, padding: '5px 8px', fontSize: 11.5,
-                  background: i === 1 ? 'var(--bg-0)' : 'transparent',
-                  color: i === 1 ? 'var(--fg-0)' : 'var(--fg-2)',
+                  background: activeRailTab === t ? 'var(--bg-0)' : 'transparent',
+                  color: activeRailTab === t ? 'var(--fg-0)' : 'var(--fg-2)',
                   borderRadius: 4,
                 }}>{t}</button>
               ))}
@@ -261,6 +392,39 @@ const Tutor = ({ onNav }) => {
           </div>
 
           <div style={{ padding: 18, overflow: 'auto', flex: 1 }}>
+            {activeRailTab === 'Trace' && (
+              <>
+                <div style={{ fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Tutor trace</div>
+                {lesson.steps.map((s, i) => (
+                  <div key={i} style={tu.traceEntry}>
+                    <div className="mono" style={{ fontSize: 10, color: i === step ? 'var(--accent)' : 'var(--fg-3)', marginBottom: 5 }}>Step {i + 1} {i === step ? 'current' : ''}</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--fg-0)', lineHeight: 1.45 }}>{s.t}</div>
+                    {s.explanation && <div style={{ fontSize: 12, color: 'var(--fg-2)', lineHeight: 1.55, marginTop: 5, whiteSpace: 'pre-wrap' }}>{s.explanation}</div>}
+                    {feedbacks[i] && <div style={{ fontSize: 12, color: 'var(--fg-2)', lineHeight: 1.55, marginTop: 7, whiteSpace: 'pre-wrap' }}>{feedbacks[i].feedback || feedbacks[i].explanation}</div>}
+                  </div>
+                ))}
+              </>
+            )}
+
+            {activeRailTab === 'Sources' && (
+              <>
+                <div style={{ fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Grounding sources</div>
+                {sourceChunks.length === 0 && (
+                  <div style={{ fontSize: 12, color: 'var(--fg-3)' }}>No source chunks were returned for this session.</div>
+                )}
+                {sourceChunks.map((c) => (
+                  <div key={`${c.id}-${c.idx}`} style={tu.sourceEntry}>
+                    <div className="mono" style={{ fontSize: 10, color: 'var(--accent)', marginBottom: 6 }}>
+                      chunk:{c.id}{typeof c.score === 'number' ? ` · ${Math.round(c.score * 100)}% match` : ''}
+                    </div>
+                    <div style={{ fontSize: 12.3, color: 'var(--fg-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{c.text}</div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {activeRailTab === 'Notes' && (
+              <>
             <div style={{ fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>Your notebook</div>
 
             {notebook.length === 0 && (
@@ -282,13 +446,16 @@ const Tutor = ({ onNav }) => {
                 ) : null}
               </div>
             ))}
+              </>
+            )}
           </div>
 
           <div style={{ padding: 14, borderTop: '1px solid var(--line)', display: 'flex', gap: 8 }}>
             <input className="input" placeholder="Add a note (Enter to save)…" value={noteText}
                    onChange={(e) => setNoteText(e.target.value)} onKeyDown={addManualNote}
+                   disabled={paused}
                    style={{ flex: 1, fontSize: 12.5 }}/>
-            <button className="btn btn-bare" style={{ padding: 8 }} onClick={() => addManualNote()}><Icon.Send size={14}/></button>
+            <button className="btn btn-bare" style={{ padding: 8 }} disabled={paused} onClick={() => addManualNote()}><Icon.Send size={14}/></button>
           </div>
         </aside>
       </div>
@@ -298,6 +465,11 @@ const Tutor = ({ onNav }) => {
 
 const tu = {
   layout: { display: 'grid', gridTemplateColumns: '280px 1fr 340px', flex: 1, minHeight: 'calc(100vh - 57px)' },
+  contextBar: {
+    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+    padding: '12px 18px', borderBottom: '1px solid var(--line)',
+    background: 'var(--bg-1)',
+  },
   timeline: { borderRight: '1px solid var(--line)', display: 'flex', flexDirection: 'column', background: 'var(--bg-0)' },
   workspace: { overflow: 'auto', background: 'var(--bg-0)' },
   rail: { borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column', background: 'var(--bg-0)' },
@@ -329,6 +501,15 @@ const tu = {
   sandbox: { borderRadius: 'var(--r-md)', background: 'var(--bg-1)', border: '1px solid var(--line)', overflow: 'hidden' },
   pre: { fontFamily: 'var(--font-mono)', fontSize: 12.5, padding: 18, margin: 0, lineHeight: 1.65, color: 'var(--fg-0)' },
   noteEntry: { marginBottom: 16 },
+  traceEntry: {
+    marginBottom: 14, paddingBottom: 14,
+    borderBottom: '1px solid var(--line)',
+  },
+  sourceEntry: {
+    marginBottom: 14, padding: 12,
+    borderRadius: 'var(--r-sm)',
+    background: 'var(--bg-1)', border: '1px solid var(--line)',
+  },
   addNote: {
     display: 'flex', alignItems: 'center', gap: 6,
     padding: '8px 10px', borderRadius: 'var(--r-sm)',

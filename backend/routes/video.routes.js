@@ -36,6 +36,7 @@ router.get('/:id/file', requireAuth, (req, res, next) => {
   try {
     const v = videoSvc.getVideo(req.user.id, parseInt(req.params.id, 10));
     if (!v || !v.output_path || !fs.existsSync(v.output_path)) throw new HttpError(404, 'file_not_found');
+    if (/(^|[\\/])\.\.([\\/]|$)/.test(String(v.output_path))) throw new HttpError(403, 'forbidden_path');
     const videosDir = path.resolve(env.UPLOAD_DIR, 'videos');
     const resolved = path.resolve(v.output_path);
     if (!resolved.startsWith(videosDir + path.sep)) throw new HttpError(403, 'forbidden_path');

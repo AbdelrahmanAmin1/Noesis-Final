@@ -31,6 +31,11 @@ const env = {
   FFPROBE_PATH: process.env.FFPROBE_PATH || 'ffprobe',
 };
 
+const usesDefaultJwtSecret = !process.env.JWT_SECRET || env.JWT_SECRET === 'noesis-dev-secret-change-me';
+if (usesDefaultJwtSecret && env.NODE_ENV !== 'development') {
+  console.warn('[noesis] JWT_SECRET is using the development default outside development. Set a strong JWT_SECRET before deploying.');
+}
+
 if (env.NODE_ENV === 'production' && (!process.env.JWT_SECRET || env.JWT_SECRET === 'noesis-dev-secret-change-me' || env.JWT_SECRET.length < 32)) {
   throw new Error('JWT_SECRET must be set to a strong secret in production');
 }

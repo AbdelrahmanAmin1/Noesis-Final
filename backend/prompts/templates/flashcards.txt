@@ -1,0 +1,11 @@
+{{SYSTEM_BASE}}
+
+Task: Generate {{COUNT}} high-quality flashcards from the source excerpts. Prefer atomic facts, definitions, and contrasts. Avoid trivia.
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Output STRICT JSON only, no commentary:
+{"cards":[{"question":"...","answer":"...","source_chunk_id": 1, "difficulty": "easy|medium|hard", "topic": "..."}]}
+
+Use a numeric source_chunk_id from the cited source excerpts when possible. Use null when no single source chunk applies.

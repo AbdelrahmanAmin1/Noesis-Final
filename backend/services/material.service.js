@@ -2,15 +2,23 @@
 
 const fs = require('fs');
 const path = require('path');
+const { z } = require('zod');
 const { getDb } = require('../config/db');
 const { HttpError } = require('../middleware/error');
 const { extractText, detectChapters } = require('./extract.service');
 const { chunkByChapter } = require('./chunk.service');
 const { embedAndStore } = require('./rag.service');
+const ai = require('./ai.service');
 const jobs = require('./jobs.service');
 const log = require('../utils/logger');
+const prompts = require('../utils/prompts');
+const { parseJsonSafe } = require('../utils/jsonSafe');
 
 function nowIso() { return new Date().toISOString(); }
+
+const ConceptExtractSchema = z.object({
+  concepts: z.array(z.string().min(1)).min(1).max(8),
+});
 
 function fileTypeFromExt(ext) {
   const e = (ext || '').toLowerCase();
@@ -32,7 +40,19 @@ function getOwned(userId, id) {
   const m = db.prepare('SELECT * FROM materials WHERE id=? AND user_id=?').get(id, userId);
   if (!m) throw new HttpError(404, 'material_not_found');
   const chapters = db.prepare('SELECT id, idx, title FROM chapters WHERE material_id=? ORDER BY idx').all(id);
-  return { ...m, chapters };
+  const concepts = db.prepare(`
+    SELECT DISTINCT c.id, c.name, c.mastery_pct, c.last_reviewed_at
+    FROM concepts c
+    WHERE c.user_id=?
+      AND EXISTS (
+        SELECT 1 FROM chunks ch
+        WHERE ch.material_id=?
+          AND instr(lower(ch.text), lower(c.name)) > 0
+      )
+    ORDER BY c.mastery_pct ASC, c.name ASC
+    LIMIT 12
+  `).all(userId, id);
+  return { ...m, chapters, concepts };
 }
 
 function getChunks(userId, materialId, chapterId) {
@@ -70,6 +90,28 @@ function createPending(userId, file, courseId) {
     'queued', 0, nowIso()
   );
   return { id: info.lastInsertRowid, title };
+}
+
+function cleanConceptName(name) {
+  return String(name || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80);
+}
+
+async function extractAndStoreConcepts(userId, chunks) {
+  const sample = (chunks || []).slice(0, 12).map(c => ({ id: c.id, text: String(c.text || '').slice(0, 2000) }));
+  if (!sample.length) return [];
+  const raw = await ai.generate(prompts.CONCEPT_EXTRACT(sample), { format: 'json', temperature: 0.2 });
+  const parsed = await parseJsonSafe(raw, ConceptExtractSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0 }));
+  const names = [...new Set((parsed.concepts || []).map(cleanConceptName).filter(Boolean))];
+  if (!names.length) return [];
+  const db = getDb();
+  const ins = db.prepare('INSERT OR IGNORE INTO concepts (user_id, name, mastery_pct) VALUES (?,?,0)');
+  db.transaction(() => {
+    for (const name of names) ins.run(userId, name);
+  })();
+  return names;
 }
 
 async function processMaterial(materialId, jobId) {
@@ -110,6 +152,15 @@ async function processMaterial(materialId, jobId) {
     if (jobId) jobs.update(jobId, { progress: 60 });
 
     await embedAndStore(materialId, inserted);
+    setStatus('processing', 80);
+    if (jobId) jobs.update(jobId, { progress: 80 });
+
+    try {
+      const concepts = await extractAndStoreConcepts(m.user_id, inserted);
+      if (concepts.length) log.info(`material concepts ${materialId}: ${concepts.join(', ')}`);
+    } catch (e) {
+      log.warn('concept_extract_failed', e.message || e);
+    }
 
     setStatus('ready', 100);
     db.prepare(`INSERT INTO study_events (user_id, kind, ref_id, duration_s, occurred_at) VALUES (?,?,?,?,?)`)

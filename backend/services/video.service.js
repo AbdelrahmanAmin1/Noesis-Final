@@ -25,7 +25,12 @@ const {
 const ScriptSchema = z.object({
   slides: z.array(z.object({
     title: z.string().min(1),
+    visual_type: z.enum(['mindmap', 'flow', 'comparison', 'code', 'summary']).optional().default('mindmap'),
     bullets: z.array(z.string()).min(1).max(8),
+    visual_nodes: z.array(z.string()).optional().default([]),
+    visual_edges: z.array(z.tuple([z.string(), z.string()])).optional().default([]),
+    callouts: z.array(z.string()).optional().default([]),
+    example_code: z.string().optional().default(''),
     narration: z.string().min(1),
   })).min(2).max(8),
 });
@@ -142,31 +147,107 @@ function drawText(text, x, y, size, color = '0xfafaff') {
   return `drawtext=text='${escapeDrawText(text)}':fontcolor=${color}:fontsize=${size}:x=${x}:y=${y}`;
 }
 
+function cleanTextList(value, fallback = []) {
+  const source = Array.isArray(value) && value.length ? value : fallback;
+  return source
+    .map(v => String(v || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function compactText(text, max = 64) {
+  const value = String(text || '').replace(/\s+/g, ' ').trim();
+  return value.length > max ? `${value.slice(0, max - 1)}...` : value;
+}
+
+function drawLabeledBox(filters, text, x, y, w, h, fill, stroke = '0x64748b@0.75') {
+  filters.push(`drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=${fill}:t=fill`);
+  filters.push(`drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=${stroke}:t=2`);
+  wrapWords(compactText(text, 56), Math.max(12, Math.floor(w / 18)), 2)
+    .forEach((line, i) => filters.push(drawText(line, x + 16, y + 28 + i * 26, 22, '0x0f172a')));
+}
+
 async function renderSlideFrameWithFfmpeg(slide, outPath, idx, total) {
+  const visualType = ['mindmap', 'flow', 'comparison', 'code', 'summary'].includes(slide.visual_type)
+    ? slide.visual_type
+    : (idx === total - 1 ? 'summary' : 'mindmap');
+  const bullets = cleanTextList(slide.bullets, ['Source-grounded concept', 'Tutor explanation']).slice(0, 5);
+  const nodes = cleanTextList(slide.visual_nodes, [slide.title, ...bullets]).slice(0, 7);
+  const callouts = cleanTextList(slide.callouts, bullets.slice(0, 2)).slice(0, 3);
   const filters = [
-    'drawbox=x=0:y=0:w=iw:h=ih:color=0x08081a@1:t=fill',
-    'drawbox=x=760:y=0:w=520:h=720:color=0x172554@0.28:t=fill',
-    'drawbox=x=58:y=48:w=1164:h=624:color=0x111126@0.78:t=fill',
-    'drawbox=x=58:y=48:w=6:h=624:color=0xa5b4fc@0.95:t=fill',
-    drawText('NOESIS AI TUTOR', 92, 78, 22, '0xa5b4fc'),
-    drawText(`SLIDE ${idx + 1} / ${total}`, 1040, 78, 20, '0x9ca3af'),
+    'drawbox=x=0:y=0:w=iw:h=ih:color=0xf8fafc@1:t=fill',
+    'drawbox=x=0:y=0:w=iw:h=96:color=0x0f172a@1:t=fill',
+    'drawbox=x=64:y=134:w=408:h=506:color=0xffffff@1:t=fill',
+    'drawbox=x=64:y=134:w=408:h=506:color=0xcbd5e1@1:t=2',
+    'drawbox=x=506:y=134:w=710:h=506:color=0xffffff@1:t=fill',
+    'drawbox=x=506:y=134:w=710:h=506:color=0xcbd5e1@1:t=2',
+    drawText('NOESIS TUTOR WHITEBOARD', 64, 34, 22, '0xbfdbfe'),
+    drawText(`SLIDE ${idx + 1} / ${total}`, 1080, 34, 20, '0xcbd5e1'),
+    drawText(visualType.toUpperCase(), 92, 158, 18, '0x2563eb'),
   ];
 
-  wrapWords(slide.title || 'Tutor explanation', 34, 2)
-    .forEach((line, i) => filters.push(drawText(line, 92, 128 + i * 62, 52, '0xfafaff')));
+  wrapWords(slide.title || 'Tutor explanation', 42, 1)
+    .forEach((line, i) => filters.push(drawText(line, 64, 66 + i * 34, 30, '0xffffff')));
 
-  let y = 292;
-  const bullets = (slide.bullets || []).slice(0, 6);
+  let y = 212;
   for (const bullet of bullets) {
     const lines = wrapWords(bullet, 52, 2);
     lines.forEach((line, lineIdx) => {
-      filters.push(drawText(`${lineIdx === 0 ? '- ' : '  '}${line}`, 112, y, 30, '0xe8e6f5'));
-      y += 38;
+      filters.push(drawText(`${lineIdx === 0 ? '- ' : '  '}${line}`, 92, y, 23, '0x1e293b'));
+      y += 30;
     });
-    y += 18;
+    y += 14;
   }
-  filters.push('drawbox=x=92:y=636:w=140:h=3:color=0xc99afc@0.95:t=fill');
-  filters.push(drawText('Based on your uploaded material', 260, 624, 20, '0x9ca3af'));
+
+  const rightX = 536;
+  const rightY = 172;
+  if (visualType === 'flow') {
+    const steps = nodes.slice(0, 4);
+    steps.forEach((node, i) => {
+      const x = rightX + i * 164;
+      drawLabeledBox(filters, node, x, 276, 140, 92, ['0xdbeafe@1', '0xdcfce7@1', '0xfef3c7@1', '0xfce7f3@1'][i % 4]);
+      if (i < steps.length - 1) filters.push(drawText('->', x + 146, 322, 28, '0x334155'));
+    });
+  } else if (visualType === 'comparison') {
+    const left = nodes[0] || 'Concept A';
+    const right = nodes[1] || 'Concept B';
+    drawLabeledBox(filters, left, rightX + 24, 214, 284, 66, '0xdbeafe@1');
+    drawLabeledBox(filters, right, rightX + 360, 214, 284, 66, '0xdcfce7@1');
+    bullets.slice(0, 4).forEach((bullet, i) => {
+      const x = i % 2 === 0 ? rightX + 42 : rightX + 378;
+      const yy = 326 + Math.floor(i / 2) * 104;
+      drawLabeledBox(filters, bullet, x, yy, 248, 74, i % 2 === 0 ? '0xeff6ff@1' : '0xf0fdf4@1');
+    });
+  } else if (visualType === 'code') {
+    const codeLines = String(slide.example_code || bullets.join('\n'))
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean)
+      .slice(0, 7);
+    filters.push('drawbox=x=560:y=210:w=418:h=318:color=0x111827@1:t=fill');
+    filters.push('drawbox=x=560:y=210:w=418:h=318:color=0x38bdf8@1:t=2');
+    codeLines.forEach((line, i) => filters.push(drawText(compactText(line, 42), 584, 246 + i * 34, 22, '0xe0f2fe')));
+    callouts.slice(0, 3).forEach((callout, i) => drawLabeledBox(filters, callout, 1004, 218 + i * 104, 174, 74, '0xfef9c3@1'));
+  } else {
+    const center = nodes[0] || slide.title || 'Core concept';
+    drawLabeledBox(filters, center, rightX + 236, 284, 224, 98, '0xdbeafe@1', '0x2563eb@1');
+    const around = nodes.slice(1, 7);
+    const positions = [
+      [rightX + 42, 204], [rightX + 474, 204],
+      [rightX + 42, 422], [rightX + 474, 422],
+      [rightX + 242, 174], [rightX + 242, 502],
+    ];
+    around.forEach((node, i) => {
+      const [x, yy] = positions[i];
+      filters.push(`drawbox=x=${Math.min(x + 126, rightX + 348)}:y=${Math.min(yy + 38, 330)}:w=2:h=86:color=0x94a3b8@0.55:t=fill`);
+      drawLabeledBox(filters, node, x, yy, 184, 76, ['0xdcfce7@1', '0xfef3c7@1', '0xfce7f3@1'][i % 3]);
+    });
+  }
+
+  let calloutY = 558;
+  for (const callout of callouts.slice(0, visualType === 'code' ? 1 : 2)) {
+    drawLabeledBox(filters, callout, 92, calloutY, 352, 54, '0xfef9c3@1', '0xf59e0b@1');
+    calloutY += 64;
+  }
 
   await ffmpeg([
     '-y',
@@ -200,24 +281,44 @@ function fallbackVideoScript(concept, chunks) {
   const base = [
     {
       title: concept || 'Tutor explanation',
+      visual_type: 'mindmap',
       bullets: ['Source-grounded explanation', 'Key definitions and relationships', 'Practice-ready summary'],
+      visual_nodes: [concept || 'Selected concept', 'Definitions', 'Relationships', 'Examples', 'Summary'],
+      visual_edges: [[concept || 'Selected concept', 'Definitions'], [concept || 'Selected concept', 'Relationships'], [concept || 'Selected concept', 'Examples']],
+      callouts: ['Start with the source vocabulary.', 'Connect each term to an operation or example.'],
+      example_code: '',
       narration: `This tutor video explains ${concept || 'the selected concept'} using the uploaded material. We will focus on the source content, pull out the main definitions, connect the ideas, and finish with an exam-ready summary.`,
     },
     {
       title: 'Core idea',
+      visual_type: 'flow',
       bullets: (pick(0, 4).length ? pick(0, 4) : ['The source material does not include enough detail for this section.']).map(concise),
+      visual_nodes: ['Identify', 'Connect', 'Apply', 'Check'],
+      visual_edges: [['Identify', 'Connect'], ['Connect', 'Apply'], ['Apply', 'Check']],
+      callouts: ['Follow the idea one step at a time.'],
+      example_code: '',
       narration: (pick(0, 3).join(' ') || 'The uploaded material has limited extractable detail, so this section summarizes only what could be read from the file.'),
     },
     {
       title: code.length ? 'Example from source' : 'How to reason about it',
+      visual_type: code.length ? 'code' : 'comparison',
       bullets: (code.length ? code : pick(4, 4).length ? pick(4, 4) : ['Identify the data structure or OOP concept.', 'Ask what operations are supported.', 'Compare costs and trade-offs.']).map(concise),
+      visual_nodes: code.length ? ['Example', 'Input', 'Operation', 'Result'] : ['Use when', 'Avoid when', 'Costs', 'Trade-offs'],
+      visual_edges: code.length ? [['Input', 'Operation'], ['Operation', 'Result']] : [['Use when', 'Trade-offs'], ['Avoid when', 'Costs']],
+      callouts: code.length ? ['Read the example by naming each role.'] : ['Compare behavior before memorizing syntax.'],
+      example_code: code.join('\n'),
       narration: (code.length
         ? `The source includes an implementation example. Read the code by identifying the object, method, or data operation first, then connect each line to the concept being explained.`
         : (pick(4, 3).join(' ') || 'Reason about this concept by naming the abstraction, listing its operations, and checking the time and space trade-offs.')),
     },
     {
       title: 'Summary',
+      visual_type: 'summary',
       bullets: (pick(8, 4).length ? pick(8, 4) : ['Name the concept precisely.', 'Explain the key operation.', 'State the complexity or design trade-off.', 'Avoid common misconceptions.']).map(concise),
+      visual_nodes: [concept || 'Concept', 'Definition', 'Operation', 'Complexity', 'Pitfalls'],
+      visual_edges: [[concept || 'Concept', 'Definition'], [concept || 'Concept', 'Operation'], [concept || 'Concept', 'Complexity'], [concept || 'Concept', 'Pitfalls']],
+      callouts: ['Review by drawing the relationships yourself.'],
+      example_code: '',
       narration: (pick(8, 3).join(' ') || `To review ${concept || 'this topic'}, state the definition, describe where it applies, and connect it to OOP or Data Structures vocabulary such as encapsulation, arrays, stacks, queues, trees, graphs, hashing, sorting, searching, and Big-O when relevant.`),
     },
   ];
@@ -227,18 +328,31 @@ function fallbackVideoScript(concept, chunks) {
 function normalizeScript(script, concept, chunks) {
   const fallback = fallbackVideoScript(concept, chunks);
   const src = script && Array.isArray(script.slides) && script.slides.length >= 2 ? script : fallback;
+  const typeByIndex = ['mindmap', 'flow', 'comparison', 'code', 'summary'];
   const slidesOut = src.slides.slice(0, 8).map((s, i) => ({
     title: String(s.title || (i === 0 ? concept : `Part ${i + 1}`)).slice(0, 90),
+    visual_type: ['mindmap', 'flow', 'comparison', 'code', 'summary'].includes(s.visual_type)
+      ? s.visual_type
+      : (i === src.slides.length - 1 ? 'summary' : typeByIndex[i % typeByIndex.length]),
     bullets: (Array.isArray(s.bullets) && s.bullets.length ? s.bullets : fallback.slides[Math.min(i, fallback.slides.length - 1)].bullets)
       .map(b => String(b || '').replace(/\s+/g, ' ').trim())
       .filter(Boolean)
       .slice(0, 6),
+    visual_nodes: cleanTextList(s.visual_nodes, [s.title || concept, ...(s.bullets || [])]).slice(0, 8),
+    visual_edges: (Array.isArray(s.visual_edges) ? s.visual_edges : [])
+      .filter(edge => Array.isArray(edge) && edge.length >= 2)
+      .map(edge => [String(edge[0] || '').trim(), String(edge[1] || '').trim()])
+      .filter(edge => edge[0] && edge[1])
+      .slice(0, 10),
+    callouts: cleanTextList(s.callouts, []).slice(0, 4),
+    example_code: String(s.example_code || '').slice(0, 1000),
     narration: String(s.narration || fallback.slides[Math.min(i, fallback.slides.length - 1)].narration || '').replace(/\s+/g, ' ').trim(),
   })).filter(s => s.title && s.bullets.length && s.narration);
   return { slides: slidesOut.length >= 2 ? slidesOut : fallback.slides };
 }
 
 async function generateVideo({ userId, materialId, concept }) {
+  await ai.assertModelsAvailable({ generation: true, embedding: true });
   const db = getDb();
   const ins = db.prepare(`INSERT INTO videos (material_id, user_id, status, created_at) VALUES (?,?,?,?)`);
   const r = ins.run(materialId, userId, 'queued', nowIso());
@@ -267,8 +381,8 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
     let script;
     try {
       const prompt = prompts.VIDEO_SCRIPT(concept, chunks);
-      const raw = await ai.generate(prompt, { format: 'json', temperature: 0.5 });
-      script = await parseJsonSafe(raw, ScriptSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0 }));
+      const raw = await ai.generate(prompt, { format: 'json', temperature: 0.45, num_ctx: 3072, num_predict: 1100 });
+      script = await parseJsonSafe(raw, ScriptSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0, num_predict: 700 }));
     } catch (e) {
       log.warn('video_script_fallback', e.message || e);
       script = fallbackVideoScript(concept, chunks);

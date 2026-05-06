@@ -29,7 +29,7 @@ app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));
 app.use(globalLimiter);
 
-let _healthCache = { at: 0, ollama: false };
+let _healthCache = { at: 0, ollama: false, models: null };
 app.get('/', (req, res) => {
   res.json({
     ok: true,
@@ -43,9 +43,10 @@ app.get('/api/health', async (req, res) => {
   const now = Date.now();
   if (now - _healthCache.at > 5000) {
     const ai = require('./services/ai.service');
-    _healthCache = { at: now, ollama: await ai.ping() };
+    const models = await ai.getModelStatus();
+    _healthCache = { at: now, ollama: models.reachable, models };
   }
-  res.json({ ok: true, ollama: _healthCache.ollama, env: env.NODE_ENV });
+  res.json({ ok: true, ollama: _healthCache.ollama, models: _healthCache.models, env: env.NODE_ENV });
 });
 
 app.use('/api/auth', require('./routes/auth.routes'));
@@ -66,4 +67,12 @@ app.use(errorHandler);
 app.listen(env.PORT, () => {
   log.info(`Noesis API listening on http://localhost:${env.PORT}`);
   log.info(`Ollama: ${env.OLLAMA_BASE_URL} (gen=${env.OLLAMA_GEN_MODEL}, embed=${env.OLLAMA_EMBED_MODEL})`);
+  const ai = require('./services/ai.service');
+  ai.getModelStatus().then((models) => {
+    if (models.ready) {
+      log.info('Ollama models ready', { generation: env.OLLAMA_GEN_MODEL, embedding: env.OLLAMA_EMBED_MODEL });
+    } else {
+      log.warn('Ollama models missing', models.missing || models.message || models.error);
+    }
+  }).catch(err => log.warn('Ollama model check skipped', err.message || err));
 });

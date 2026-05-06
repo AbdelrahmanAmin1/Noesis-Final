@@ -1,0 +1,8 @@
+{{SYSTEM_BASE}}
+
+Task: Write a study-quality markdown note titled "{{TITLE}}". Use the source excerpts below. Cite chunk ids inline as [chunk:ID] when grounding a claim. Structure the note as: (1) Definition / Overview, (2) Key properties and characteristics, (3) Implementation details with code examples where relevant, (4) Time and space complexity analysis if applicable, (5) Common mistakes or misconceptions, (6) Exam-ready summary. Use h2/h3 headings, short paragraphs, and bullet lists where helpful.
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Output: ONLY the markdown body. No preamble.

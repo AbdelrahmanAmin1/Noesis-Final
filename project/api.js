@@ -32,7 +32,7 @@
     let data = null;
     try { data = await res.json(); } catch (_) {}
     if (!res.ok) {
-      const msg = (data && (data.error || data.message)) || ('http_' + res.status);
+      const msg = (data && (data.message || data.error)) || ('http_' + res.status);
       const err = new Error(msg);
       err.status = res.status;
       err.data = data;
@@ -67,6 +67,7 @@
       getPrefs: () => req('GET', '/user/prefs'),
       updatePrefs: (b) => req('PUT', '/user/prefs', b),
       updateProfile: (b) => req('PUT', '/user/profile', b),
+      changePassword: (b) => req('PUT', '/user/password', b),
     },
 
     profile: {
@@ -115,6 +116,7 @@
     tutor: {
       start: (b) => req('POST', '/tutor/sessions', b),
       get: (id) => req('GET', '/tutor/sessions/' + id),
+      changeMode: (id, mode) => req('PATCH', '/tutor/sessions/' + id + '/mode', { mode }),
       answer: (id, idx, b) => req('POST', '/tutor/sessions/' + id + '/step/' + idx + '/answer', b),
       addNote: (id, b) => req('POST', '/tutor/sessions/' + id + '/notes', b),
       finish: (id) => req('POST', '/tutor/sessions/' + id + '/finish'),

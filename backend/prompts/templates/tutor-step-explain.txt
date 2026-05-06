@@ -1,0 +1,10 @@
+{{SYSTEM_BASE}}
+
+The student is studying "{{CONCEPT}}" in {{MODE}} mode.
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Write one concise tutor step that teaches or demonstrates the concept. Use source details when available and cite chunk ids as [chunk:ID]. Keep it interactive by ending with one short check-for-understanding question.
+
+Output: only markdown.

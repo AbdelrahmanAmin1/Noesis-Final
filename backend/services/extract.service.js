@@ -44,10 +44,10 @@ function extractPptxText(filePath) {
   for (const slideName of slideNames) {
     const n = slideNumber(slideName);
     const slideXml = byName.get(slideName).getData().toString('utf8');
-    const slideText = xmlTextRuns(slideXml);
+    const slideText = extractSlideXmlText(slideXml);
     const notesName = `ppt/notesSlides/notesSlide${n}.xml`;
     const notesEntry = byName.get(notesName);
-    const notesText = notesEntry ? xmlTextRuns(notesEntry.getData().toString('utf8')) : [];
+    const notesText = notesEntry ? extractParagraphText(notesEntry.getData().toString('utf8')) : [];
     const lines = [...slideText, ...notesText.map(t => `Speaker note: ${t}`)]
       .map(s => s.trim())
       .filter(Boolean);
@@ -67,15 +67,73 @@ function slideNumber(name) {
   return m ? parseInt(m[1], 10) : 0;
 }
 
-function xmlTextRuns(xml) {
+function extractSlideXmlText(xml) {
+  const titleShapes = [];
+  const titleTexts = [];
+  const shapeRe = /<p:sp\b[\s\S]*?<\/p:sp>/gi;
+  let m;
+  while ((m = shapeRe.exec(xml))) {
+    if (!/<p:ph\b[^>]*\btype=(["'])(?:title|ctrTitle)\1/i.test(m[0])) continue;
+    titleShapes.push(m[0]);
+    titleTexts.push(...extractParagraphText(m[0]).map(t => `Title: ${t}`));
+  }
+
+  let bodyXml = xml;
+  titleShapes.forEach(shape => { bodyXml = bodyXml.replace(shape, ''); });
+
+  const tableBlocks = [];
+  bodyXml = bodyXml.replace(/<a:tbl\b[\s\S]*?<\/a:tbl>/gi, (block) => {
+    tableBlocks.push(block);
+    return '';
+  });
+
+  const tableTexts = tableBlocks.flatMap(extractTableText);
+  const bodyTexts = extractParagraphText(bodyXml);
+  return collapseRepeats([...titleTexts, ...bodyTexts, ...tableTexts]);
+}
+
+function extractTableText(tableXml) {
+  const rows = [];
+  const rowRe = /<a:tr\b[\s\S]*?<\/a:tr>/gi;
+  let rowMatch;
+  while ((rowMatch = rowRe.exec(tableXml))) {
+    const cells = [];
+    const cellRe = /<a:tc\b[\s\S]*?<\/a:tc>/gi;
+    let cellMatch;
+    while ((cellMatch = cellRe.exec(rowMatch[0]))) {
+      const cellText = extractParagraphText(cellMatch[0]).join(' / ').trim();
+      cells.push(cellText);
+    }
+    const rowText = cells.map(c => c.trim()).filter(Boolean).join('\t');
+    if (rowText) rows.push(`Table row: ${rowText}`);
+  }
+  return collapseRepeats(rows);
+}
+
+function extractParagraphText(xml) {
+  const paragraphs = [];
+  const re = /<a:p\b[^>]*>([\s\S]*?)<\/a:p>/gi;
+  let m;
+  while ((m = re.exec(xml))) {
+    const text = textRunsInBlock(m[1]);
+    if (text) paragraphs.push(text);
+  }
+  return collapseRepeats(paragraphs);
+}
+
+function textRunsInBlock(xml) {
   const runs = [];
   const re = /<a:t[^>]*>([\s\S]*?)<\/a:t>/gi;
   let m;
   while ((m = re.exec(xml))) {
-    const text = decodeXml(m[1]).replace(/\s+/g, ' ').trim();
-    if (text) runs.push(text);
+    const text = decodeXml(m[1]).replace(/\s+/g, ' ');
+    if (text.trim()) runs.push(text);
   }
-  return collapseRepeats(runs);
+  return runs.join('').replace(/\s+/g, ' ').trim();
+}
+
+function xmlTextRuns(xml) {
+  return extractParagraphText(xml);
 }
 
 function collapseRepeats(items) {
@@ -126,4 +184,4 @@ function detectChapters(text) {
   return headings;
 }
 
-module.exports = { extractText, detectChapters, _internals: { extractPptxText, xmlTextRuns } };
+module.exports = { extractText, detectChapters, _internals: { extractPptxText, xmlTextRuns, extractSlideXmlText, extractTableText } };

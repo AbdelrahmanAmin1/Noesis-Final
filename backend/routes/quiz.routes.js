@@ -10,6 +10,7 @@ const ai = require('../services/ai.service');
 const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
 const { retrieve } = require('../services/rag.service');
+const { recordConceptOutcome } = require('../services/mastery.service');
 const log = require('../utils/logger');
 
 const router = express.Router();
@@ -179,18 +180,16 @@ router.post('/attempts/:id/answer', requireAuth, (req, res, next) => {
     const questionId = parseInt(question_id, 10);
     if (!questionId || Number.isNaN(selected) || selected < 0 || selected > 3) throw new HttpError(400, 'invalid_answer');
     const db = getDb();
-    const at = db.prepare('SELECT id, quiz_id FROM quiz_attempts WHERE id=? AND user_id=?').get(attemptId, req.user.id);
+    const at = db.prepare('SELECT id, quiz_id, finished_at FROM quiz_attempts WHERE id=? AND user_id=?').get(attemptId, req.user.id);
     if (!at) throw new HttpError(404, 'attempt_not_found');
+    if (at.finished_at) throw new HttpError(409, 'attempt_already_finished');
     const qq = db.prepare('SELECT correct_idx, explanation FROM quiz_questions WHERE id=? AND quiz_id=?').get(questionId, at.quiz_id);
     if (!qq) throw new HttpError(404, 'question_not_found');
     const isCorrect = selected === qq.correct_idx;
     const existing = db.prepare('SELECT id FROM quiz_answers WHERE attempt_id=? AND question_id=? ORDER BY id DESC LIMIT 1').get(attemptId, questionId);
-    if (existing) {
-      db.prepare('UPDATE quiz_answers SET selected_idx=?, is_correct=? WHERE id=?').run(selected, isCorrect ? 1 : 0, existing.id);
-    } else {
-      db.prepare('INSERT INTO quiz_answers (attempt_id, question_id, selected_idx, is_correct) VALUES (?,?,?,?)')
-        .run(attemptId, questionId, selected, isCorrect ? 1 : 0);
-    }
+    if (existing) throw new HttpError(409, 'answer_already_submitted');
+    db.prepare('INSERT INTO quiz_answers (attempt_id, question_id, selected_idx, is_correct) VALUES (?,?,?,?)')
+      .run(attemptId, questionId, selected, isCorrect ? 1 : 0);
     res.json({ is_correct: isCorrect, correct_idx: qq.correct_idx, explanation: qq.explanation });
   } catch (e) { next(e); }
 });
@@ -214,6 +213,13 @@ router.post('/attempts/:id/finish', requireAuth, (req, res, next) => {
                               FROM quiz_answers qa JOIN quiz_questions qq ON qq.id=qa.question_id
                               WHERE qa.attempt_id=? AND qa.is_correct=0
                                 AND qa.id IN (SELECT MAX(id) FROM quiz_answers WHERE attempt_id=? GROUP BY question_id)`).all(attemptId, attemptId);
+    const outcomes = db.prepare(`SELECT qq.concept, qa.is_correct
+                                 FROM quiz_answers qa JOIN quiz_questions qq ON qq.id=qa.question_id
+                                 WHERE qa.attempt_id=?
+                                   AND qa.id IN (SELECT MAX(id) FROM quiz_answers WHERE attempt_id=? GROUP BY question_id)`).all(attemptId, attemptId);
+    for (const o of outcomes) {
+      if (o.concept) recordConceptOutcome(req.user.id, o.concept, !!o.is_correct, { correctDelta: 8, incorrectDelta: -6 });
+    }
     res.json({ score, total: stats.total, correct: stats.correct, wrong: wrong.map(w => ({ ...w, options: JSON.parse(w.options_json) })) });
   } catch (e) { next(e); }
 });

@@ -4,11 +4,12 @@ const Dashboard = ({ onNav }) => {
   const [hour] = React.useState(new Date().getHours());
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const [data, setData] = React.useState(null);
+  const [loadError, setLoadError] = React.useState('');
   React.useEffect(() => {
     let alive = true;
     window.NoesisAPI.dashboard.get()
-      .then(d => { if (alive) setData(d); })
-      .catch(() => {});
+      .then(d => { if (alive) { setData(d); setLoadError(''); } })
+      .catch(() => { if (alive) setLoadError('Could not load dashboard. Check server connection.'); });
     return () => { alive = false; };
   }, []);
   const userName = data && data.greeting ? data.greeting.name : 'there';
@@ -38,6 +39,13 @@ const Dashboard = ({ onNav }) => {
       />
 
       <div style={{ ...ds.page, position: 'relative', zIndex: 1 }}>
+        {loadError && (
+          <div style={ds.errorBanner}>
+            <Icon.X size={14}/>
+            <span>{loadError}</span>
+          </div>
+        )}
+
         {/* Hero greeting */}
         <section style={ds.hero} className="reveal" >
           <div>
@@ -298,6 +306,13 @@ const ConceptMap = ({ concepts: input }) => {
 
 const ds = {
   page: { padding: '28px', maxWidth: 1400, margin: '0 auto' },
+  errorBanner: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    padding: '10px 12px', marginBottom: 14,
+    borderRadius: 'var(--r-sm)', border: '1px solid var(--err)',
+    color: 'var(--err)', background: 'color-mix(in oklab, var(--err) 10%, transparent)',
+    fontSize: 12.5,
+  },
   hero: {
     display: 'grid', gridTemplateColumns: '1fr auto',
     gap: 40, alignItems: 'center',

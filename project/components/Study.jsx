@@ -324,6 +324,7 @@ const Quiz = ({ onNav }) => {
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
   const [action, setAction] = React.useState('');
+  const [answeredIds, setAnsweredIds] = React.useState(new Set());
 
   const loadLibrary = React.useCallback(async () => {
     setBusy(true); setAction('load');
@@ -350,6 +351,7 @@ const Quiz = ({ onNav }) => {
       setQuestions(d.questions || []);
       setAttemptId(a.attempt_id);
       setQi(0); setSelected(null); setSubmitted(false); setFeedback(null); setFinalScore(null);
+      setAnsweredIds(new Set());
     } catch (e) {
       setError(e.message || 'Failed to start quiz');
     } finally {
@@ -367,6 +369,7 @@ const Quiz = ({ onNav }) => {
     sessionStorage.removeItem('noesis.quizId');
     setQuiz(null); setQuestions([]); setAttemptId(null); setFinalScore(null);
     setSelected(null); setSubmitted(false); setFeedback(null); setError('');
+    setAnsweredIds(new Set());
     await loadLibrary();
   };
 
@@ -380,6 +383,7 @@ const Quiz = ({ onNav }) => {
       const res = await window.NoesisAPI.quizzes.answer(attemptId, { question_id: cur.id, selected_idx: selected });
       setFeedback(res);
       setSubmitted(true);
+      setAnsweredIds(prev => new Set([...prev, cur.id]));
     } catch (e) {
       setError(e.message || 'Answer failed');
     } finally {
@@ -389,12 +393,16 @@ const Quiz = ({ onNav }) => {
 
   const finishQuiz = async () => {
     if (!attemptId || busy) return;
+    const pendingCurrent = cur && selected != null && !submitted ? 1 : 0;
+    const unanswered = Math.max(0, questions.length - answeredIds.size - pendingCurrent);
+    if (unanswered > 0 && !window.confirm(`${unanswered} question${unanswered === 1 ? '' : 's'} unanswered. Finish anyway?`)) return;
     setBusy(true); setAction('finish'); setError('');
     try {
       if (cur && selected != null && !submitted) {
         const res = await window.NoesisAPI.quizzes.answer(attemptId, { question_id: cur.id, selected_idx: selected });
         setFeedback(res);
         setSubmitted(true);
+        setAnsweredIds(prev => new Set([...prev, cur.id]));
       }
       const r = await window.NoesisAPI.quizzes.finish(attemptId);
       setFinalScore(r);

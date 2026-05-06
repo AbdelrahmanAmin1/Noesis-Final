@@ -50,6 +50,22 @@ async function signin({ email, password }) {
   return { user, token: signToken(user) };
 }
 
+async function changePassword(userId, payload) {
+  const current = payload.current_password ?? payload.currentPassword;
+  const next = payload.new_password ?? payload.newPassword;
+  if (!current || !next) throw new HttpError(400, 'missing_fields');
+  if (String(next).length < 8) throw new HttpError(400, 'password_too_short');
+  if (String(next).length > MAX_PASSWORD_LENGTH) throw new HttpError(400, 'password_too_long');
+  if (String(current).length > MAX_PASSWORD_LENGTH) throw new HttpError(400, 'password_too_long');
+  const db = getDb();
+  const u = db.prepare('SELECT id, password_hash FROM users WHERE id=?').get(userId);
+  const ok = await bcrypt.compare(String(current), u ? u.password_hash : TIMING_SAFE_BCRYPT_HASH);
+  if (!u || !ok) throw new HttpError(401, 'invalid_current_password');
+  const hash = await bcrypt.hash(String(next), 12);
+  db.prepare('UPDATE users SET password_hash=? WHERE id=?').run(hash, userId);
+  return { ok: true };
+}
+
 function me(userId) {
   const db = getDb();
   const u = db.prepare('SELECT id, email, name, major FROM users WHERE id=?').get(userId);
@@ -133,4 +149,4 @@ function exportData(userId) {
   };
 }
 
-module.exports = { signup, signin, me, saveOnboarding, getPrefs, updatePrefs, updateProfile, deleteAccount, exportData, SEED_CONCEPTS };
+module.exports = { signup, signin, changePassword, me, saveOnboarding, getPrefs, updatePrefs, updateProfile, deleteAccount, exportData, SEED_CONCEPTS };
