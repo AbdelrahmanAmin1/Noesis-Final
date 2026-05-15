@@ -122,9 +122,38 @@ async function run({ force = false } = {}) {
   return { processed, skipped };
 }
 
+function seedMisconceptions(db) {
+  const filePath = path.join(__dirname, '..', 'seed', 'misconceptions.json');
+  if (!fs.existsSync(filePath)) return 0;
+  const existing = db.prepare("SELECT COUNT(*) AS c FROM chunks WHERE material_id IN (SELECT id FROM materials WHERE user_id=? AND title='Misconceptions')").get(SYSTEM_USER_ID);
+  if (existing && existing.c > 0) return 0;
+  const items = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  const text = items.map(m =>
+    `## ${m.topic}\n**Misconception:** ${m.misconception}\n**Correction:** ${m.correction}\n**Related:** ${(m.related_concepts || []).join(', ')}`
+  ).join('\n\n');
+  const r = db.prepare(`INSERT INTO materials
+    (user_id, course_id, title, type, file_path, mime, size_bytes, status, progress, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
+    SYSTEM_USER_ID, null, 'Misconceptions', 'note', filePath, 'application/json', Buffer.byteLength(text), 'ready', 100, nowIso()
+  );
+  const materialId = r.lastInsertRowid;
+  const insChunk = db.prepare('INSERT INTO chunks (material_id, chapter_id, idx, text, token_count) VALUES (?,?,?,?,?)');
+  const inserted = [];
+  db.transaction(() => {
+    items.forEach((m, i) => {
+      const chunkText = `Topic: ${m.topic}. Misconception: ${m.misconception}. Correction: ${m.correction}. Related: ${(m.related_concepts || []).join(', ')}.`;
+      const cr = insChunk.run(materialId, null, i, chunkText, Math.ceil(chunkText.split(/\s+/).length * 1.3));
+      inserted.push({ id: cr.lastInsertRowid, text: chunkText });
+    });
+  })();
+  log.info(`seed: loaded ${inserted.length} misconceptions`);
+  return inserted.length;
+}
+
 async function runIfNeeded() {
   const db = getDb();
   ensureSystemUser(db);
+  seedMisconceptions(db);
   const row = db.prepare('SELECT COUNT(*) AS c FROM materials WHERE user_id=?').get(SYSTEM_USER_ID);
   if (row && row.c > 0) return { processed: 0, skipped: row.c };
   return run();

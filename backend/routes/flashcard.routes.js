@@ -143,7 +143,7 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     const m = db.prepare('SELECT id, title FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
     await ai.assertModelsAvailable({ generation: true, embedding: true });
-    const chunks = await retrieve(material_id, m.title, 8);
+    const chunks = await retrieve(material_id, m.title, { feature: 'flashcards' });
     const raw = await ai.generate(prompts.FLASHCARDS(chunks, n), {
       format: 'json',
       temperature: 0.35,

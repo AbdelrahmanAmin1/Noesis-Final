@@ -1,7 +1,7 @@
 'use strict';
 
-const TARGET_TOKENS = 500;
-const OVERLAP_TOKENS = 80;
+const TARGET_TOKENS = 600;
+const OVERLAP_TOKENS = 100;
 const TOK_CHARS = 4; // ~4 chars per token
 
 function estimateTokens(s) {
@@ -58,7 +58,7 @@ function chunkByChapter(text, chapters) {
   for (const ch of chapters) {
     const slice = text.slice(ch.char_start, ch.char_end);
     const cs = chunkText(slice);
-    for (const c of cs) all.push({ ...c, chapter_idx: ch.idx });
+    for (const c of cs) all.push({ ...c, chapter_idx: ch.idx, chapter_title: ch.title || '' });
   }
   return all.map((c, i) => ({ ...c, idx: i }));
 }

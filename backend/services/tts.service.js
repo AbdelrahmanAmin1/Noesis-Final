@@ -4,10 +4,75 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const env = require('../config/env');
+const log = require('../utils/logger');
+
+let _detectedEngine = null;
+
+function detectTTS() {
+  if (_detectedEngine) return _detectedEngine;
+
+  const configured = (env.TTS_ENGINE || 'piper').toLowerCase();
+  const piperBinExists = checkBinaryExists(env.TTS_BIN || 'piper');
+  const piperVoiceExists = env.TTS_VOICE_PATH && fs.existsSync(path.resolve(env.ROOT_DIR, env.TTS_VOICE_PATH));
+  const piperReady = piperBinExists && piperVoiceExists;
+
+  let activeEngine = configured;
+  let recommendation = null;
+
+  if (configured === 'piper' && !piperReady) {
+    if (!piperBinExists && !piperVoiceExists) {
+      recommendation = 'Download Piper from github.com/rhasspy/piper/releases and a voice from huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/amy/medium';
+    } else if (!piperVoiceExists) {
+      recommendation = 'Set TTS_VOICE_PATH in .env to a downloaded .onnx voice model (e.g. ./tts-models/en_US-amy-medium.onnx)';
+    } else {
+      recommendation = 'Piper binary not found. Set TTS_BIN to the path of your piper executable.';
+    }
+    if (process.platform === 'win32') activeEngine = 'sapi';
+    else activeEngine = 'espeak';
+  }
+
+  _detectedEngine = {
+    configured_engine: configured,
+    active_engine: activeEngine,
+    piper_binary_found: piperBinExists,
+    piper_voice_found: !!piperVoiceExists,
+    voice_path: env.TTS_VOICE_PATH || '',
+    recommendation,
+  };
+
+  if (recommendation) {
+    log.warn(`TTS: ${configured} configured but not ready — falling back to ${activeEngine}. ${recommendation}`);
+  } else {
+    log.info(`TTS: ${activeEngine} ready${activeEngine === 'piper' ? ` (voice: ${env.TTS_VOICE_PATH})` : ''}`);
+  }
+
+  return _detectedEngine;
+}
+
+function checkBinaryExists(name) {
+  try {
+    const { execSync } = require('child_process');
+    const cmd = process.platform === 'win32' ? `where "${name}" 2>nul` : `which "${name}" 2>/dev/null`;
+    execSync(cmd, { stdio: 'pipe' });
+    return true;
+  } catch (_) {
+    if (name !== 'piper' && fs.existsSync(path.resolve(env.ROOT_DIR, name))) return true;
+    return false;
+  }
+}
+
+function splitSentences(text) {
+  return text
+    .replace(/([.!?])\s+/g, '$1\n')
+    .split('\n')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+}
 
 function synthPiper(text, outPath) {
+  const voicePath = path.resolve(env.ROOT_DIR, env.TTS_VOICE_PATH);
   return new Promise((resolve, reject) => {
-    const args = ['--model', env.TTS_VOICE_PATH, '--output_file', outPath];
+    const args = ['--model', voicePath, '--output_file', outPath];
     const p = spawn(env.TTS_BIN || 'piper', args);
     p.stdin.write(text);
     p.stdin.end();
@@ -23,7 +88,6 @@ function synthPiper(text, outPath) {
 
 function synthEspeak(text, outPath) {
   return new Promise((resolve, reject) => {
-    // espeak-ng -w out.wav "text"
     const p = spawn('espeak-ng', ['-w', outPath, text]);
     p.on('error', reject);
     p.on('close', code => {
@@ -34,7 +98,6 @@ function synthEspeak(text, outPath) {
 }
 
 function synthSay(text, outPath) {
-  // macOS 'say' produces aiff; ffmpeg can transcode. Here we just write an AIFF and let ffmpeg pick it up.
   return new Promise((resolve, reject) => {
     const p = spawn('say', ['-o', outPath, text]);
     p.on('error', reject);
@@ -49,16 +112,22 @@ function synthSapi(text, outPath) {
   return new Promise((resolve, reject) => {
     const textPath = outPath.replace(/\.[^.]+$/i, '') + '.txt';
     const scriptPath = outPath.replace(/\.[^.]+$/i, '') + '.ps1';
-    fs.writeFileSync(textPath, text, 'utf8');
+
+    const sentences = splitSentences(text);
+    const ssml = sentences.map(s =>
+      `<s>${s}</s><break time="350ms"/>`
+    ).join('');
+    const ssmlWrapped = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><prosody rate="-5%">${ssml}</prosody></speak>`;
+
+    fs.writeFileSync(textPath, ssmlWrapped, 'utf8');
     const script = [
       "$ErrorActionPreference='Stop'",
       'Add-Type -AssemblyName System.Speech',
-      '$text = Get-Content -LiteralPath $args[0] -Raw',
+      '$ssml = Get-Content -LiteralPath $args[0] -Raw',
       '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer',
-      '$s.Rate = 0',
       '$s.Volume = 100',
       '$s.SetOutputToWaveFile($args[1])',
-      '$s.Speak($text)',
+      '$s.SpeakSsml($ssml)',
       '$s.Dispose()',
     ].join('; ');
     fs.writeFileSync(scriptPath, script, 'utf8');
@@ -107,7 +176,6 @@ function synthSilence(text, outPath) {
   return Promise.resolve(outPath);
 }
 
-// OS argv length limit varies (~32KB on Linux, ~8KB on Windows). Cap narration well below.
 const MAX_NARRATION_CHARS = 4000;
 
 function clipNarration(text) {
@@ -119,29 +187,33 @@ function clipNarration(text) {
 async function synthesize(text, outPath) {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const safe = clipNarration(text);
-  const engine = (env.TTS_ENGINE || 'piper').toLowerCase();
+  const status = detectTTS();
+  const engine = status.active_engine;
   let lastErr = null;
-  if (engine === 'piper' && env.TTS_VOICE_PATH && fs.existsSync(env.TTS_VOICE_PATH)) {
+
+  if (engine === 'piper' && status.piper_voice_found) {
     try { return await synthPiper(safe, outPath); } catch (e) { lastErr = e; }
   }
   if (engine === 'espeak') {
-    return synthEspeak(safe, outPath);
+    try { return await synthEspeak(safe, outPath); } catch (e) { lastErr = e; }
   }
   if (engine === 'say') {
-    return synthSay(safe, outPath);
+    try { return await synthSay(safe, outPath); } catch (e) { lastErr = e; }
   }
-  if (engine === 'sapi') {
-    return synthSapi(safe, outPath);
-  }
-  if (process.platform === 'win32') {
+  if (engine === 'sapi' || process.platform === 'win32') {
     try { return await synthSapi(safe, outPath); } catch (e) { lastErr = e; }
   }
-  try { return await synthEspeak(safe, outPath); } catch (e) { lastErr = e; }
-  try { return await synthSay(safe, outPath); } catch (e) { lastErr = e; }
+  // Last resort fallback chain
+  if (!lastErr || engine !== 'espeak') {
+    try { return await synthEspeak(safe, outPath); } catch (e) { lastErr = e; }
+  }
+  if (!lastErr || engine !== 'say') {
+    try { return await synthSay(safe, outPath); } catch (e) { lastErr = e; }
+  }
   if (engine === 'silence' || process.env.NOESIS_ALLOW_SILENT_TTS === 'true') {
     return synthSilence(safe, outPath);
   }
-  throw new Error(`tts_unavailable: install Piper/espeak, set TTS_ENGINE=sapi on Windows, or provide TTS_BIN/TTS_VOICE_PATH. Last error: ${lastErr ? lastErr.message : 'none'}`);
+  throw new Error(`tts_unavailable: ${status.active_engine} failed. ${status.recommendation || 'Install Piper or set TTS_ENGINE=sapi on Windows.'} Last error: ${lastErr ? lastErr.message : 'none'}`);
 }
 
-module.exports = { synthesize, _internals: { synthSapi, synthSilence } };
+module.exports = { synthesize, detectTTS, _internals: { synthSapi, synthSilence, splitSentences } };

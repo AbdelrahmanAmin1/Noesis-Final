@@ -19,10 +19,15 @@ const env = {
   DB_PATH: path.resolve(ROOT, process.env.DB_PATH || 'data/noesis.sqlite'),
   MAX_UPLOAD_MB: parseInt(process.env.MAX_UPLOAD_MB || '25', 10),
 
+  AI_PROVIDER: process.env.AI_PROVIDER || 'ollama',
+
   OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
   OLLAMA_GEN_MODEL: process.env.OLLAMA_GEN_MODEL || 'llama3.2:3b',
   OLLAMA_EMBED_MODEL: process.env.OLLAMA_EMBED_MODEL || 'nomic-embed-text',
   OLLAMA_TIMEOUT_MS: parseInt(process.env.OLLAMA_TIMEOUT_MS || '180000', 10),
+
+  GROQ_API_KEY: process.env.GROQ_API_KEY || '',
+  GROQ_MODEL: process.env.GROQ_MODEL || 'llama-3.3-70b-versatile',
 
   TTS_ENGINE: process.env.TTS_ENGINE || 'piper',
   TTS_BIN: process.env.TTS_BIN || 'piper',

@@ -29,7 +29,7 @@ app.use(cookieParser());
 app.use(express.json({ limit: '2mb' }));
 app.use(globalLimiter);
 
-let _healthCache = { at: 0, ollama: false, models: null };
+let _healthCache = { at: 0, data: null };
 app.get('/', (req, res) => {
   res.json({
     ok: true,
@@ -43,10 +43,14 @@ app.get('/api/health', async (req, res) => {
   const now = Date.now();
   if (now - _healthCache.at > 5000) {
     const ai = require('./services/ai.service');
-    const models = await ai.getModelStatus();
-    _healthCache = { at: now, ollama: models.reachable, models };
+    const tts = require('./services/tts.service');
+    const aiHealth = await ai.healthCheck();
+    const ttsStatus = typeof tts.detectTTS === 'function' ? tts.detectTTS() : { engine: env.TTS_ENGINE };
+    _healthCache = { at: now, data: { ai: aiHealth, tts: ttsStatus } };
   }
-  res.json({ ok: true, ollama: _healthCache.ollama, models: _healthCache.models, env: env.NODE_ENV });
+  const hc = _healthCache.data || {};
+  const aiOk = hc.ai && hc.ai.generation && hc.ai.generation.ok;
+  res.json({ ok: aiOk, provider: env.AI_PROVIDER, ai: hc.ai, tts: hc.tts, env: env.NODE_ENV });
 });
 
 app.use('/api/auth', require('./routes/auth.routes'));
@@ -66,13 +70,19 @@ app.use(errorHandler);
 
 app.listen(env.PORT, () => {
   log.info(`Noesis API listening on http://localhost:${env.PORT}`);
-  log.info(`Ollama: ${env.OLLAMA_BASE_URL} (gen=${env.OLLAMA_GEN_MODEL}, embed=${env.OLLAMA_EMBED_MODEL})`);
+  log.info(`AI provider: ${env.AI_PROVIDER}`);
+  if (env.AI_PROVIDER === 'groq') {
+    log.info(`Groq model: ${env.GROQ_MODEL} | Embeddings: Ollama ${env.OLLAMA_EMBED_MODEL} (local)`);
+  } else {
+    log.info(`Ollama: ${env.OLLAMA_BASE_URL} (gen=${env.OLLAMA_GEN_MODEL}, embed=${env.OLLAMA_EMBED_MODEL})`);
+  }
   const ai = require('./services/ai.service');
-  ai.getModelStatus().then((models) => {
-    if (models.ready) {
-      log.info('Ollama models ready', { generation: env.OLLAMA_GEN_MODEL, embedding: env.OLLAMA_EMBED_MODEL });
+  ai.healthCheck().then((hc) => {
+    const gen = hc.generation || {};
+    if (gen.ok) {
+      log.info(`AI ready — provider=${hc.provider}, model=${gen.model}`);
     } else {
-      log.warn('Ollama models missing', models.missing || models.message || models.error);
+      log.warn(`AI not ready — provider=${hc.provider}`, gen.details || gen);
     }
-  }).catch(err => log.warn('Ollama model check skipped', err.message || err));
+  }).catch(err => log.warn('AI health check skipped', err.message || err));
 });

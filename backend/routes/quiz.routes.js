@@ -94,7 +94,7 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     const db = getDb();
     const m = db.prepare('SELECT id, title FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
-    const chunks = await retrieve(material_id, m.title, 8);
+    const chunks = await retrieve(material_id, m.title, { feature: 'quiz' });
     let data;
     try {
       const raw = await ai.generate(prompts.QUIZ_MCQ(chunks, n, diff), { format: 'json', temperature: 0.4 });

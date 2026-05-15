@@ -22,17 +22,19 @@ const {
   FFPROBE_PACKAGE,
 } = require('../utils/mediaBinaries');
 
+const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart'];
+
 const ScriptSchema = z.object({
   slides: z.array(z.object({
     title: z.string().min(1),
-    visual_type: z.enum(['mindmap', 'flow', 'comparison', 'code', 'summary']).optional().default('mindmap'),
+    visual_type: z.enum(VISUAL_TYPES).optional().default('mindmap'),
     bullets: z.array(z.string()).min(1).max(8),
     visual_nodes: z.array(z.string()).optional().default([]),
     visual_edges: z.array(z.tuple([z.string(), z.string()])).optional().default([]),
     callouts: z.array(z.string()).optional().default([]),
     example_code: z.string().optional().default(''),
     narration: z.string().min(1),
-  })).min(2).max(8),
+  })).min(2).max(12),
 });
 
 const _queue = [];
@@ -167,7 +169,7 @@ function drawLabeledBox(filters, text, x, y, w, h, fill, stroke = '0x64748b@0.75
 }
 
 async function renderSlideFrameWithFfmpeg(slide, outPath, idx, total) {
-  const visualType = ['mindmap', 'flow', 'comparison', 'code', 'summary'].includes(slide.visual_type)
+  const visualType = VISUAL_TYPES.includes(slide.visual_type)
     ? slide.visual_type
     : (idx === total - 1 ? 'summary' : 'mindmap');
   const bullets = cleanTextList(slide.bullets, ['Source-grounded concept', 'Tutor explanation']).slice(0, 5);
@@ -227,6 +229,96 @@ async function renderSlideFrameWithFfmpeg(slide, outPath, idx, total) {
     filters.push('drawbox=x=560:y=210:w=418:h=318:color=0x38bdf8@1:t=2');
     codeLines.forEach((line, i) => filters.push(drawText(compactText(line, 42), 584, 246 + i * 34, 22, '0xe0f2fe')));
     callouts.slice(0, 3).forEach((callout, i) => drawLabeledBox(filters, callout, 1004, 218 + i * 104, 174, 74, '0xfef9c3@1'));
+  } else if (visualType === 'class_diagram') {
+    const classes = nodes.slice(0, 4);
+    const boxW = 200, boxH = 80;
+    classes.forEach((cls, i) => {
+      const x = rightX + (i % 2) * 240 + 60;
+      const yy = rightY + 50 + Math.floor(i / 2) * 150;
+      drawLabeledBox(filters, cls, x, yy, boxW, boxH, i === 0 ? '0xdbeafe@1' : '0xdcfce7@1', '0x2563eb@1');
+      if (i > 0) {
+        const parentX = rightX + 60 + boxW / 2;
+        const parentY = rightY + 50 + boxH;
+        filters.push(`drawbox=x=${parentX}:y=${parentY}:w=2:h=${yy - parentY}:color=0x2563eb@0.6:t=fill`);
+      }
+    });
+  } else if (visualType === 'tree') {
+    const treeNodes = nodes.slice(0, 7);
+    const levels = [[0], [1, 2], [3, 4, 5, 6]];
+    levels.forEach((idxList, level) => {
+      const levelW = 640;
+      const spacing = levelW / (idxList.length + 1);
+      idxList.forEach((ni, pos) => {
+        if (ni >= treeNodes.length) return;
+        const x = rightX + spacing * (pos + 1) - 45;
+        const yy = rightY + 50 + level * 120;
+        drawLabeledBox(filters, treeNodes[ni], x, yy, 90, 50, '0xdbeafe@1', '0x2563eb@1');
+        if (level > 0) {
+          const parentIdx = levels[level - 1][Math.floor(pos / 2)];
+          if (parentIdx < treeNodes.length) {
+            const parentSpacing = levelW / (levels[level - 1].length + 1);
+            const px = rightX + parentSpacing * (Math.floor(pos / 2) + 1);
+            filters.push(`drawbox=x=${px}:y=${rightY + 50 + (level - 1) * 120 + 50}:w=2:h=70:color=0x64748b@0.5:t=fill`);
+          }
+        }
+      });
+    });
+  } else if (visualType === 'stack_queue') {
+    const elements = nodes.slice(0, 6);
+    const isStack = (slide.title || '').toLowerCase().includes('stack');
+    if (isStack) {
+      elements.forEach((el, i) => {
+        const yy = rightY + 360 - i * 56;
+        drawLabeledBox(filters, el, rightX + 200, yy, 240, 48, ['0xdbeafe@1', '0xdcfce7@1', '0xfef3c7@1'][i % 3]);
+      });
+      filters.push(drawText('TOP ->', rightX + 120, rightY + 360 - (elements.length - 1) * 56 + 12, 20, '0xef4444'));
+      filters.push(drawText('push() / pop()', rightX + 200, rightY + 400, 18, '0x64748b'));
+    } else {
+      elements.forEach((el, i) => {
+        const x = rightX + 40 + i * 105;
+        drawLabeledBox(filters, el, x, rightY + 180, 96, 60, ['0xdbeafe@1', '0xdcfce7@1', '0xfef3c7@1'][i % 3]);
+        if (i < elements.length - 1) filters.push(drawText('->', x + 100, rightY + 204, 22, '0x334155'));
+      });
+      filters.push(drawText('FRONT', rightX + 40, rightY + 252, 16, '0xef4444'));
+      filters.push(drawText('REAR', rightX + 40 + (elements.length - 1) * 105, rightY + 252, 16, '0x2563eb'));
+      filters.push(drawText('enqueue() / dequeue()', rightX + 180, rightY + 290, 18, '0x64748b'));
+    }
+  } else if (visualType === 'linkedlist') {
+    const listNodes = nodes.slice(0, 6);
+    listNodes.forEach((el, i) => {
+      const x = rightX + 20 + i * 115;
+      drawLabeledBox(filters, el, x, rightY + 200, 100, 56, '0xdbeafe@1', '0x2563eb@1');
+      if (i < listNodes.length - 1) {
+        filters.push(drawText('->', x + 106, rightY + 220, 24, '0x334155'));
+      }
+    });
+    filters.push(drawText('HEAD', rightX + 20, rightY + 268, 16, '0x16a34a'));
+    if (listNodes.length > 1) filters.push(drawText('NULL', rightX + 20 + listNodes.length * 115 - 10, rightY + 220, 16, '0xef4444'));
+  } else if (visualType === 'bigo_chart') {
+    filters.push('drawbox=x=560:y=180:w=600:h=380:color=0xffffff@1:t=fill');
+    filters.push('drawbox=x=600:y=200:w=520:h=320:color=0xf1f5f9@1:t=fill');
+    filters.push(drawText('n ->', 850, 530, 18, '0x64748b'));
+    filters.push(drawText('time', 580, 190, 18, '0x64748b'));
+    const curves = [
+      { label: 'O(1)', color: '0x16a34a', points: [[620, 480], [900, 480], [1100, 480]] },
+      { label: 'O(log n)', color: '0x2563eb', points: [[620, 480], [800, 420], [1100, 380]] },
+      { label: 'O(n)', color: '0xeab308', points: [[620, 480], [800, 380], [1100, 260]] },
+      { label: 'O(n^2)', color: '0xef4444', points: [[620, 480], [760, 420], [1100, 210]] },
+    ];
+    curves.forEach((c, ci) => {
+      filters.push(drawText(c.label, 1108, c.points[2][1] - 8, 17, c.color));
+      for (let j = 0; j < c.points.length - 1; j++) {
+        const [x1, y1] = c.points[j];
+        const [x2, y2] = c.points[j + 1];
+        const dx = x2 - x1, dy = y2 - y1;
+        const steps = Math.max(1, Math.floor(dx / 8));
+        for (let s = 0; s < steps; s++) {
+          const px = x1 + Math.floor(dx * s / steps);
+          const py = y1 + Math.floor(dy * s / steps);
+          filters.push(`drawbox=x=${px}:y=${py}:w=3:h=3:color=${c.color}@1:t=fill`);
+        }
+      }
+    });
   } else {
     const center = nodes[0] || slide.title || 'Core concept';
     drawLabeledBox(filters, center, rightX + 236, 284, 224, 98, '0xdbeafe@1', '0x2563eb@1');
@@ -267,59 +359,101 @@ function fallbackVideoScript(concept, chunks) {
     .split(/(?<=[.!?])\s+/)
     .map(s => s.replace(/\s+/g, ' ').trim())
     .filter(s => s.length >= 25 && s.length <= 220)
-    .slice(0, 12);
+    .slice(0, 20);
   const code = (source.match(/```[\s\S]*?```/) || [''])[0]
     .replace(/```[a-z]*\n?/i, '')
     .replace(/```$/, '')
     .split('\n')
     .map(s => s.trim())
     .filter(Boolean)
-    .slice(0, 4);
+    .slice(0, 6);
 
   const pick = (start, count) => sentences.slice(start, start + count);
   const concise = (s) => s.replace(/\[[^\]]+\]/g, '').replace(/\s+/g, ' ').slice(0, 92);
+  const c = concept || 'Selected concept';
+
   const base = [
     {
-      title: concept || 'Tutor explanation',
+      title: c,
       visual_type: 'mindmap',
-      bullets: ['Source-grounded explanation', 'Key definitions and relationships', 'Practice-ready summary'],
-      visual_nodes: [concept || 'Selected concept', 'Definitions', 'Relationships', 'Examples', 'Summary'],
-      visual_edges: [[concept || 'Selected concept', 'Definitions'], [concept || 'Selected concept', 'Relationships'], [concept || 'Selected concept', 'Examples']],
-      callouts: ['Start with the source vocabulary.', 'Connect each term to an operation or example.'],
+      bullets: ['Understand the definition and purpose', 'See how it connects to related concepts', 'Practice with examples and analysis'],
+      visual_nodes: [c, 'Definition', 'Properties', 'Operations', 'Examples'],
+      visual_edges: [[c, 'Definition'], [c, 'Properties'], [c, 'Operations'], [c, 'Examples']],
+      callouts: ['Learning objectives for this video.'],
       example_code: '',
-      narration: `This tutor video explains ${concept || 'the selected concept'} using the uploaded material. We will focus on the source content, pull out the main definitions, connect the ideas, and finish with an exam-ready summary.`,
+      narration: `Welcome to this tutor video on ${c}. We will start with the definition, build intuition with an analogy, walk through the core idea step by step, look at code, and finish with a summary.`,
     },
     {
-      title: 'Core idea',
+      title: `What is ${c}?`,
+      visual_type: 'mindmap',
+      bullets: (pick(0, 3).length ? pick(0, 3) : [`${c} is a fundamental concept in computer science.`, 'It defines how data is organized or how objects interact.', 'Understanding it is essential for writing efficient code.']).map(concise),
+      visual_nodes: [c, 'Formal definition', 'Why it matters', 'Where it is used'],
+      visual_edges: [[c, 'Formal definition'], [c, 'Why it matters'], [c, 'Where it is used']],
+      callouts: ['Start by stating the definition in your own words.'],
+      example_code: '',
+      narration: (pick(0, 2).join(' ') || `${c} is a core concept you will encounter frequently. Let us define it precisely and understand why it matters before diving into the details.`),
+    },
+    {
+      title: 'Real-world analogy',
+      visual_type: 'comparison',
+      bullets: [`Think of ${c} like a real-world system`, 'The analogy helps build intuition', 'Map each part of the analogy to the technical concept'].map(concise),
+      visual_nodes: ['Real world', 'Technical concept', 'Analogy maps to', 'Key insight'],
+      visual_edges: [['Real world', 'Analogy maps to'], ['Analogy maps to', 'Technical concept']],
+      callouts: ['Analogies help but are not exact — know the limits.'],
+      example_code: '',
+      narration: `A good way to understand ${c} is through analogy. Think of it like a system you already know from everyday life, then map each part to the technical definition we just covered.`,
+    },
+    {
+      title: 'Core idea step by step',
       visual_type: 'flow',
-      bullets: (pick(0, 4).length ? pick(0, 4) : ['The source material does not include enough detail for this section.']).map(concise),
-      visual_nodes: ['Identify', 'Connect', 'Apply', 'Check'],
-      visual_edges: [['Identify', 'Connect'], ['Connect', 'Apply'], ['Apply', 'Check']],
+      bullets: (pick(3, 4).length ? pick(3, 4) : ['Identify the abstraction', 'Define the operations', 'Trace through an example', 'Check edge cases']).map(concise),
+      visual_nodes: ['Identify', 'Define', 'Trace', 'Verify'],
+      visual_edges: [['Identify', 'Define'], ['Define', 'Trace'], ['Trace', 'Verify']],
       callouts: ['Follow the idea one step at a time.'],
       example_code: '',
-      narration: (pick(0, 3).join(' ') || 'The uploaded material has limited extractable detail, so this section summarizes only what could be read from the file.'),
+      narration: (pick(3, 3).join(' ') || `Now let us break down the core idea. First identify the abstraction, then define the key operations, trace through a concrete example, and verify with edge cases.`),
     },
     {
-      title: code.length ? 'Example from source' : 'How to reason about it',
-      visual_type: code.length ? 'code' : 'comparison',
-      bullets: (code.length ? code : pick(4, 4).length ? pick(4, 4) : ['Identify the data structure or OOP concept.', 'Ask what operations are supported.', 'Compare costs and trade-offs.']).map(concise),
-      visual_nodes: code.length ? ['Example', 'Input', 'Operation', 'Result'] : ['Use when', 'Avoid when', 'Costs', 'Trade-offs'],
-      visual_edges: code.length ? [['Input', 'Operation'], ['Operation', 'Result']] : [['Use when', 'Trade-offs'], ['Avoid when', 'Costs']],
-      callouts: code.length ? ['Read the example by naming each role.'] : ['Compare behavior before memorizing syntax.'],
+      title: 'Worked example',
+      visual_type: 'flow',
+      bullets: (pick(7, 4).length ? pick(7, 4) : ['Start with input', 'Apply the operation', 'Show intermediate state', 'Arrive at the result']).map(concise),
+      visual_nodes: ['Input', 'Step 1', 'Step 2', 'Result'],
+      visual_edges: [['Input', 'Step 1'], ['Step 1', 'Step 2'], ['Step 2', 'Result']],
+      callouts: ['Walk through this example on paper yourself.'],
+      example_code: '',
+      narration: (pick(7, 3).join(' ') || `Let us walk through a concrete example. Start with a specific input, apply the operation step by step, and observe how the state changes until we reach the result.`),
+    },
+    {
+      title: code.length ? 'Code example' : 'Implementation approach',
+      visual_type: 'code',
+      bullets: (code.length ? code : ['Define the class or function', 'Implement the key operation', 'Handle edge cases', 'Test with sample input']).map(concise),
+      visual_nodes: code.length ? ['Class', 'Method', 'Input', 'Output'] : ['Design', 'Implement', 'Test', 'Refine'],
+      visual_edges: code.length ? [['Class', 'Method'], ['Input', 'Output']] : [['Design', 'Implement'], ['Implement', 'Test']],
+      callouts: code.length ? ['Read each line and name its role.'] : ['Pseudocode first, then real code.'],
       example_code: code.join('\n'),
       narration: (code.length
-        ? `The source includes an implementation example. Read the code by identifying the object, method, or data operation first, then connect each line to the concept being explained.`
-        : (pick(4, 3).join(' ') || 'Reason about this concept by naming the abstraction, listing its operations, and checking the time and space trade-offs.')),
+        ? `Here is an implementation example from the source. Read through the code by identifying the class or function, its inputs, the operation it performs, and the output it produces.`
+        : `When implementing ${c}, start by defining the interface, then fill in the key operation. Always handle edge cases and test with sample input.`),
     },
     {
-      title: 'Summary',
-      visual_type: 'summary',
-      bullets: (pick(8, 4).length ? pick(8, 4) : ['Name the concept precisely.', 'Explain the key operation.', 'State the complexity or design trade-off.', 'Avoid common misconceptions.']).map(concise),
-      visual_nodes: [concept || 'Concept', 'Definition', 'Operation', 'Complexity', 'Pitfalls'],
-      visual_edges: [[concept || 'Concept', 'Definition'], [concept || 'Concept', 'Operation'], [concept || 'Concept', 'Complexity'], [concept || 'Concept', 'Pitfalls']],
-      callouts: ['Review by drawing the relationships yourself.'],
+      title: 'Common mistakes',
+      visual_type: 'comparison',
+      bullets: [`Mistake: confusing ${c} with a similar concept`, 'Mistake: ignoring edge cases', 'Correct: always check boundary conditions', 'Correct: use the right abstraction for the task'].map(concise),
+      visual_nodes: ['Common mistake', 'Correct approach', 'Why it matters', 'How to avoid'],
+      visual_edges: [['Common mistake', 'Why it matters'], ['Correct approach', 'How to avoid']],
+      callouts: ['Most exam errors come from these pitfalls.'],
       example_code: '',
-      narration: (pick(8, 3).join(' ') || `To review ${concept || 'this topic'}, state the definition, describe where it applies, and connect it to OOP or Data Structures vocabulary such as encapsulation, arrays, stacks, queues, trees, graphs, hashing, sorting, searching, and Big-O when relevant.`),
+      narration: `Let us look at common mistakes students make with ${c}. The most frequent one is confusing it with a similar concept. Always check your boundary conditions and make sure you are using the right abstraction.`,
+    },
+    {
+      title: 'Summary and review',
+      visual_type: 'summary',
+      bullets: (pick(11, 4).length ? pick(11, 4) : ['Define the concept precisely', 'Name the key operations', 'State the complexity or trade-off', 'Avoid the common pitfalls']).map(concise),
+      visual_nodes: [c, 'Definition', 'Operations', 'Complexity', 'Pitfalls'],
+      visual_edges: [[c, 'Definition'], [c, 'Operations'], [c, 'Complexity'], [c, 'Pitfalls']],
+      callouts: ['Can you explain this concept without looking at notes?'],
+      example_code: '',
+      narration: (pick(11, 3).join(' ') || `To review: state the definition of ${c}, list its key operations, analyze the complexity, and remember the common pitfalls. If you can explain all four from memory, you have mastered this topic.`),
     },
   ];
   return { slides: base };
@@ -328,10 +462,10 @@ function fallbackVideoScript(concept, chunks) {
 function normalizeScript(script, concept, chunks) {
   const fallback = fallbackVideoScript(concept, chunks);
   const src = script && Array.isArray(script.slides) && script.slides.length >= 2 ? script : fallback;
-  const typeByIndex = ['mindmap', 'flow', 'comparison', 'code', 'summary'];
-  const slidesOut = src.slides.slice(0, 8).map((s, i) => ({
+  const typeByIndex = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart'];
+  const slidesOut = src.slides.slice(0, 12).map((s, i) => ({
     title: String(s.title || (i === 0 ? concept : `Part ${i + 1}`)).slice(0, 90),
-    visual_type: ['mindmap', 'flow', 'comparison', 'code', 'summary'].includes(s.visual_type)
+    visual_type: VISUAL_TYPES.includes(s.visual_type)
       ? s.visual_type
       : (i === src.slides.length - 1 ? 'summary' : typeByIndex[i % typeByIndex.length]),
     bullets: (Array.isArray(s.bullets) && s.bullets.length ? s.bullets : fallback.slides[Math.min(i, fallback.slides.length - 1)].bullets)
@@ -376,7 +510,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
     jobs.update(jobId, { status: 'running', progress: 5, stage: 'Retrieving source content...' });
 
     // 1. RAG + script
-    const chunks = await retrieve(materialId, concept, 6);
+    const chunks = await retrieve(materialId, concept, { feature: 'video' });
     jobs.update(jobId, { progress: 12, stage: 'Writing tutor script...' });
     let script;
     try {
@@ -409,8 +543,13 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
       if (renderedPath.endsWith('.svg')) {
         imgForFfmpeg = await renderSlideFrameWithFfmpeg(s, path.join(workDir, `slide_${i}_frame.png`), i, script.slides.length);
       }
-      await tts.synthesize(s.narration, audioFile);
-      assertAudioFile(audioFile);
+      try {
+        await tts.synthesize(s.narration, audioFile);
+        assertAudioFile(audioFile);
+      } catch (ttsErr) {
+        log.warn(`video_tts_slide_${i}`, `TTS failed, using silence: ${ttsErr.message || ttsErr}`);
+        await tts._internals.synthSilence(s.narration, audioFile);
+      }
       audioPaths.push(audioFile);
       jobs.update(jobId, { stage: `Rendering slide ${i + 1} of ${script.slides.length}...` });
       // Combine slide+audio -> segment mp4 (duration = audio length)

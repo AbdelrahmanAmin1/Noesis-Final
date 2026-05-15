@@ -10,7 +10,9 @@
     "start": "node server.js",
     "migrate": "node -e \"require('./config/db').migrate()\"",
     "seed": "node scripts/seed-tutor-corpus.js",
-    "seed:force": "node scripts/seed-tutor-corpus.js --force"
+    "seed:force": "node scripts/seed-tutor-corpus.js --force",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
@@ -31,9 +33,13 @@
     "zod": "^3.23.8"
   },
   "optionalDependencies": {
-    "canvas": "^2.11.2"
+    "canvas": "^3.2.3"
   },
   "engines": {
     "node": ">=18.17"
+  },
+  "devDependencies": {
+    "supertest": "^7.2.2",
+    "vitest": "^4.1.6"
   }
 }

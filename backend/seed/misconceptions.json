@@ -1,0 +1,182 @@
+[
+  {
+    "topic": "Inheritance",
+    "misconception": "Inheritance means copying code from parent to child",
+    "correction": "Inheritance establishes an IS-A relationship. The child shares the parent's interface and can override behavior. No code is literally copied — the child delegates to the parent at runtime.",
+    "related_concepts": ["Polymorphism", "Composition", "Method Overriding"]
+  },
+  {
+    "topic": "Polymorphism",
+    "misconception": "Polymorphism only means method overriding",
+    "correction": "Polymorphism includes both compile-time (overloading) and runtime (overriding) forms. Ad-hoc polymorphism (overloading), subtype polymorphism (overriding), and parametric polymorphism (generics) are all valid forms.",
+    "related_concepts": ["Overloading", "Overriding", "Generics"]
+  },
+  {
+    "topic": "Encapsulation",
+    "misconception": "Encapsulation just means making fields private",
+    "correction": "Encapsulation means bundling data and the methods that operate on it together, and controlling access to protect invariants. Private fields are one tool, but the goal is protecting object state from invalid changes.",
+    "related_concepts": ["Information Hiding", "Access Modifiers", "Abstraction"]
+  },
+  {
+    "topic": "Abstraction",
+    "misconception": "Abstraction and encapsulation are the same thing",
+    "correction": "Abstraction hides complexity by exposing only relevant details through a simplified interface. Encapsulation hides internal state to protect invariants. Abstraction is about WHAT you show; encapsulation is about WHAT you hide.",
+    "related_concepts": ["Encapsulation", "Interfaces", "Abstract Classes"]
+  },
+  {
+    "topic": "Interface",
+    "misconception": "An interface is just an abstract class with no fields",
+    "correction": "Interfaces define a contract (what methods must exist) without any implementation state. Abstract classes can have partial implementation and fields. A class can implement multiple interfaces but typically extends only one class.",
+    "related_concepts": ["Abstract Classes", "Multiple Inheritance", "SOLID"]
+  },
+  {
+    "topic": "Composition",
+    "misconception": "Composition is always better than inheritance",
+    "correction": "Composition is preferred when behavior should vary independently (HAS-A). Inheritance is appropriate for true IS-A relationships where the Liskov Substitution Principle holds. Neither is universally better.",
+    "related_concepts": ["Inheritance", "SOLID", "Liskov Substitution"]
+  },
+  {
+    "topic": "Stack",
+    "misconception": "A stack is just a reversed queue",
+    "correction": "A stack is LIFO (Last-In-First-Out); a queue is FIFO (First-In-First-Out). They have fundamentally different access patterns and use cases. Reversing the order of a queue does not give you stack semantics.",
+    "related_concepts": ["Queue", "LIFO", "FIFO"]
+  },
+  {
+    "topic": "Queue",
+    "misconception": "A priority queue is a type of queue implemented with a linked list",
+    "correction": "A priority queue orders elements by priority, not insertion order. It is typically implemented with a heap (binary heap), not a linked list. A linked list implementation would make insertion or extraction O(n).",
+    "related_concepts": ["Heap", "Priority Queue", "Binary Heap"]
+  },
+  {
+    "topic": "Linked List",
+    "misconception": "Linked lists are always better than arrays for insertion",
+    "correction": "Linked lists offer O(1) insertion at a known position, but finding that position takes O(n). Arrays with amortized doubling offer O(1) append. For most workloads, arrays have better cache locality and are faster in practice.",
+    "related_concepts": ["Arrays", "Cache Locality", "Amortized Analysis"]
+  },
+  {
+    "topic": "Hash Table",
+    "misconception": "Hash table operations are always O(1)",
+    "correction": "Average-case is O(1), but worst-case is O(n) when many keys collide into the same bucket. Good hash functions and load factor management keep collisions rare, but the worst case still exists.",
+    "related_concepts": ["Hash Function", "Collision Resolution", "Load Factor"]
+  },
+  {
+    "topic": "Binary Search Tree",
+    "misconception": "BST operations are always O(log n)",
+    "correction": "O(log n) assumes the tree is balanced. A degenerate BST (all nodes in one chain) degrades to O(n) for search, insert, and delete. Self-balancing trees like AVL or Red-Black trees guarantee O(log n).",
+    "related_concepts": ["AVL Tree", "Red-Black Tree", "Tree Balance"]
+  },
+  {
+    "topic": "Big-O Notation",
+    "misconception": "O(n) is always faster than O(n^2)",
+    "correction": "Big-O describes growth rate, not absolute speed. For small n, an O(n^2) algorithm with small constants can be faster than an O(n) algorithm with large constants. Big-O matters most for large inputs.",
+    "related_concepts": ["Time Complexity", "Space Complexity", "Asymptotic Analysis"]
+  },
+  {
+    "topic": "Big-O Notation",
+    "misconception": "O(log n) means the algorithm uses recursion",
+    "correction": "O(log n) means the problem size is halved (or reduced by a constant factor) at each step. This can happen with iteration (binary search loop) or recursion. The complexity class does not imply the implementation style.",
+    "related_concepts": ["Binary Search", "Divide and Conquer", "Recursion"]
+  },
+  {
+    "topic": "Recursion",
+    "misconception": "Recursion is always slower than iteration",
+    "correction": "Recursion and iteration with the same algorithm have the same time complexity. Recursion has call stack overhead, but tail-call optimization eliminates it. Recursion is often clearer for tree traversals and divide-and-conquer.",
+    "related_concepts": ["Iteration", "Tail Recursion", "Call Stack"]
+  },
+  {
+    "topic": "Recursion",
+    "misconception": "Every recursive function needs a return statement in the recursive case",
+    "correction": "Some recursive functions operate by side effect (e.g., printing, modifying a data structure in place). The key requirement is a base case that stops recursion and a recursive case that progresses toward it.",
+    "related_concepts": ["Base Case", "Call Stack", "Side Effects"]
+  },
+  {
+    "topic": "Sorting",
+    "misconception": "Quick sort is always faster than merge sort",
+    "correction": "Quick sort has O(n^2) worst case (poor pivot choice), while merge sort is always O(n log n). Quick sort is often faster in practice due to better cache locality and smaller constants, but merge sort is safer for guaranteed performance.",
+    "related_concepts": ["Merge Sort", "Quick Sort", "Pivot Selection"]
+  },
+  {
+    "topic": "Graph",
+    "misconception": "BFS always finds the shortest path",
+    "correction": "BFS finds the shortest path in unweighted graphs (fewest edges). For weighted graphs, you need Dijkstra's algorithm (non-negative weights) or Bellman-Ford (negative weights). BFS ignores edge weights.",
+    "related_concepts": ["BFS", "Dijkstra", "Shortest Path"]
+  },
+  {
+    "topic": "Graph",
+    "misconception": "An adjacency matrix is always better than an adjacency list",
+    "correction": "An adjacency matrix uses O(V^2) space and gives O(1) edge lookup. An adjacency list uses O(V+E) space and is better for sparse graphs. Most real-world graphs are sparse, making adjacency lists more practical.",
+    "related_concepts": ["Adjacency Matrix", "Adjacency List", "Sparse Graph"]
+  },
+  {
+    "topic": "Tree",
+    "misconception": "A binary tree and a binary search tree are the same thing",
+    "correction": "A binary tree is any tree where each node has at most two children. A binary search tree (BST) adds an ordering invariant: left child < parent < right child. All BSTs are binary trees, but not all binary trees are BSTs.",
+    "related_concepts": ["Binary Tree", "BST", "Tree Traversal"]
+  },
+  {
+    "topic": "Heap",
+    "misconception": "A heap is a sorted array",
+    "correction": "A heap maintains the heap property (parent >= children for max-heap) but is NOT fully sorted. Only the root is guaranteed to be the max (or min). Extracting all elements in order takes O(n log n), same as sorting.",
+    "related_concepts": ["Binary Heap", "Heap Sort", "Priority Queue"]
+  },
+  {
+    "topic": "SOLID",
+    "misconception": "Single Responsibility means a class should have only one method",
+    "correction": "Single Responsibility means a class should have only one reason to change — one responsibility or axis of change. It can have many methods as long as they all serve that single responsibility.",
+    "related_concepts": ["SRP", "Cohesion", "Separation of Concerns"]
+  },
+  {
+    "topic": "SOLID",
+    "misconception": "Open/Closed means you should never modify existing code",
+    "correction": "Open/Closed means classes should be open for extension but closed for modification. Bug fixes and refactoring are valid modifications. The principle targets adding new behavior without changing existing working code, typically through polymorphism or composition.",
+    "related_concepts": ["OCP", "Polymorphism", "Extension Points"]
+  },
+  {
+    "topic": "Arrays",
+    "misconception": "Deleting from the middle of an array is O(1)",
+    "correction": "Deleting from the middle requires shifting all subsequent elements left to fill the gap, which is O(n). Only deletion from the end is O(1). This is why linked lists can be better for frequent middle deletions at known positions.",
+    "related_concepts": ["Linked List", "Dynamic Array", "Amortized Analysis"]
+  },
+  {
+    "topic": "Design Patterns",
+    "misconception": "You should always use design patterns",
+    "correction": "Design patterns solve specific recurring problems. Using a pattern where it is not needed adds unnecessary complexity. Start with the simplest solution; introduce a pattern only when the problem it solves actually appears.",
+    "related_concepts": ["YAGNI", "KISS", "Over-Engineering"]
+  },
+  {
+    "topic": "Method Overriding",
+    "misconception": "Changing only the return type counts as overriding",
+    "correction": "Overriding requires the exact same method signature: same name, same parameter types, same (or covariant) return type. Changing only the return type without matching parameters creates an overload or a compile error, not an override.",
+    "related_concepts": ["Overloading", "Method Signature", "Covariant Return"]
+  },
+  {
+    "topic": "Trie",
+    "misconception": "Tries are always more efficient than hash tables for string lookup",
+    "correction": "Hash tables give O(L) average lookup (where L is key length) with better cache locality. Tries also give O(L) but use more memory per node. Tries win when prefix operations are needed; hash tables win for simple key-value lookup.",
+    "related_concepts": ["Hash Table", "Prefix Search", "Space Complexity"]
+  },
+  {
+    "topic": "AVL Tree",
+    "misconception": "AVL trees and Red-Black trees have the same balance strictness",
+    "correction": "AVL trees are more strictly balanced (height difference <= 1 at every node). Red-Black trees allow more imbalance (longest path <= 2x shortest). AVL trees have faster lookups; Red-Black trees have faster insertions and deletions on average.",
+    "related_concepts": ["Red-Black Tree", "Tree Balance", "Rotations"]
+  },
+  {
+    "topic": "Space Complexity",
+    "misconception": "Space complexity only counts extra memory allocated",
+    "correction": "Space complexity includes all memory used: input storage, auxiliary data structures, and call stack frames for recursion. Some definitions focus on auxiliary space only, so clarify which convention is expected.",
+    "related_concepts": ["Auxiliary Space", "Call Stack", "In-Place Algorithm"]
+  },
+  {
+    "topic": "Dynamic Programming",
+    "misconception": "Dynamic programming and recursion are different techniques",
+    "correction": "Dynamic programming uses recursion (with memoization) or iteration (with tabulation) to solve problems with overlapping subproblems and optimal substructure. DP is not a replacement for recursion — it is an optimization strategy applied to recursive solutions.",
+    "related_concepts": ["Memoization", "Tabulation", "Overlapping Subproblems"]
+  },
+  {
+    "topic": "Liskov Substitution",
+    "misconception": "Any child class can substitute for its parent",
+    "correction": "LSP requires that substituting a child for its parent must not break the program's correctness. A child that throws unexpected exceptions, weakens postconditions, or strengthens preconditions violates LSP even though it compiles.",
+    "related_concepts": ["SOLID", "Inheritance", "Design by Contract"]
+  }
+]

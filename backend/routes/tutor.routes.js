@@ -138,11 +138,10 @@ router.post('/sessions', requireAuth, aiLimiter, async (req, res, next) => {
         const seedChunks = db.prepare('SELECT id, idx, text, chapter_id FROM chunks WHERE material_id=? ORDER BY idx LIMIT 6').all(materialId);
         effectiveConcept = await deriveConceptFromChunks(seedChunks, mat.title || requestedConcept);
       }
-      chunks = await retrieve(materialId, effectiveConcept, 6);
+      chunks = await retrieve(materialId, effectiveConcept, { feature: 'tutor' });
     }
     if (!chunks.length) {
-      // No user material (or empty result) — fall back to the seeded system curriculum.
-      chunks = await retrieve('system', effectiveConcept, 6);
+      chunks = await retrieve('system', effectiveConcept, { feature: 'tutor' });
     }
     let plan;
     try {

@@ -34,6 +34,9 @@ function migrate() {
   ensureColumn(db, 'flashcard_reviews', 'reps', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'flashcards', 'difficulty', "TEXT DEFAULT 'medium'");
   ensureColumn(db, 'flashcards', 'topic', 'TEXT');
+  ensureColumn(db, 'chunks', 'source_page', 'INTEGER');
+  ensureColumn(db, 'chunks', 'chapter_title', "TEXT DEFAULT ''");
+  ensureColumn(db, 'chunks', 'heading', "TEXT DEFAULT ''");
   return db;
 }
 

@@ -2,6 +2,7 @@
 
 const { getDb } = require('../config/db');
 const ai = require('./ai.service');
+const { expandQuery } = require('../utils/concept-synonyms');
 
 function bufToFloat32(buf) {
   if (!buf) return null;
@@ -41,7 +42,7 @@ async function embedAndStore(materialId, chunks) {
 }
 
 function keywordScore(rows, query) {
-  const terms = String(query || '').toLowerCase().split(/\W+/).filter(Boolean);
+  const terms = String(query || '').toLowerCase().split(/\W+/).filter(t => t && t.length > 1);
   return rows.map(r => {
     const t = (r.text || '').toLowerCase();
     let score = 0;
@@ -50,33 +51,82 @@ function keywordScore(rows, query) {
   });
 }
 
-async function retrieve(materialId, query, k = 6, minScore = 0.05) {
+function titleBoost(row, queryTerms) {
+  const title = (row.chapter_title || '').toLowerCase();
+  const heading = (row.heading || '').toLowerCase();
+  if (!title && !heading) return 0;
+  let boost = 0;
+  for (const term of queryTerms) {
+    if (term.length < 2) continue;
+    if (title.includes(term)) boost += 0.10;
+    if (heading.includes(term)) boost += 0.08;
+  }
+  return Math.min(boost, 0.20);
+}
+
+const FEATURE_K = {
+  notes: 8,
+  flashcards: 6,
+  quiz: 6,
+  video: 10,
+  tutor: 6,
+  default: 6,
+};
+
+async function retrieve(materialId, query, kOrOpts = 6, minScore = 0.05) {
+  let k, feature;
+  if (typeof kOrOpts === 'object') {
+    feature = kOrOpts.feature || 'default';
+    k = kOrOpts.k || FEATURE_K[feature] || FEATURE_K.default;
+    minScore = kOrOpts.minScore ?? 0.10;
+  } else {
+    k = kOrOpts;
+    feature = 'default';
+  }
+
   const db = getDb();
   let rows;
   if (materialId === 'system') {
-    rows = db.prepare(`SELECT c.id, c.idx, c.text, c.embedding, c.chapter_id
+    rows = db.prepare(`SELECT c.id, c.idx, c.text, c.embedding, c.chapter_id,
+                              c.source_page, c.chapter_title, c.heading
                        FROM chunks c JOIN materials m ON m.id = c.material_id
                        WHERE m.user_id = 0`).all();
   } else {
-    rows = db.prepare('SELECT id, idx, text, embedding, chapter_id FROM chunks WHERE material_id=?').all(materialId);
+    rows = db.prepare(`SELECT id, idx, text, embedding, chapter_id,
+                              source_page, chapter_title, heading
+                       FROM chunks WHERE material_id=?`).all(materialId);
   }
   if (rows.length === 0) return [];
+
+  const expanded = expandQuery(query);
+  const queryTerms = expanded.toLowerCase().split(/\W+/).filter(t => t && t.length > 1);
+
   let qv;
   try { qv = await ai.embed(query); } catch (_) { qv = null; }
+
   let scored;
   const hasEmbeddings = rows.some(r => r.embedding);
   if (qv && hasEmbeddings) {
-    scored = rows.map(r => ({ ...r, score: cosine(qv, bufToFloat32(r.embedding)) }));
-    if (!scored.some(s => s.score >= minScore)) scored = keywordScore(rows, query);
+    scored = rows.map(r => {
+      const base = cosine(qv, bufToFloat32(r.embedding));
+      const boost = titleBoost(r, queryTerms);
+      return { ...r, score: base + boost };
+    });
+    const embeddingMinScore = minScore;
+    if (!scored.some(s => s.score >= embeddingMinScore)) {
+      scored = keywordScore(rows, expanded);
+    }
   } else {
-    scored = keywordScore(rows, query);
+    scored = keywordScore(rows, expanded);
   }
+
   const picked = scored
     .sort((a, b) => b.score - a.score)
-    .filter(s => s.score >= minScore || !qv || !hasEmbeddings)
+    .filter(s => s.score >= (qv && hasEmbeddings ? minScore : 0.05) || !qv || !hasEmbeddings)
     .slice(0, k);
+
   return (picked.length ? picked : rows.slice(0, k).map(r => ({ ...r, score: 0 })))
     .map(({ embedding, ...rest }) => rest);
 }
 
-module.exports = { embedAndStore, retrieve, cosine, float32ToBuf, bufToFloat32 };
+module.exports = { embedAndStore, retrieve, cosine, float32ToBuf, bufToFloat32, FEATURE_K };
