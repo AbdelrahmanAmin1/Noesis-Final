@@ -1,0 +1,71 @@
+{
+  "provider": "ollama",
+  "model": "llama3.2:3b",
+  "timestamp": "2026-05-15T19:25:59.188Z",
+  "summary": {
+    "passed": 5,
+    "total": 7,
+    "avg_response_ms": 110123
+  },
+  "tests": [
+    {
+      "name": "1. Flashcard JSON generation",
+      "pass": false,
+      "elapsed_ms": 181080,
+      "error": "The local Ollama model did not respond before the timeout."
+    },
+    {
+      "name": "2. Quiz JSON generation",
+      "pass": false,
+      "elapsed_ms": 130289,
+      "error": "AI response did not match the expected schema"
+    },
+    {
+      "name": "3. Notes quality (Encapsulation)",
+      "pass": true,
+      "elapsed_ms": 109028,
+      "length": 2658,
+      "terms_found": [
+        "encapsulation",
+        "private",
+        "class"
+      ]
+    },
+    {
+      "name": "4. OOP explanation (Polymorphism)",
+      "pass": true,
+      "elapsed_ms": 120769,
+      "has_definition": true,
+      "has_code": true,
+      "has_override": true,
+      "length_ok": true
+    },
+    {
+      "name": "5. DS explanation (BST insertion)",
+      "pass": true,
+      "elapsed_ms": 122865,
+      "has_bst": true,
+      "has_steps": true,
+      "has_complexity": true,
+      "length_ok": true
+    },
+    {
+      "name": "6. Big-O explanation (O(n) vs O(log n))",
+      "pass": true,
+      "elapsed_ms": 94616,
+      "has_on": true,
+      "has_ologn": true,
+      "has_example": true,
+      "length_ok": true
+    },
+    {
+      "name": "7. RAG grounding (chunk citation)",
+      "pass": true,
+      "elapsed_ms": 12216,
+      "has_encapsulation": true,
+      "cites_chunks": true,
+      "no_hallucination": true,
+      "length_ok": true
+    }
+  ]
+}

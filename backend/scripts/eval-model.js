@@ -99,7 +99,7 @@ async function runTest(name, fn) {
 async function testFlashcardJSON() {
   const prompt = prompts.FLASHCARDS(SAMPLE_CHUNKS, 5);
   const raw = await ai.generate(prompt, { format: 'json', temperature: 0.3 });
-  const parsed = parseJsonSafe(raw, FlashcardSchema);
+  const parsed = await parseJsonSafe(raw, FlashcardSchema);
   if (!parsed || !parsed.cards || parsed.cards.length < 1) throw new Error('No valid cards generated');
   return { card_count: parsed.cards.length, sample: parsed.cards[0].question.slice(0, 80) };
 }
@@ -107,7 +107,7 @@ async function testFlashcardJSON() {
 async function testQuizJSON() {
   const prompt = prompts.QUIZ_MCQ(SAMPLE_CHUNKS, 3, 'medium');
   const raw = await ai.generate(prompt, { format: 'json', temperature: 0.3 });
-  const parsed = parseJsonSafe(raw, QuizSchema);
+  const parsed = await parseJsonSafe(raw, QuizSchema);
   if (!parsed || !parsed.questions || parsed.questions.length < 1) throw new Error('No valid questions generated');
   return { question_count: parsed.questions.length, sample: parsed.questions[0].question.slice(0, 80) };
 }
