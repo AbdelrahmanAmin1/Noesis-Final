@@ -1,0 +1,73 @@
+{
+  "provider": "ollama",
+  "model": "qwen2.5-coder:7b",
+  "timestamp": "2026-05-16T17:29:27.433Z",
+  "summary": {
+    "passed": 7,
+    "total": 7,
+    "avg_response_ms": 25136
+  },
+  "tests": [
+    {
+      "name": "1. Flashcard JSON generation",
+      "pass": true,
+      "elapsed_ms": 38273,
+      "card_count": 5,
+      "sample": "What is encapsulation in object-oriented programming?"
+    },
+    {
+      "name": "2. Quiz JSON generation",
+      "pass": true,
+      "elapsed_ms": 20299,
+      "question_count": 3,
+      "sample": "Which data structure is best suited for frequent insertion and deletion operatio"
+    },
+    {
+      "name": "3. Notes quality (Encapsulation)",
+      "pass": true,
+      "elapsed_ms": 26820,
+      "length": 3805,
+      "terms_found": [
+        "encapsulation",
+        "private",
+        "class"
+      ]
+    },
+    {
+      "name": "4. OOP explanation (Polymorphism)",
+      "pass": true,
+      "elapsed_ms": 26583,
+      "has_definition": true,
+      "has_code": true,
+      "has_override": true,
+      "length_ok": true
+    },
+    {
+      "name": "5. DS explanation (BST insertion)",
+      "pass": true,
+      "elapsed_ms": 36529,
+      "has_bst": true,
+      "has_steps": true,
+      "has_complexity": true,
+      "length_ok": true
+    },
+    {
+      "name": "6. Big-O explanation (O(n) vs O(log n))",
+      "pass": true,
+      "elapsed_ms": 23849,
+      "has_on": true,
+      "has_ologn": false,
+      "has_example": true,
+      "length_ok": true
+    },
+    {
+      "name": "7. RAG grounding (chunk citation)",
+      "pass": true,
+      "elapsed_ms": 3599,
+      "has_encapsulation": true,
+      "cites_chunks": true,
+      "no_hallucination": true,
+      "length_ok": true
+    }
+  ]
+}

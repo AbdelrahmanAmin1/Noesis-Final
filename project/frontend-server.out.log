@@ -1,0 +1,201 @@
+ INFO  Accepting connections at http://localhost:5173
+ HTTP  5/16/2026 8:59:57 PM ::1 GET /Noesis.html
+ HTTP  5/16/2026 8:59:57 PM ::1 Returned 301 in 9 ms
+ HTTP  5/16/2026 9:00:15 PM ::1 GET /Noesis.html
+ HTTP  5/16/2026 9:00:15 PM ::1 Returned 301 in 0 ms
+ HTTP  5/16/2026 9:00:15 PM ::1 GET /Noesis
+ HTTP  5/16/2026 9:00:15 PM ::1 Returned 200 in 4 ms
+ HTTP  5/16/2026 9:01:24 PM ::1 GET /Noesis.html
+ HTTP  5/16/2026 9:01:24 PM ::1 Returned 301 in 1 ms
+ HTTP  5/16/2026 9:01:24 PM ::1 GET /Noesis
+ HTTP  5/16/2026 9:01:24 PM ::1 Returned 200 in 4 ms
+ HTTP  5/16/2026 9:01:24 PM ::1 GET /styles/tokens.css
+ HTTP  5/16/2026 9:01:24 PM ::1 GET /api.js
+ HTTP  5/16/2026 9:01:24 PM ::1 Returned 200 in 2 ms
+ HTTP  5/16/2026 9:01:24 PM ::1 Returned 200 in 2 ms
+ HTTP  5/16/2026 9:01:34 PM ::1 GET /Noesis.html
+ HTTP  5/16/2026 9:01:34 PM ::1 Returned 301 in 1 ms
+ HTTP  5/16/2026 9:01:34 PM ::1 GET /Noesis
+ HTTP  5/16/2026 9:01:34 PM ::1 Returned 200 in 1 ms
+ HTTP  5/16/2026 9:01:34 PM ::1 GET /styles/tokens.css
+ HTTP  5/16/2026 9:01:34 PM ::1 GET /api.js
+ HTTP  5/16/2026 9:01:34 PM ::1 Returned 200 in 1 ms
+ HTTP  5/16/2026 9:01:34 PM ::1 Returned 200 in 1 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Icons.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Shell.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Hero3D.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Ambient3D.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Splash.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Landing.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 6 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 9 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 7 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 8 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 5 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 6 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Auth.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Dashboard.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Materials.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Tutor.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Study.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/Other.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 5 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 5 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 4 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 3 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 4 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 4 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /components/App.jsx
+ HTTP  5/16/2026 9:01:38 PM ::1 GET /favicon.ico
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 404 in 2 ms
+ HTTP  5/16/2026 9:01:38 PM ::1 Returned 200 in 2 ms
+ HTTP  5/16/2026 9:01:39 PM ::1 GET /assets/noesis_logo.webp
+ HTTP  5/16/2026 9:01:39 PM ::1 Returned 200 in 5 ms
+ HTTP  5/16/2026 9:03:55 PM ::1 GET /assets/noesis_logo.webp
+ HTTP  5/16/2026 9:03:55 PM ::1 Returned 304 in 4 ms
+ HTTP  5/16/2026 9:22:00 PM ::1 GET /Noesis.html
+ HTTP  5/16/2026 9:22:00 PM ::1 Returned 301 in 2 ms
+ HTTP  5/16/2026 9:22:00 PM ::1 GET /Noesis
+ HTTP  5/16/2026 9:22:00 PM ::1 Returned 200 in 2 ms
+ HTTP  5/16/2026 9:22:28 PM ::1 GET /Noesis
+ HTTP  5/16/2026 9:22:28 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 9:22:28 PM ::1 GET /styles/tokens.css
+ HTTP  5/16/2026 9:22:28 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 9:22:28 PM ::1 GET /api.js
+ HTTP  5/16/2026 9:22:28 PM ::1 Returned 304 in 3 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Icons.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Ambient3D.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Shell.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Hero3D.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Landing.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Splash.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Auth.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 6 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 5 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 6 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 5 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 7 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Dashboard.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Materials.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Tutor.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Study.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/Other.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 4 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 4 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 4 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 5 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /components/App.jsx
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 5 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 9:22:29 PM ::1 GET /assets/noesis_logo.webp
+ HTTP  5/16/2026 9:22:29 PM ::1 Returned 304 in 0 ms
+ HTTP  5/16/2026 9:23:56 PM ::1 GET /favicon.ico
+ HTTP  5/16/2026 9:23:56 PM ::1 Returned 404 in 7 ms
+ HTTP  5/16/2026 10:04:40 PM ::1 GET /Noesis
+ HTTP  5/16/2026 10:04:40 PM ::1 Returned 304 in 12 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /styles/tokens.css
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /api.js
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Icons.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Shell.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Hero3D.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Ambient3D.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 7 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Splash.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Landing.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 5 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Auth.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 18 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 16 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Dashboard.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Materials.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Tutor.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Study.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 6 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 10 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/Other.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 GET /components/App.jsx
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 13 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 6 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 304 in 5 ms
+ HTTP  5/16/2026 10:04:41 PM ::1 Returned 200 in 21 ms
+ HTTP  5/16/2026 10:04:44 PM ::1 GET /assets/noesis_logo.webp
+ HTTP  5/16/2026 10:04:44 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /Noesis
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /styles/tokens.css
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /api.js
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Icons.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Shell.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Hero3D.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Splash.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Landing.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Ambient3D.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Auth.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Dashboard.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 3 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 3 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Materials.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Tutor.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Study.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/Other.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 GET /components/App.jsx
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 5 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 5 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 5 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:35:30 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 10:35:31 PM ::1 GET /assets/noesis_logo.webp
+ HTTP  5/16/2026 10:35:31 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 10:39:26 PM ::1 GET /favicon.ico
+ HTTP  5/16/2026 10:39:26 PM ::1 Returned 404 in 2 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /Noesis
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 6 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /styles/tokens.css
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /api.js
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Icons.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Shell.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Hero3D.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Ambient3D.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Splash.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Landing.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Auth.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Tutor.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Study.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Dashboard.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Materials.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/Other.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 1 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 GET /components/App.jsx
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 11:20:48 PM ::1 Returned 304 in 0 ms
+ HTTP  5/16/2026 11:20:49 PM ::1 GET /assets/noesis_logo.webp
+ HTTP  5/16/2026 11:20:49 PM ::1 Returned 304 in 2 ms
+ HTTP  5/16/2026 11:23:08 PM ::1 GET /favicon.ico
+ HTTP  5/16/2026 11:23:08 PM ::1 Returned 404 in 3 ms

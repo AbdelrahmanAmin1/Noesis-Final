@@ -172,7 +172,7 @@ const MaterialDetail = ({ onNav }) => {
   const [active, setActive] = React.useState(0);
   const [material, setMaterial] = React.useState(null);
   const [chunks, setChunks] = React.useState([]);
-  const [chapters, setChapters] = React.useState(['Document']);
+  const [chapters, setChapters] = React.useState([]);
   const [chapterIds, setChapterIds] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const [genStatus, setGenStatus] = React.useState('');
@@ -185,7 +185,7 @@ const MaterialDetail = ({ onNav }) => {
     window.NoesisAPI.materials.get(id).then(m => {
       setMaterial(m);
       const titles = (m.chapters || []).map(c => c.title);
-      setChapters(titles.length ? titles : ['Document']);
+      setChapters(titles);
       setChapterIds((m.chapters || []).map(c => c.id));
     }).catch(() => {});
   }, [id]);
@@ -230,7 +230,8 @@ const MaterialDetail = ({ onNav }) => {
     setActiveAction('video');
     setBusy(true); setGenStatus('Generating tutor video...');
     try {
-      const r = await window.NoesisAPI.videos.generate({ material_id: id, concept: chapters[active] || material.title });
+      const concept = chapters[active] || null;
+      const r = await window.NoesisAPI.videos.generate({ material_id: id, concept });
       setVideo({ id: r.video_id, status: 'queued' });
       await window.NoesisAPI.pollJob(r.job_id, { intervalMs: 3000, onProgress: (j) => setGenStatus(j.stage || `Rendering video ${j.progress || 0}%...`) });
       const file = await window.NoesisAPI.videos.fileBlobUrl(r.video_id);
@@ -293,7 +294,7 @@ const MaterialDetail = ({ onNav }) => {
         <main style={mds.reader}>
           <div style={mds.readerHead}>
             <div style={{ fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Chapter {active + 1} · {chunks.length} chunks</div>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 42, fontWeight: 300, letterSpacing: '-0.02em', margin: '8px 0 6px' }}>{chapters[active] || 'Document'}</h1>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 42, fontWeight: 300, letterSpacing: '-0.02em', margin: '8px 0 6px' }}>{chapters[active] || (material && material.title) || 'Material'}</h1>
             <div style={{ fontSize: 13, color: 'var(--fg-2)' }}>{material && material.status === 'ready' ? 'Indexed for tutor and quizzes.' : (material ? `Status: ${material.status}` : 'Loading…')}</div>
           </div>
 

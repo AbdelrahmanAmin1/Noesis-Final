@@ -116,6 +116,79 @@ Rules:
 - Ground narration in the source excerpts. Cite chunk ids like [chunk:12].
 - Narration should explain WHY, not just WHAT. Build understanding progressively.`;
 
+const VIDEO_SCRIPT_M1_FALLBACK = `{{SYSTEM_BASE}}
+
+Task: Write a structured AI tutor video script on "{{CONCEPT}}" for a beginner CS student.
+
+Grounding status: {{GROUNDING_STATUS}}
+{{GROUNDING_INSTRUCTION}}
+
+Required slide sequence, exactly 8-10 slides:
+1. title
+2. objectives
+3. concept
+4. analogy
+5. diagram
+6. code
+7. step_by_step
+8. mistakes
+9. recap
+10. quiz
+
+Each video must teach the concept, not merely label it. Include a clear definition, why it matters, a simple analogy, a code example when relevant, a step-by-step explanation, a visual diagram or mindmap, a common mistake, a recap, and a mini quiz.
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Output STRICT JSON only:
+{
+  "topic": "{{CONCEPT}}",
+  "audienceLevel": "beginner",
+  "learningObjectives": ["...", "...", "..."],
+  "slides": [
+    {
+      "slideType": "title|objectives|concept|analogy|diagram|code|step_by_step|mistakes|recap|quiz",
+      "title": "...",
+      "bullets": ["...", "..."],
+      "narration": "...",
+      "visual": {
+        "type": "mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart",
+        "description": "...",
+        "nodes": ["...", "..."],
+        "edges": [["...", "..."]]
+      },
+      "callouts": ["..."],
+      "example_code": ""
+    }
+  ]
+}
+
+Rules:
+- Produce 8-10 slides.
+- Every slide must have meaningful narration, 2-4 sentences, spoken like a tutor.
+- Use 2-5 short bullets per slide. Keep each bullet under 70 characters.
+- Use retrieved source chunks when available and cite chunk ids as [chunk:ID] in narration or callouts.
+- Do not claim unsupported details are from the uploaded material.
+- If grounding is LOW, the first slide narration and a callout must say the uploaded material did not contain enough specific information, then continue using general CS knowledge.
+- Code slides should include compact Java or pseudocode when relevant.
+- Quiz slide should include one question and the answer in bullets or callouts.`;
+
+const VIDEO_CONCEPT_EXTRACT_FALLBACK = `{{SYSTEM_BASE}}
+
+You are choosing the real educational topic for a tutor video.
+
+Reject generic labels such as Document, File, Material, Untitled, Chapter 1, or uploaded filenames.
+Choose the most specific CS topic actually supported by the excerpts. Prefer OOP and Data Structures concepts such as Encapsulation, Inheritance, Polymorphism, Stack, Queue, Linked List, Binary Search Tree, Big-O, Array, Recursion, or Hash Table when supported.
+
+Material title: "{{MATERIAL_TITLE}}"
+Rejected hint: "{{REJECTED_HINT}}"
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Output STRICT JSON only:
+{"topic":"Encapsulation","alternatives":["Class","Object","Abstraction"]}`;
+
 const CONCEPT_EXTRACT_FALLBACK = `{{SYSTEM_BASE}}
 
 Identify the 3-8 most important named concepts in these excerpts. Output STRICT JSON only:
@@ -217,17 +290,29 @@ const TUTOR_STEP_EXPLAIN = (concept, mode, chunks) => renderTemplate('tutor-step
   SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 800, maxTotalChars: 3600 }),
 });
 
-const VIDEO_SCRIPT = (concept, chunks) => {
+const VIDEO_SCRIPT = (concept, chunks, opts = {}) => {
   const tpl = visualTemplates.findTemplate(concept);
   const hint = tpl
     ? `\nVisual hint for "${concept}": use visual_type "${tpl.type}" with nodes like ${JSON.stringify(tpl.nodes.slice(0, 5))}.`
     : '';
-  return renderTemplate('video-script.txt', VIDEO_SCRIPT_FALLBACK, {
+  const lowGrounding = !!opts.lowGrounding;
+  return renderTemplate('video-script.txt', VIDEO_SCRIPT_M1_FALLBACK, {
     SYSTEM_BASE,
     CONCEPT: concept,
+    GROUNDING_STATUS: lowGrounding ? 'LOW' : 'OK',
+    GROUNDING_INSTRUCTION: lowGrounding
+      ? 'The uploaded material has weak or sparse support for this topic. Start with a clear disclaimer, then teach using general CS knowledge without pretending unsupported details came from the upload.'
+      : 'Use the uploaded material as the main grounding source and cite chunk ids for source-backed details.',
     SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 650, maxTotalChars: 3600 }) + hint,
   });
 };
+
+const VIDEO_CONCEPT_EXTRACT = (chunks, opts = {}) => renderTemplate('video-concept-extract.txt', VIDEO_CONCEPT_EXTRACT_FALLBACK, {
+  SYSTEM_BASE,
+  MATERIAL_TITLE: opts.materialTitle || '',
+  REJECTED_HINT: opts.rejectedHint || '',
+  SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 800, maxTotalChars: 4200 }),
+});
 
 const CONCEPT_EXTRACT = (chunks) => renderTemplate('concept-extract.txt', CONCEPT_EXTRACT_FALLBACK, {
   SYSTEM_BASE,
@@ -250,6 +335,7 @@ module.exports = {
   TUTOR_FEEDBACK,
   TUTOR_STEP_EXPLAIN,
   VIDEO_SCRIPT,
+  VIDEO_CONCEPT_EXTRACT,
   CONCEPT_EXTRACT,
   REPAIR_JSON,
   _internals: { readTemplate, renderTemplate, sourceExcerpts, templateCache },

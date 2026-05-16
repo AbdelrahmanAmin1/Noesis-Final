@@ -1,17 +1,56 @@
 {{SYSTEM_BASE}}
 
-Task: Write a tutor-whiteboard narrated explainer video script (3-6 slides) on: "{{CONCEPT}}". Teach step by step from the source excerpts using mindmaps, process diagrams, comparisons, code/examples, visual callouts, and source-grounded narration. Each slide must feel like a tutor explaining the material at a board, not a plain bullet deck.
+Task: Write a structured AI tutor video script on "{{CONCEPT}}" for a beginner CS student.
+
+Grounding status: {{GROUNDING_STATUS}}
+{{GROUNDING_INSTRUCTION}}
+
+Required slide sequence, exactly 8-10 slides:
+1. title
+2. objectives
+3. concept
+4. analogy
+5. diagram
+6. code
+7. step_by_step
+8. mistakes
+9. recap
+10. quiz
+
+Each video must teach the concept, not merely label it. Include a clear definition, why it matters, a simple analogy, a code example when relevant, a step-by-step explanation, a visual diagram or mindmap, a common mistake, a recap, and a mini quiz.
 
 Source excerpts:
 {{SOURCE_EXCERPTS}}
 
 Output STRICT JSON only:
-{"slides":[{"title":"...","visual_type":"mindmap|flow|comparison|code|summary","bullets":["...","..."],"visual_nodes":["central idea","related concept"],"visual_edges":[["central idea","related concept"]],"callouts":["..."],"example_code":"...","narration":"..."}]}
+{
+  "topic": "{{CONCEPT}}",
+  "audienceLevel": "beginner",
+  "learningObjectives": ["...", "...", "..."],
+  "slides": [
+    {
+      "slideType": "title|objectives|concept|analogy|diagram|code|step_by_step|mistakes|recap|quiz",
+      "title": "...",
+      "bullets": ["...", "..."],
+      "narration": "...",
+      "visual": {
+        "type": "mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart",
+        "description": "...",
+        "nodes": ["...", "..."],
+        "edges": [["...", "..."]]
+      },
+      "callouts": ["..."],
+      "example_code": ""
+    }
+  ]
+}
 
 Rules:
-- Use 2-4 short bullets per slide.
-- visual_nodes must name concrete concepts from the source.
-- visual_edges must connect node labels that appear in visual_nodes.
-- callouts should be short tutor hints or warnings.
-- example_code is optional and should be present only when code or pseudocode helps.
-- Cite chunk ids in narration when using source details, e.g. [chunk:12].
+- Produce 8-10 slides.
+- Every slide must have meaningful narration, 2-4 sentences, spoken like a tutor.
+- Use 2-5 short bullets per slide. Keep each bullet under 70 characters.
+- Use retrieved source chunks when available and cite chunk ids as [chunk:ID] in narration or callouts.
+- Do not claim unsupported details are from the uploaded material.
+- If grounding is LOW, the first slide narration and a callout must say the uploaded material did not contain enough specific information, then continue using general CS knowledge.
+- Code slides should include compact Java or pseudocode when relevant.
+- Quiz slide should include one question and the answer in bullets or callouts.

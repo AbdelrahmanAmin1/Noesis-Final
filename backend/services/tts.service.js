@@ -12,9 +12,14 @@ function detectTTS() {
   if (_detectedEngine) return _detectedEngine;
 
   const configured = (env.TTS_ENGINE || 'piper').toLowerCase();
-  const piperBinExists = checkBinaryExists(env.TTS_BIN || 'piper');
-  const piperVoiceExists = env.TTS_VOICE_PATH && fs.existsSync(path.resolve(env.ROOT_DIR, env.TTS_VOICE_PATH));
-  const piperReady = piperBinExists && piperVoiceExists;
+  const piperConfigured = configured === 'piper';
+  const piperBin = env.TTS_BIN || 'piper';
+  const piperVoicePath = env.TTS_VOICE_PATH ? path.resolve(env.ROOT_DIR, env.TTS_VOICE_PATH) : '';
+  const piperBinExists = checkBinaryExists(piperBin);
+  const piperVoiceExists = !!(piperVoicePath && fs.existsSync(piperVoicePath));
+  const piperVoiceLooksValid = piperVoiceExists && /\.onnx$/i.test(piperVoicePath);
+  const piperReady = piperBinExists && piperVoiceLooksValid;
+  const warnings = [];
 
   let activeEngine = configured;
   let recommendation = null;
@@ -24,9 +29,12 @@ function detectTTS() {
       recommendation = 'Download Piper from github.com/rhasspy/piper/releases and a voice from huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/amy/medium';
     } else if (!piperVoiceExists) {
       recommendation = 'Set TTS_VOICE_PATH in .env to a downloaded .onnx voice model (e.g. ./tts-models/en_US-amy-medium.onnx)';
+    } else if (!piperVoiceLooksValid) {
+      recommendation = 'TTS_VOICE_PATH exists but does not point to an .onnx Piper voice model.';
     } else {
       recommendation = 'Piper binary not found. Set TTS_BIN to the path of your piper executable.';
     }
+    warnings.push(recommendation);
     if (process.platform === 'win32') activeEngine = 'sapi';
     else activeEngine = 'espeak';
   }
@@ -34,14 +42,22 @@ function detectTTS() {
   _detectedEngine = {
     configured_engine: configured,
     active_engine: activeEngine,
+    piper_configured: piperConfigured,
+    piper_ready: piperReady,
+    piper_binary: piperBin,
     piper_binary_found: piperBinExists,
     piper_voice_found: !!piperVoiceExists,
+    piper_voice_valid: !!piperVoiceLooksValid,
     voice_path: env.TTS_VOICE_PATH || '',
+    voice_path_resolved: piperVoicePath,
+    sentence_pause_ms: env.TTS_PAUSE_MS_SENTENCE,
+    section_pause_ms: env.TTS_PAUSE_MS_SECTION,
     recommendation,
+    warnings,
   };
 
   if (recommendation) {
-    log.warn(`TTS: ${configured} configured but not ready — falling back to ${activeEngine}. ${recommendation}`);
+    log.warn(`TTS: ${configured} configured but not ready - falling back to ${activeEngine}. ${recommendation}`);
   } else {
     log.info(`TTS: ${activeEngine} ready${activeEngine === 'piper' ? ` (voice: ${env.TTS_VOICE_PATH})` : ''}`);
   }
@@ -67,6 +83,35 @@ function splitSentences(text) {
     .split('\n')
     .map(s => s.trim())
     .filter(s => s.length > 0);
+}
+
+function clampMs(value, fallback, min = 0, max = 2000) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function escapeSsml(text) {
+  return String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function normalizeSentences(input) {
+  const list = Array.isArray(input) ? input : splitSentences(input);
+  return list
+    .map(s => String(s || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
+function pacedPlainText(sentences, opts = {}) {
+  const pause = clampMs(opts.pauseMs, env.TTS_PAUSE_MS_SENTENCE || 250);
+  const sectionPause = clampMs(opts.sectionPauseMs, env.TTS_PAUSE_MS_SECTION || 600);
+  const gap = sectionPause >= pause * 2 ? '\n\n' : '\n';
+  return normalizeSentences(sentences).join(gap);
 }
 
 function synthPiper(text, outPath) {
@@ -108,15 +153,17 @@ function synthSay(text, outPath) {
   });
 }
 
-function synthSapi(text, outPath) {
+function synthSapi(text, outPath, opts = {}) {
   return new Promise((resolve, reject) => {
     const textPath = outPath.replace(/\.[^.]+$/i, '') + '.txt';
     const scriptPath = outPath.replace(/\.[^.]+$/i, '') + '.ps1';
 
-    const sentences = splitSentences(text);
+    const sentences = normalizeSentences(text);
+    const pauseMs = clampMs(opts.pauseMs, env.TTS_PAUSE_MS_SENTENCE || 250);
+    const sectionPauseMs = clampMs(opts.sectionPauseMs, env.TTS_PAUSE_MS_SECTION || 600);
     const ssml = sentences.map(s =>
-      `<s>${s}</s><break time="350ms"/>`
-    ).join('');
+      `<s>${escapeSsml(s)}</s><break time="${pauseMs}ms"/>`
+    ).join('') + `<break time="${sectionPauseMs}ms"/>`;
     const ssmlWrapped = `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US"><prosody rate="-5%">${ssml}</prosody></speak>`;
 
     fs.writeFileSync(textPath, ssmlWrapped, 'utf8');
@@ -181,27 +228,28 @@ const MAX_NARRATION_CHARS = 4000;
 function clipNarration(text) {
   const s = String(text || '');
   if (s.length <= MAX_NARRATION_CHARS) return s;
-  return s.slice(0, MAX_NARRATION_CHARS - 1) + '…';
+  return s.slice(0, MAX_NARRATION_CHARS - 3) + '...';
 }
 
-async function synthesize(text, outPath) {
+async function synthesize(text, outPath, opts = {}) {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  const safe = clipNarration(text);
+  const sentences = normalizeSentences(opts.sentences && opts.sentences.length ? opts.sentences : text);
+  const safe = clipNarration(pacedPlainText(sentences.length ? sentences : [text], opts));
   const status = detectTTS();
   const engine = status.active_engine;
   let lastErr = null;
 
   if (engine === 'piper' && status.piper_voice_found) {
-    try { return await synthPiper(safe, outPath); } catch (e) { lastErr = e; }
+    try { return await synthPiper(safe, outPath); } catch (e) { lastErr = e; log.warn('tts_piper_failed', e.message || e); }
   }
   if (engine === 'espeak') {
-    try { return await synthEspeak(safe, outPath); } catch (e) { lastErr = e; }
+    try { return await synthEspeak(safe, outPath); } catch (e) { lastErr = e; log.warn('tts_espeak_failed', e.message || e); }
   }
   if (engine === 'say') {
-    try { return await synthSay(safe, outPath); } catch (e) { lastErr = e; }
+    try { return await synthSay(safe, outPath); } catch (e) { lastErr = e; log.warn('tts_say_failed', e.message || e); }
   }
   if (engine === 'sapi' || process.platform === 'win32') {
-    try { return await synthSapi(safe, outPath); } catch (e) { lastErr = e; }
+    try { return await synthSapi(sentences.length ? sentences : safe, outPath, opts); } catch (e) { lastErr = e; log.warn('tts_sapi_failed', e.message || e); }
   }
   // Last resort fallback chain
   if (!lastErr || engine !== 'espeak') {
@@ -216,4 +264,14 @@ async function synthesize(text, outPath) {
   throw new Error(`tts_unavailable: ${status.active_engine} failed. ${status.recommendation || 'Install Piper or set TTS_ENGINE=sapi on Windows.'} Last error: ${lastErr ? lastErr.message : 'none'}`);
 }
 
-module.exports = { synthesize, detectTTS, _internals: { synthSapi, synthSilence, splitSentences } };
+async function synthesizeSentences(sentences, outPath, opts = {}) {
+  const list = normalizeSentences(sentences);
+  return synthesize(list.join(' '), outPath, { ...opts, sentences: list });
+}
+
+module.exports = {
+  synthesize,
+  synthesizeSentences,
+  detectTTS,
+  _internals: { synthSapi, synthSilence, splitSentences, normalizeSentences, pacedPlainText },
+};

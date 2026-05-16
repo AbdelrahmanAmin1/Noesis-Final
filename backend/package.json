@@ -11,6 +11,7 @@
     "migrate": "node -e \"require('./config/db').migrate()\"",
     "seed": "node scripts/seed-tutor-corpus.js",
     "seed:force": "node scripts/seed-tutor-corpus.js --force",
+    "eval:video": "node scripts/eval-video.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

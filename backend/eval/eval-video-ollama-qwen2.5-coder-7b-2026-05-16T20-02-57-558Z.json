@@ -1,0 +1,139 @@
+{
+  "created_at": "2026-05-16T20:02:57.559Z",
+  "provider": "ollama",
+  "model": "qwen2.5-coder:7b",
+  "topics": [
+    {
+      "topic": "Encapsulation",
+      "ok": false,
+      "score": 0,
+      "maxScore": 8,
+      "error": "Repaired AI response did not match the expected schema",
+      "criteria": {
+        "jsonValidity": false,
+        "responseTimeMs": 85563
+      }
+    },
+    {
+      "topic": "Polymorphism",
+      "score": 6,
+      "maxScore": 8,
+      "criteria": {
+        "jsonValidity": true,
+        "slideCountRange": true,
+        "narrationPresence": true,
+        "topicCoverage": true,
+        "oopKeywordCoverage": 6,
+        "dataStructuresKeywordCoverage": 1,
+        "visualTypeCoverage": false,
+        "responseTimeMs": 59810,
+        "groundedness": false
+      },
+      "slideCount": 9,
+      "visualTypes": [
+        "class_diagram"
+      ],
+      "titles": [
+        "Polymorphism: The Magic of Method Overriding",
+        "Concept of Polymorphism",
+        "Analogy: Polymorphism as a Musical Instrument",
+        "Class Diagram for Polymorphism",
+        "Code Example: Polymorphism with Method Overriding",
+        "Step-by-Step Explanation of Polymorphism",
+        "Common Mistake: Forgetting to Override",
+        "Recap: Polymorphism Recap",
+        "Quiz: Understanding Polymorphism"
+      ],
+      "ok": true
+    },
+    {
+      "topic": "Linked List",
+      "ok": false,
+      "score": 0,
+      "maxScore": 8,
+      "error": "Repaired AI response did not match the expected schema",
+      "criteria": {
+        "jsonValidity": false,
+        "responseTimeMs": 69026
+      }
+    },
+    {
+      "topic": "Stack",
+      "score": 7,
+      "maxScore": 8,
+      "criteria": {
+        "jsonValidity": true,
+        "slideCountRange": true,
+        "narrationPresence": true,
+        "topicCoverage": true,
+        "oopKeywordCoverage": 2,
+        "dataStructuresKeywordCoverage": 5,
+        "visualTypeCoverage": false,
+        "responseTimeMs": 47754,
+        "groundedness": true
+      },
+      "slideCount": 9,
+      "visualTypes": [
+        "stack_queue"
+      ],
+      "titles": [
+        "Welcome to Understanding Stacks",
+        "What is a Stack?",
+        "Analogy for Stacks",
+        "Visual Representation of Stack Operations",
+        "Stack Operations in Java",
+        "Step-by-Step Explanation of Code",
+        "Common Mistakes with Stacks",
+        "Recap of Key Points",
+        "Quick Quiz on Stacks"
+      ],
+      "ok": true
+    },
+    {
+      "topic": "Binary Search Tree",
+      "ok": false,
+      "score": 0,
+      "maxScore": 8,
+      "error": "Repaired AI response did not match the expected schema",
+      "criteria": {
+        "jsonValidity": false,
+        "responseTimeMs": 57652
+      }
+    },
+    {
+      "topic": "Big-O",
+      "score": 7,
+      "maxScore": 8,
+      "criteria": {
+        "jsonValidity": true,
+        "slideCountRange": true,
+        "narrationPresence": true,
+        "topicCoverage": true,
+        "oopKeywordCoverage": 2,
+        "dataStructuresKeywordCoverage": 4,
+        "visualTypeCoverage": false,
+        "responseTimeMs": 44218,
+        "groundedness": true
+      },
+      "slideCount": 8,
+      "visualTypes": [],
+      "titles": [
+        "Big-O Notation: Understanding Algorithm Efficiency",
+        "Concept of Big-O Notation",
+        "Analogy for Big-O Notation",
+        "Code Example for Big-O",
+        "Step-by-Step Explanation",
+        "Common Mistakes in Big-O Analysis",
+        "Recap of Big-O Notation",
+        "Quiz Time!"
+      ],
+      "ok": true
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "total": 6,
+    "averageScore": 3.3333333333333335,
+    "averageResponseTimeMs": 60670.5
+  }
+}

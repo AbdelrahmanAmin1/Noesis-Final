@@ -73,7 +73,7 @@ const FEATURE_K = {
   default: 6,
 };
 
-async function retrieve(materialId, query, kOrOpts = 6, minScore = 0.05) {
+async function retrieveWithMeta(materialId, query, kOrOpts = 6, minScore = 0.05) {
   let k, feature;
   if (typeof kOrOpts === 'object') {
     feature = kOrOpts.feature || 'default';
@@ -96,7 +96,7 @@ async function retrieve(materialId, query, kOrOpts = 6, minScore = 0.05) {
                               source_page, chapter_title, heading
                        FROM chunks WHERE material_id=?`).all(materialId);
   }
-  if (rows.length === 0) return [];
+  if (rows.length === 0) return { chunks: [], maxScore: 0, meanScore: 0 };
 
   const expanded = expandQuery(query);
   const queryTerms = expanded.toLowerCase().split(/\W+/).filter(t => t && t.length > 1);
@@ -125,8 +125,17 @@ async function retrieve(materialId, query, kOrOpts = 6, minScore = 0.05) {
     .filter(s => s.score >= (qv && hasEmbeddings ? minScore : 0.05) || !qv || !hasEmbeddings)
     .slice(0, k);
 
-  return (picked.length ? picked : rows.slice(0, k).map(r => ({ ...r, score: 0 })))
+  const chunks = (picked.length ? picked : rows.slice(0, k).map(r => ({ ...r, score: 0 })))
     .map(({ embedding, ...rest }) => rest);
+  const scores = chunks.map(c => Number(c.score) || 0);
+  const maxScore = scores.length ? Math.max(...scores) : 0;
+  const meanScore = scores.length ? scores.reduce((s, n) => s + n, 0) / scores.length : 0;
+  return { chunks, maxScore, meanScore };
 }
 
-module.exports = { embedAndStore, retrieve, cosine, float32ToBuf, bufToFloat32, FEATURE_K };
+async function retrieve(materialId, query, kOrOpts = 6, minScore = 0.05) {
+  const result = await retrieveWithMeta(materialId, query, kOrOpts, minScore);
+  return result.chunks;
+}
+
+module.exports = { embedAndStore, retrieve, retrieveWithMeta, cosine, float32ToBuf, bufToFloat32, FEATURE_K };

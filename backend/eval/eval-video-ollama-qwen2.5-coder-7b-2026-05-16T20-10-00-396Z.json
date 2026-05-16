@@ -1,0 +1,303 @@
+{
+  "created_at": "2026-05-16T20:10:00.396Z",
+  "provider": "ollama",
+  "model": "qwen2.5-coder:7b",
+  "topics": [
+    {
+      "topic": "Encapsulation",
+      "score": 5,
+      "maxScore": 8,
+      "criteria": {
+        "jsonValidity": true,
+        "slideCountRange": true,
+        "narrationPresence": false,
+        "topicCoverage": true,
+        "oopKeywordCoverage": 5,
+        "dataStructuresKeywordCoverage": 1,
+        "visualTypeCoverage": false,
+        "responseTimeMs": 45976,
+        "groundedness": false
+      },
+      "schemaValid": false,
+      "schemaErrors": [
+        {
+          "code": "invalid_type",
+          "expected": "string",
+          "received": "undefined",
+          "path": [
+            "slides",
+            1,
+            "title"
+          ],
+          "message": "Required"
+        },
+        {
+          "code": "invalid_type",
+          "expected": "string",
+          "received": "undefined",
+          "path": [
+            "slides",
+            2,
+            "title"
+          ],
+          "message": "Required"
+        },
+        {
+          "code": "invalid_type",
+          "expected": "string",
+          "received": "undefined",
+          "path": [
+            "slides",
+            3,
+            "title"
+          ],
+          "message": "Required"
+        },
+        {
+          "code": "invalid_type",
+          "expected": "string",
+          "received": "undefined",
+          "path": [
+            "slides",
+            4,
+            "title"
+          ],
+          "message": "Required"
+        },
+        {
+          "code": "invalid_type",
+          "expected": "string",
+          "received": "undefined",
+          "path": [
+            "slides",
+            5,
+            "title"
+          ],
+          "message": "Required"
+        },
+        {
+          "code": "invalid_type",
+          "expected": "string",
+          "received": "undefined",
+          "path": [
+            "slides",
+            6,
+            "title"
+          ],
+          "message": "Required"
+        },
+        {
+          "code": "invalid_type",
+          "expected": "string",
+          "received": "undefined",
+          "path": [
+            "slides",
+            7,
+            "title"
+          ],
+          "message": "Required"
+        },
+        {
+          "code": "invalid_type",
+          "expected": "string",
+          "received": "undefined",
+          "path": [
+            "slides",
+            8,
+            "title"
+          ],
+          "message": "Required"
+        }
+      ],
+      "slideCount": 10,
+      "visualTypes": [
+        "mindmap"
+      ],
+      "titles": [
+        "Encapsulation in Computer Science",
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "ok": true
+    },
+    {
+      "topic": "Polymorphism",
+      "score": 6,
+      "maxScore": 8,
+      "criteria": {
+        "jsonValidity": true,
+        "slideCountRange": true,
+        "narrationPresence": true,
+        "topicCoverage": true,
+        "oopKeywordCoverage": 6,
+        "dataStructuresKeywordCoverage": 1,
+        "visualTypeCoverage": false,
+        "responseTimeMs": 49094,
+        "groundedness": false
+      },
+      "schemaValid": true,
+      "schemaErrors": [],
+      "slideCount": 9,
+      "visualTypes": [
+        "class_diagram"
+      ],
+      "titles": [
+        "Polymorphism: The Key to Code Flexibility",
+        "What is Polymorphism?",
+        "An Analogy for Polymorphism",
+        "Class Diagram for Polymorphism",
+        "Code Example: Polymorphism with Method Overriding",
+        "Step-by-Step Explanation of Polymorphism",
+        "Common Mistake: Forgetting to Override",
+        "Recap of Polymorphism",
+        "Quiz Time!"
+      ],
+      "ok": true
+    },
+    {
+      "topic": "Linked List",
+      "score": 6,
+      "maxScore": 8,
+      "criteria": {
+        "jsonValidity": true,
+        "slideCountRange": true,
+        "narrationPresence": true,
+        "topicCoverage": true,
+        "oopKeywordCoverage": 1,
+        "dataStructuresKeywordCoverage": 2,
+        "visualTypeCoverage": false,
+        "responseTimeMs": 48972,
+        "groundedness": false
+      },
+      "schemaValid": true,
+      "schemaErrors": [],
+      "slideCount": 8,
+      "visualTypes": [
+        "linkedlist"
+      ],
+      "titles": [
+        "Introduction to Linked List",
+        "Concept of Linked List",
+        "Diagram of Linked List",
+        "Inserting into Linked List",
+        "Step-by-Step Insertion",
+        "Common Mistakes",
+        "Recap of Linked List",
+        "Quiz Time!"
+      ],
+      "ok": true
+    },
+    {
+      "topic": "Stack",
+      "score": 4,
+      "maxScore": 8,
+      "criteria": {
+        "jsonValidity": true,
+        "slideCountRange": false,
+        "narrationPresence": false,
+        "topicCoverage": true,
+        "oopKeywordCoverage": 3,
+        "dataStructuresKeywordCoverage": 5,
+        "visualTypeCoverage": false,
+        "responseTimeMs": 47235,
+        "groundedness": false
+      },
+      "schemaValid": true,
+      "schemaErrors": [],
+      "slideCount": 7,
+      "visualTypes": [
+        "stack_queue"
+      ],
+      "titles": [
+        "Welcome to Computer Science: Stack Tutorial",
+        "What is a Stack?",
+        "Stack Operations",
+        "Step-by-Step Example",
+        "Common Mistakes",
+        "Recap",
+        "Quick Quiz"
+      ],
+      "ok": true
+    },
+    {
+      "topic": "Binary Search Tree",
+      "score": 6,
+      "maxScore": 8,
+      "criteria": {
+        "jsonValidity": true,
+        "slideCountRange": true,
+        "narrationPresence": true,
+        "topicCoverage": true,
+        "oopKeywordCoverage": 3,
+        "dataStructuresKeywordCoverage": 3,
+        "visualTypeCoverage": false,
+        "responseTimeMs": 63642,
+        "groundedness": false
+      },
+      "schemaValid": true,
+      "schemaErrors": [],
+      "slideCount": 8,
+      "visualTypes": [
+        "tree"
+      ],
+      "titles": [
+        "Binary Search Tree Tutorial",
+        "Concept of Binary Search Tree",
+        "Binary Search Tree Diagram",
+        "Inserting a Node in BST",
+        "Step-by-Step Insertion",
+        "Common Mistakes in BST Operations",
+        "Recap of Binary Search Tree",
+        "Quiz Time!"
+      ],
+      "ok": true
+    },
+    {
+      "topic": "Big-O",
+      "score": 7,
+      "maxScore": 8,
+      "criteria": {
+        "jsonValidity": true,
+        "slideCountRange": true,
+        "narrationPresence": true,
+        "topicCoverage": true,
+        "oopKeywordCoverage": 2,
+        "dataStructuresKeywordCoverage": 4,
+        "visualTypeCoverage": false,
+        "responseTimeMs": 50765,
+        "groundedness": true
+      },
+      "schemaValid": true,
+      "schemaErrors": [],
+      "slideCount": 9,
+      "visualTypes": [
+        "bigo_chart"
+      ],
+      "titles": [
+        "Big-O Notation for Beginners",
+        "What is Big-O Notation?",
+        "Analogy for Big-O",
+        "Big-O Growth Classes",
+        "Code Example: Constant Time",
+        "Step-by-Step Analysis",
+        "Common Mistakes",
+        "Recap of Key Points",
+        "Quiz Time!"
+      ],
+      "ok": true
+    }
+  ],
+  "summary": {
+    "passed": 6,
+    "total": 6,
+    "averageScore": 5.666666666666667,
+    "averageResponseTimeMs": 50947.333333333336
+  }
+}

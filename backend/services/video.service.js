@@ -9,10 +9,11 @@ const { getDb } = require('../config/db');
 const ai = require('./ai.service');
 const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
-const { retrieve } = require('./rag.service');
+const { retrieveWithMeta } = require('./rag.service');
 const tts = require('./tts.service');
 const slides = require('./slides.service');
 const jobs = require('./jobs.service');
+const { scoreVideoScript } = require('./video-quality.service');
 const log = require('../utils/logger');
 const {
   resolveBinary,
@@ -23,18 +24,34 @@ const {
 } = require('../utils/mediaBinaries');
 
 const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart'];
+const SLIDE_TYPES = ['title', 'objectives', 'concept', 'analogy', 'diagram', 'code', 'step_by_step', 'mistakes', 'recap', 'quiz'];
 
 const ScriptSchema = z.object({
+  topic: z.string().min(3).optional(),
+  audienceLevel: z.string().optional(),
+  learningObjectives: z.array(z.string()).optional().default([]),
   slides: z.array(z.object({
+    slideType: z.enum(SLIDE_TYPES).optional(),
     title: z.string().min(1),
-    visual_type: z.enum(VISUAL_TYPES).optional().default('mindmap'),
-    bullets: z.array(z.string()).min(1).max(8),
+    bullets: z.array(z.string()).min(1).max(5),
+    narration: z.string().min(1),
+    visual: z.object({
+      type: z.enum(VISUAL_TYPES).optional().default('mindmap'),
+      description: z.string().optional().default(''),
+      nodes: z.array(z.string()).optional().default([]),
+      edges: z.array(z.tuple([z.string(), z.string()])).optional().default([]),
+    }).optional(),
+    visual_type: z.enum(VISUAL_TYPES).optional(),
     visual_nodes: z.array(z.string()).optional().default([]),
     visual_edges: z.array(z.tuple([z.string(), z.string()])).optional().default([]),
     callouts: z.array(z.string()).optional().default([]),
     example_code: z.string().optional().default(''),
-    narration: z.string().min(1),
-  })).min(2).max(12),
+  })).min(8).max(10),
+});
+
+const ConceptResolutionSchema = z.object({
+  topic: z.string().min(3),
+  alternatives: z.array(z.string()).optional().default([]),
 });
 
 const _queue = [];
@@ -161,6 +178,98 @@ function compactText(text, max = 64) {
   return value.length > max ? `${value.slice(0, max - 1)}...` : value;
 }
 
+const FILE_EXT_RE = /\.(pdf|docx?|pptx?|txt|md)$/i;
+const GENERIC_CONCEPT_RE = /^(document|file|material|untitled|untitled document|chapter\s*\d+)$/i;
+const KNOWN_CONCEPTS = [
+  { topic: 'Encapsulation', terms: ['encapsulation', 'private field', 'getter', 'setter', 'data hiding'] },
+  { topic: 'Inheritance', terms: ['inheritance', 'extends', 'superclass', 'subclass'] },
+  { topic: 'Polymorphism', terms: ['polymorphism', 'override', 'dynamic dispatch'] },
+  { topic: 'Abstraction', terms: ['abstraction', 'interface', 'abstract class'] },
+  { topic: 'Stack', terms: ['stack', 'push', 'pop', 'lifo'] },
+  { topic: 'Queue', terms: ['queue', 'enqueue', 'dequeue', 'fifo'] },
+  { topic: 'Linked List', terms: ['linked list', 'node.next', 'next pointer'] },
+  { topic: 'Binary Search Tree', terms: ['binary search tree', 'bst', 'left subtree', 'right subtree'] },
+  { topic: 'Big-O', terms: ['big-o', 'o(n)', 'o(log n)', 'time complexity'] },
+  { topic: 'Array', terms: ['array', 'index', 'contiguous'] },
+  { topic: 'Hash Table', terms: ['hash table', 'hashmap', 'hash function'] },
+  { topic: 'Recursion', terms: ['recursion', 'base case', 'recursive case'] },
+];
+
+function normalizeName(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function comparableName(value) {
+  return normalizeName(value)
+    .replace(FILE_EXT_RE, '')
+    .toLowerCase();
+}
+
+function isGenericConcept(value) {
+  const text = normalizeName(value);
+  if (text.length < 3) return true;
+  if (FILE_EXT_RE.test(text)) return true;
+  return GENERIC_CONCEPT_RE.test(text);
+}
+
+function isUploadedFilename(value, material) {
+  const name = comparableName(value);
+  if (!name || !material) return false;
+  const title = comparableName(material.title);
+  const stored = comparableName(path.basename(material.file_path || ''));
+  return (!!title && name === title) || (!!stored && name === stored);
+}
+
+function validConceptHint(value, material) {
+  const text = normalizeName(value).replace(/^["']|["']$/g, '').slice(0, 90);
+  if (isGenericConcept(text)) return null;
+  if (isUploadedFilename(text, material)) return null;
+  return text;
+}
+
+function inferKnownConcept(chunks) {
+  const text = (chunks || []).map(c => `${c.chapter_title || ''} ${c.heading || ''} ${c.text || ''}`).join('\n').toLowerCase();
+  for (const item of KNOWN_CONCEPTS) {
+    if (item.terms.some(term => text.includes(term))) return item.topic;
+  }
+  if (/\b(class|object|method|field|constructor)\b/.test(text)) return 'Object-Oriented Programming';
+  if (/\b(array|tree|graph|node|algorithm|complexity)\b/.test(text)) return 'Data Structures';
+  return 'Object-Oriented Programming';
+}
+
+async function resolveConcept({ materialId, hint }) {
+  const db = getDb();
+  const material = db.prepare('SELECT id, title, file_path FROM materials WHERE id=?').get(materialId);
+  const fromHint = validConceptHint(hint, material);
+  if (fromHint) return { topic: fromHint, source: 'hint' };
+
+  const rejectedHint = normalizeName(hint);
+  const seedQuery = rejectedHint && !FILE_EXT_RE.test(rejectedHint)
+    ? rejectedHint
+    : 'object oriented programming data structures algorithms concepts';
+  const meta = await retrieveWithMeta(materialId, seedQuery, { feature: 'video', k: 8, minScore: 0 });
+  const chunks = meta.chunks || [];
+
+  try {
+    const raw = await ai.generate(
+      prompts.VIDEO_CONCEPT_EXTRACT(chunks, { materialTitle: material && material.title, rejectedHint }),
+      { format: 'json', temperature: 0.15, num_ctx: 3072, num_predict: 250 }
+    );
+    const parsed = await parseJsonSafe(raw, ConceptResolutionSchema, async (txt) => (
+      ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0, num_predict: 250 })
+    ));
+    const candidates = [parsed.topic, ...(parsed.alternatives || [])];
+    for (const candidate of candidates) {
+      const valid = validConceptHint(candidate, material);
+      if (valid) return { topic: valid, source: 'ai', alternatives: parsed.alternatives || [] };
+    }
+  } catch (e) {
+    log.warn('video_concept_extract_fallback', e.message || e);
+  }
+
+  return { topic: inferKnownConcept(chunks), source: 'heuristic' };
+}
+
 function drawLabeledBox(filters, text, x, y, w, h, fill, stroke = '0x64748b@0.75') {
   filters.push(`drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=${fill}:t=fill`);
   filters.push(`drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=${stroke}:t=2`);
@@ -227,7 +336,7 @@ async function renderSlideFrameWithFfmpeg(slide, outPath, idx, total) {
       .slice(0, 7);
     filters.push('drawbox=x=560:y=210:w=418:h=318:color=0x111827@1:t=fill');
     filters.push('drawbox=x=560:y=210:w=418:h=318:color=0x38bdf8@1:t=2');
-    codeLines.forEach((line, i) => filters.push(drawText(compactText(line, 42), 584, 246 + i * 34, 22, '0xe0f2fe')));
+    codeLines.forEach((line, i) => filters.push(drawText(compactText(line, 34), 584, 246 + i * 34, 20, '0xe0f2fe')));
     callouts.slice(0, 3).forEach((callout, i) => drawLabeledBox(filters, callout, 1004, 218 + i * 104, 174, 74, '0xfef9c3@1'));
   } else if (visualType === 'class_diagram') {
     const classes = nodes.slice(0, 4);
@@ -459,34 +568,583 @@ function fallbackVideoScript(concept, chunks) {
   return { slides: base };
 }
 
-function normalizeScript(script, concept, chunks) {
-  const fallback = fallbackVideoScript(concept, chunks);
+function conceptProfile(concept) {
+  const c = normalizeName(concept) || 'Object-Oriented Programming';
+  const lower = c.toLowerCase();
+  if (lower.includes('encapsulation')) {
+    return {
+      definition: 'Encapsulation bundles data with methods and controls access through a public interface.',
+      why: 'It protects object state and keeps changes predictable.',
+      analogy: 'A bank account exposes deposit and withdraw, not direct balance edits.',
+      diagramNodes: ['Encapsulation', 'Private Fields', 'Public Methods', 'Validation', 'Class Invariant'],
+      code: 'class BankAccount {\n  private double balance;\n  public void deposit(double amount) {\n    if (amount <= 0) return;\n    balance += amount;\n  }\n  public double getBalance() { return balance; }\n}',
+      steps: ['Keep fields private', 'Expose methods', 'Validate changes', 'Preserve invariants'],
+      mistakes: ['Making fields public', 'Skipping validation', 'Leaking internal collections'],
+      quiz: 'Why should balance be private instead of public?',
+      answer: 'So all changes pass through controlled methods.',
+    };
+  }
+  if (lower.includes('binary search tree') || lower === 'bst') {
+    return {
+      definition: 'A binary search tree keeps smaller keys on the left and larger keys on the right.',
+      why: 'That ordering lets search and insertion discard half of a subtree at each step.',
+      analogy: 'It is like sorting decisions in a yes/no decision tree.',
+      diagramNodes: ['BST', 'Root', 'Left Smaller', 'Right Larger', 'Height'],
+      code: 'Node insert(Node root, int key) {\n  if (root == null) return new Node(key);\n  if (key < root.key) root.left = insert(root.left, key);\n  else if (key > root.key) root.right = insert(root.right, key);\n  return root;\n}',
+      steps: ['Start at root', 'Compare key', 'Move left or right', 'Insert at empty spot'],
+      mistakes: ['Ignoring duplicates', 'Forgetting height matters', 'Assuming every BST is balanced'],
+      quiz: 'What controls BST operation time?',
+      answer: 'The height of the tree.',
+    };
+  }
+  if (lower.includes('stack')) {
+    return {
+      definition: 'A stack is a LIFO structure where the last item pushed is the first popped.',
+      why: 'It models nested work such as function calls, undo, and parsing.',
+      analogy: 'It works like a stack of plates: take from the top first.',
+      diagramNodes: ['Stack', 'Top', 'Push', 'Pop', 'LIFO'],
+      code: 'stack.push(item);\nlet top = stack.pop();\nlet next = stack.peek();',
+      steps: ['Push adds to top', 'Peek reads top', 'Pop removes top', 'Underflow if empty'],
+      mistakes: ['Removing from bottom', 'Popping an empty stack', 'Confusing LIFO with FIFO'],
+      quiz: 'Which item is popped first after A, B, C are pushed?',
+      answer: 'C, because it was pushed last.',
+    };
+  }
+  if (lower.includes('queue')) {
+    return {
+      definition: 'A queue is a FIFO structure where the first item enqueued is the first dequeued.',
+      why: 'It preserves arrival order for scheduling, buffers, and breadth-first search.',
+      analogy: 'It works like a line at a service desk.',
+      diagramNodes: ['Queue', 'Front', 'Rear', 'Enqueue', 'Dequeue'],
+      code: 'queue.enqueue(item);\nlet first = queue.dequeue();',
+      steps: ['Enqueue at rear', 'Dequeue from front', 'Preserve order', 'Check empty state'],
+      mistakes: ['Removing from rear', 'Confusing FIFO with LIFO', 'Ignoring empty queues'],
+      quiz: 'Which item leaves first after A, B, C are enqueued?',
+      answer: 'A, because it arrived first.',
+    };
+  }
+  if (lower.includes('big-o') || lower.includes('complexity')) {
+    return {
+      definition: 'Big-O describes how running time or memory grows as input size increases.',
+      why: 'It helps compare algorithms without depending on a specific machine.',
+      analogy: 'It is like comparing travel routes by how they scale as the city grows.',
+      diagramNodes: ['Big-O', 'O(1)', 'O(log n)', 'O(n)', 'O(n^2)'],
+      code: 'for (let i = 0; i < n; i++) {\n  visit(items[i]);\n}\n// One loop over n items is O(n).',
+      steps: ['Find the input size', 'Count dominant work', 'Drop constants', 'Keep growth term'],
+      mistakes: ['Keeping constants', 'Ignoring nested loops', 'Confusing best and worst case'],
+      quiz: 'Why is binary search O(log n)?',
+      answer: 'Each comparison cuts the remaining search space roughly in half.',
+    };
+  }
+  return {
+    definition: `${c} is a core CS concept used to organize data, behavior, or algorithmic work.`,
+    why: 'It matters because it changes how clearly and efficiently a program can solve a problem.',
+    analogy: 'Think of it as choosing the right tool and rules before building a solution.',
+    diagramNodes: [c, 'Definition', 'Purpose', 'Operations', 'Pitfalls'],
+    code: '// Sketch the core operation\nfunction useConcept(input) {\n  // validate input\n  // apply the main rule\n  return result;\n}',
+    steps: ['Define the idea', 'Identify its rules', 'Trace an example', 'Check edge cases'],
+    mistakes: ['Memorizing names only', 'Skipping examples', 'Ignoring trade-offs'],
+    quiz: `What problem does ${c} help solve?`,
+    answer: 'It gives a structured way to reason about code and trade-offs.',
+  };
+}
+
+function sourceTakeaways(chunks) {
+  return (chunks || [])
+    .map(c => String(c.text || '').replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .map(t => compactText(t, 90));
+}
+
+function preferredDiagramVisualType(text) {
+  const lower = String(text || '').toLowerCase();
+  if (lower.includes('linked list') || lower.includes('linkedlist')) return 'linkedlist';
+  if (lower.includes('big-o') || lower.includes('big o') || lower.includes('complexity') || /\bo\([^)]+\)/.test(lower)) return 'bigo_chart';
+  if (lower.includes('stack') || lower.includes('queue') || lower.includes('fifo') || lower.includes('lifo')) return 'stack_queue';
+  if (lower.includes('tree') || lower.includes('bst') || lower.includes('binary search')) return 'tree';
+  if (lower.includes('encapsulation') || lower.includes('inheritance') || lower.includes('polymorphism') || lower.includes('abstraction') || lower.includes('class')) return 'class_diagram';
+  return 'mindmap';
+}
+
+function inferScriptVisualType(slide, concept, slideType, nodes, bullets, index, total) {
+  if (slideType === 'code' || slide.example_code) return 'code';
+  if (slideType === 'diagram') return preferredDiagramVisualType(`${concept} ${slide.title || ''} ${nodes.join(' ')}`);
+  if (slideType === 'step_by_step') return 'flow';
+  if (slideType === 'mistakes' || slideType === 'analogy') return 'comparison';
+  if (slideType === 'recap' || index === total - 1) return 'summary';
+  const byText = preferredDiagramVisualType(`${slide.title || ''} ${nodes.join(' ')} ${bullets.join(' ')}`);
+  return byText === 'class_diagram' ? 'mindmap' : byText;
+}
+
+function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
+  const c = normalizeName(concept) || inferKnownConcept(chunks);
+  const p = conceptProfile(c);
+  const sourceNotes = sourceTakeaways(chunks);
+  const sourceCallout = chunks && chunks[0] ? `[chunk:${chunks[0].id}]` : '';
+  const groundingCallout = lowGrounding
+    ? 'Uploaded material had weak support; using general CS knowledge.'
+    : (sourceCallout ? `Grounded with ${sourceCallout}` : 'Grounded in available study material.');
+  const introNarration = lowGrounding
+    ? `The uploaded material does not contain enough specific information about ${c}. I will say that clearly, then teach the standard CS idea using general knowledge.`
+    : `In this lesson, we will study ${c} using the uploaded material where it gives useful evidence.`;
+  return {
+    topic: c,
+    audienceLevel: 'beginner',
+    learningObjectives: [`Define ${c}`, 'Explain why it matters', 'Apply it correctly'],
+    slides: [
+      {
+        slideType: 'title',
+        title: c,
+        visual_type: 'mindmap',
+        bullets: [`What ${c} means`, 'Why it matters', 'How to use it'],
+        visual_nodes: [c, ...p.diagramNodes.slice(1, 5)],
+        visual_edges: p.diagramNodes.slice(1, 4).map(n => [c, n]),
+        callouts: [groundingCallout],
+        narration: `${introNarration} By the end, you should be able to explain the idea and spot common mistakes.`,
+      },
+      {
+        slideType: 'objectives',
+        title: 'Learning Objectives',
+        visual_type: 'summary',
+        bullets: [`Define ${c}`, 'Trace a simple example', 'Avoid common mistakes'],
+        visual_nodes: ['Objectives', 'Definition', 'Example', 'Mistakes'],
+        visual_edges: [['Objectives', 'Definition'], ['Objectives', 'Example'], ['Objectives', 'Mistakes']],
+        callouts: sourceNotes.length ? [`Source note: ${sourceNotes[0]}`] : [],
+        narration: `We will start with a precise definition, then connect it to an analogy and a concrete example. Finally, we will review mistakes and answer a mini quiz.`,
+      },
+      {
+        slideType: 'concept',
+        title: `What is ${c}?`,
+        visual_type: 'mindmap',
+        bullets: [p.definition, p.why].map(x => compactText(x, 68)),
+        visual_nodes: [c, 'Definition', 'Purpose', 'Interface', 'Trade-off'],
+        visual_edges: [[c, 'Definition'], [c, 'Purpose'], [c, 'Trade-off']],
+        callouts: sourceCallout ? [sourceCallout] : [],
+        narration: `${p.definition} ${p.why} This is the core idea to remember before looking at code.`,
+      },
+      {
+        slideType: 'analogy',
+        title: 'Simple Analogy',
+        visual_type: 'comparison',
+        bullets: [p.analogy, 'Map the analogy to code', 'Know where it stops'].map(x => compactText(x, 68)),
+        visual_nodes: ['Analogy', c, 'Shared idea', 'Limit'],
+        visual_edges: [['Analogy', 'Shared idea'], ['Shared idea', c]],
+        callouts: ['Analogies build intuition, not proof.'],
+        narration: `${p.analogy} The analogy helps you remember the behavior, but the formal rules still matter when writing code.`,
+      },
+      {
+        slideType: 'diagram',
+        title: 'Visual Model',
+        visual_type: preferredDiagramVisualType(c),
+        bullets: ['Name the parts', 'Track the relationships', 'Follow one operation'],
+        visual_nodes: p.diagramNodes,
+        visual_edges: p.diagramNodes.slice(1).map(n => [p.diagramNodes[0], n]),
+        callouts: ['Use the diagram to explain the rule aloud.'],
+        narration: `This diagram separates the pieces of ${c}. When studying, point to each part and say what role it plays.`,
+      },
+      {
+        slideType: 'code',
+        title: 'Code Sketch',
+        visual_type: 'code',
+        bullets: ['Identify the main operation', 'Read validation first', 'Trace state changes'],
+        visual_nodes: ['Code', 'Input', 'Rule', 'Output'],
+        visual_edges: [['Input', 'Rule'], ['Rule', 'Output']],
+        callouts: ['Trace code line by line.'],
+        example_code: p.code,
+        narration: `Now connect the idea to code. Do not memorize the syntax first; identify the operation, the data it protects or changes, and the condition that keeps it correct.`,
+      },
+      {
+        slideType: 'step_by_step',
+        title: 'Step by Step',
+        visual_type: 'flow',
+        bullets: p.steps.map(x => compactText(x, 58)),
+        visual_nodes: p.steps,
+        visual_edges: p.steps.slice(0, -1).map((n, i) => [n, p.steps[i + 1]]),
+        callouts: ['Trace one example before generalizing.'],
+        narration: `Work through ${c} in this order: ${p.steps.join(', ')}. A step-by-step trace is the fastest way to reveal misunderstandings.`,
+      },
+      {
+        slideType: 'mistakes',
+        title: 'Common Mistakes',
+        visual_type: 'comparison',
+        bullets: p.mistakes.map(x => compactText(x, 62)),
+        visual_nodes: ['Mistake', 'Correct Habit', ...p.mistakes.slice(0, 2)],
+        visual_edges: [['Mistake', 'Correct Habit']],
+        callouts: ['Most bugs come from violating the main rule.'],
+        narration: `The common mistakes are not random; each one breaks the central rule of ${c}. When debugging, ask which rule was violated.`,
+      },
+      {
+        slideType: 'recap',
+        title: 'Recap',
+        visual_type: 'summary',
+        bullets: [p.definition, p.why, 'Use examples to test understanding'].map(x => compactText(x, 68)),
+        visual_nodes: [c, 'Definition', 'Purpose', 'Example', 'Mistake'],
+        visual_edges: [[c, 'Definition'], [c, 'Purpose'], [c, 'Example'], [c, 'Mistake']],
+        callouts: ['Say the recap without looking.'],
+        narration: `To recap, ${p.definition} It matters because ${p.why.toLowerCase()} You are ready when you can explain it with an example and a mistake to avoid.`,
+      },
+      {
+        slideType: 'quiz',
+        title: 'Mini Quiz',
+        visual_type: 'mindmap',
+        bullets: [p.quiz, `Answer: ${p.answer}`],
+        visual_nodes: ['Question', 'Answer', c],
+        visual_edges: [['Question', c], [c, 'Answer']],
+        callouts: ['Pause and answer before revealing.'],
+        narration: `Mini quiz: ${p.quiz} The answer is: ${p.answer} If that makes sense, you understand the main idea of ${c}.`,
+      },
+    ],
+  };
+}
+
+function normalizeScript(script, concept, chunks, lowGrounding = false) {
+  const fallback = fallbackVideoScriptM1(concept, chunks, lowGrounding);
   const src = script && Array.isArray(script.slides) && script.slides.length >= 2 ? script : fallback;
-  const typeByIndex = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart'];
-  const slidesOut = src.slides.slice(0, 12).map((s, i) => ({
-    title: String(s.title || (i === 0 ? concept : `Part ${i + 1}`)).slice(0, 90),
-    visual_type: VISUAL_TYPES.includes(s.visual_type)
-      ? s.visual_type
-      : (i === src.slides.length - 1 ? 'summary' : typeByIndex[i % typeByIndex.length]),
-    bullets: (Array.isArray(s.bullets) && s.bullets.length ? s.bullets : fallback.slides[Math.min(i, fallback.slides.length - 1)].bullets)
+  const typeByIndex = ['mindmap', 'summary', 'mindmap', 'comparison', 'mindmap', 'code', 'flow', 'comparison', 'summary', 'mindmap'];
+  const slidesIn = src.slides.slice(0, 10);
+  while (slidesIn.length < 8) slidesIn.push(fallback.slides[slidesIn.length]);
+  const slidesOut = slidesIn.map((s, i) => {
+    const fb = fallback.slides[Math.min(i, fallback.slides.length - 1)];
+    const visual = s.visual || {};
+    const visualType = s.visual_type || visual.type;
+    const rawBullets = Array.isArray(s.bullets) && s.bullets.length ? s.bullets : fb.bullets;
+    const bullets = rawBullets
       .map(b => String(b || '').replace(/\s+/g, ' ').trim())
       .filter(Boolean)
-      .slice(0, 6),
-    visual_nodes: cleanTextList(s.visual_nodes, [s.title || concept, ...(s.bullets || [])]).slice(0, 8),
-    visual_edges: (Array.isArray(s.visual_edges) ? s.visual_edges : [])
+      .map(b => compactText(b, 72))
+      .slice(0, 5);
+    const nodes = cleanTextList(s.visual_nodes && s.visual_nodes.length ? s.visual_nodes : visual.nodes, [s.title || concept, ...bullets]).slice(0, 8);
+    const edges = (Array.isArray(s.visual_edges) && s.visual_edges.length ? s.visual_edges : visual.edges || [])
       .filter(edge => Array.isArray(edge) && edge.length >= 2)
       .map(edge => [String(edge[0] || '').trim(), String(edge[1] || '').trim()])
       .filter(edge => edge[0] && edge[1])
-      .slice(0, 10),
-    callouts: cleanTextList(s.callouts, []).slice(0, 4),
-    example_code: String(s.example_code || '').slice(0, 1000),
-    narration: String(s.narration || fallback.slides[Math.min(i, fallback.slides.length - 1)].narration || '').replace(/\s+/g, ' ').trim(),
-  })).filter(s => s.title && s.bullets.length && s.narration);
-  return { slides: slidesOut.length >= 2 ? slidesOut : fallback.slides };
+      .slice(0, 10);
+    const slideType = SLIDE_TYPES.includes(s.slideType) ? s.slideType : (fb.slideType || SLIDE_TYPES[Math.min(i, SLIDE_TYPES.length - 1)]);
+    const inferredVisualType = inferScriptVisualType(s, concept, slideType, nodes, bullets, i, slidesIn.length);
+    return {
+      slideType,
+      slide_type: slideType,
+      title: compactText(s.title || fb.title || (i === 0 ? concept : `Part ${i + 1}`), 86),
+      visual_type: VISUAL_TYPES.includes(visualType)
+        ? visualType
+        : (inferredVisualType !== 'mindmap' ? inferredVisualType : (i === slidesIn.length - 1 ? 'summary' : typeByIndex[i % typeByIndex.length])),
+      bullets,
+      visual_nodes: nodes,
+      visual_edges: edges,
+      callouts: cleanTextList(s.callouts, fb.callouts || []).map(c => compactText(c, 80)).slice(0, 3),
+      example_code: String(s.example_code || s.exampleCode || fb.example_code || '').slice(0, 1000),
+      narration: String(s.narration || fb.narration || '').replace(/\s+/g, ' ').trim(),
+    };
+  }).filter(s => s.title && s.bullets.length && s.narration);
+  if (lowGrounding && slidesOut[0]) {
+    const disclaimer = 'Uploaded material had weak support; using general CS knowledge.';
+    if (!slidesOut[0].callouts.some(c => c.toLowerCase().includes('weak support'))) {
+      slidesOut[0].callouts.unshift(disclaimer);
+      slidesOut[0].callouts = slidesOut[0].callouts.slice(0, 3);
+    }
+    if (!slidesOut[0].narration.toLowerCase().includes('uploaded material')) {
+      slidesOut[0].narration = `${disclaimer} ${slidesOut[0].narration}`;
+    }
+  }
+  return {
+    topic: validConceptHint(src.topic, null) || concept,
+    audienceLevel: src.audienceLevel || 'beginner',
+    learningObjectives: (src.learningObjectives || fallback.learningObjectives || []).slice(0, 4),
+    slides: slidesOut.length >= 8 ? slidesOut : fallback.slides,
+  };
+}
+
+function providerModel(provider) {
+  return provider === 'groq' ? env.GROQ_MODEL : env.OLLAMA_GEN_MODEL;
+}
+
+function isGroqConfigured() {
+  return !!env.GROQ_API_KEY;
+}
+
+async function parseValidateNormalize(raw, provider, concept, chunks, lowGrounding, repairTokens = 1200) {
+  const parsed = await parseJsonSafe(raw, ScriptSchema, async (txt) => (
+    ai.generate(prompts.REPAIR_JSON(txt), {
+      provider,
+      feature: 'video_script',
+      format: 'json',
+      temperature: 0,
+      num_predict: repairTokens,
+      max_tokens: repairTokens,
+    })
+  ));
+  return normalizeScript(parsed, concept, chunks, lowGrounding);
+}
+
+async function generateScriptCandidate({ provider, prompt, concept, chunks, lowGrounding, options = {}, logMeta = {} }) {
+  const started = Date.now();
+  try {
+    const raw = await ai.generate(prompt, {
+      provider,
+      feature: 'video_script',
+      format: 'json',
+      temperature: options.temperature ?? 0.35,
+      num_ctx: options.num_ctx || 4096,
+      num_predict: options.num_predict,
+      max_tokens: options.max_tokens,
+      model: options.model,
+    });
+    const script = await parseValidateNormalize(
+      raw,
+      provider,
+      concept,
+      chunks,
+      lowGrounding,
+      options.repairTokens || (provider === 'groq' ? 900 : 1200)
+    );
+    const quality = scoreVideoScript(script, {
+      concept,
+      chunks,
+      lowGrounding,
+      threshold: env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
+    });
+    log.info('video_script_provider', {
+      provider,
+      model: providerModel(provider),
+      quality_score: quality.score,
+      passed: quality.passed,
+      duration_ms: Date.now() - started,
+      ...logMeta,
+    });
+    return { provider, script, quality, valid: true, durationMs: Date.now() - started };
+  } catch (e) {
+    log.warn('video_script_provider_failed', {
+      provider,
+      model: providerModel(provider),
+      error: e && e.code ? e.code : 'script_generation_failed',
+      message: e && e.message ? String(e.message).slice(0, 180) : String(e).slice(0, 180),
+      duration_ms: Date.now() - started,
+      ...logMeta,
+    });
+    return {
+      provider,
+      script: null,
+      valid: false,
+      error: e,
+      quality: { score: 0, passed: false, reasons: [e && e.message ? e.message : String(e)] },
+      durationMs: Date.now() - started,
+    };
+  }
+}
+
+function compactGroqChunks(chunks, opts = {}) {
+  const topK = Math.max(1, opts.topK || env.GROQ_VIDEO_TOP_K_CHUNKS || 4);
+  const maxChunkChars = Math.max(200, opts.maxChunkChars || env.GROQ_VIDEO_MAX_CHUNK_CHARS || 900);
+  return (chunks || []).slice(0, topK).map((c, i) => ({
+    id: c.id || i + 1,
+    idx: c.idx == null ? i : c.idx,
+    title: compactText(c.heading || c.chapter_title || '', 80),
+    score: Number(c.score || 0).toFixed(3),
+    text: String(c.text || '').replace(/\s+/g, ' ').trim().slice(0, maxChunkChars),
+  }));
+}
+
+function buildCompactGroqVideoPrompt(concept, chunks, lowGrounding, budget = {}) {
+  let topK = budget.topK || env.GROQ_VIDEO_TOP_K_CHUNKS || 4;
+  let maxChunkChars = budget.maxChunkChars || env.GROQ_VIDEO_MAX_CHUNK_CHARS || 900;
+  const maxInputChars = budget.maxInputChars || env.GROQ_VIDEO_MAX_INPUT_CHARS || 12000;
+  let source = '';
+  let prompt = '';
+  do {
+    const compactChunks = compactGroqChunks(chunks, { topK, maxChunkChars });
+    source = compactChunks.map(c => (
+      `[chunk:${c.id}] score=${c.score} title="${c.title}" excerpt="${c.text}"`
+    )).join('\n\n');
+    prompt = `Generate a grounded AI tutor video lesson JSON for "${concept}".
+
+Grounding: ${lowGrounding ? 'LOW. First slide must disclose weak uploaded-material support, then use general CS knowledge.' : 'Use source chunks when possible and cite chunk ids.'}
+
+Source chunks:
+${source || '(No source chunks available.)'}
+
+Return ONLY strict JSON with this shape:
+{"topic":"${concept}","audienceLevel":"beginner","learningObjectives":["..."],"slides":[{"slideType":"title|objectives|concept|analogy|diagram|code|step_by_step|mistakes|recap|quiz","title":"...","bullets":["..."],"narration":"...","visual":{"type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart","nodes":["..."],"edges":[["...","..."]]},"callouts":["..."],"example_code":""}]}
+
+Rules:
+- 8-10 slides.
+- Include title, objectives, concept, analogy, diagram, code or step_by_step, mistakes, recap, and quiz.
+- Narration must be 2-4 useful sentences per slide.
+- Use short bullets, 2-5 per slide.
+- Use diverse visual types, not only mindmaps.
+- Include code/example when relevant for OOP or Data Structures.
+- Avoid placeholders and generic text.`;
+    if (prompt.length <= maxInputChars || maxChunkChars <= 350) break;
+    maxChunkChars = Math.floor(maxChunkChars * 0.75);
+  } while (prompt.length > maxInputChars);
+  return {
+    prompt: prompt.length > maxInputChars ? prompt.slice(0, maxInputChars) : prompt,
+    chunksSent: Math.min(topK, (chunks || []).length),
+    maxChunkChars,
+    promptChars: Math.min(prompt.length, maxInputChars),
+  };
+}
+
+async function generateGroqVideoCandidate(concept, chunks, lowGrounding, reason) {
+  if (!isGroqConfigured()) {
+    log.warn('video_script_fallback_unavailable', { provider: 'groq', reason: 'missing_groq_api_key' });
+    return { provider: 'groq', valid: false, script: null, quality: { score: 0, passed: false, reasons: ['GROQ_API_KEY missing'] } };
+  }
+  const primaryBudget = {
+    topK: env.GROQ_VIDEO_TOP_K_CHUNKS,
+    maxChunkChars: env.GROQ_VIDEO_MAX_CHUNK_CHARS,
+    maxInputChars: env.GROQ_VIDEO_MAX_INPUT_CHARS,
+  };
+  const built = buildCompactGroqVideoPrompt(concept, chunks, lowGrounding, primaryBudget);
+  log.info('video_script_groq_request', {
+    provider: 'groq',
+    model: env.GROQ_MODEL,
+    reason,
+    chunks: built.chunksSent,
+    max_output_tokens: env.GROQ_VIDEO_MAX_OUTPUT_TOKENS,
+    prompt_chars: built.promptChars,
+  });
+  let candidate = await generateScriptCandidate({
+    provider: 'groq',
+    prompt: built.prompt,
+    concept,
+    chunks,
+    lowGrounding,
+    options: {
+      temperature: 0.35,
+      max_tokens: env.GROQ_VIDEO_MAX_OUTPUT_TOKENS,
+      repairTokens: 900,
+      model: env.GROQ_MODEL,
+    },
+    logMeta: { chunks: built.chunksSent, prompt_chars: built.promptChars },
+  });
+  const shouldRetrySmall = !candidate.valid && candidate.error && (
+    candidate.error.code === 'ai_context_too_large' ||
+    candidate.error.code === 'ai_request_failed' ||
+    /token|context|too large|413/i.test(String(candidate.error.message || ''))
+  );
+  if (!shouldRetrySmall) return candidate;
+
+  const retryBuilt = buildCompactGroqVideoPrompt(concept, chunks, lowGrounding, {
+    topK: 2,
+    maxChunkChars: 600,
+    maxInputChars: Math.min(env.GROQ_VIDEO_MAX_INPUT_CHARS || 12000, 7000),
+  });
+  log.warn('video_script_groq_retry_small_context', {
+    provider: 'groq',
+    model: env.GROQ_MODEL,
+    chunks: retryBuilt.chunksSent,
+    max_output_tokens: 800,
+    prompt_chars: retryBuilt.promptChars,
+  });
+  candidate = await generateScriptCandidate({
+    provider: 'groq',
+    prompt: retryBuilt.prompt,
+    concept,
+    chunks,
+    lowGrounding,
+    options: {
+      temperature: 0.3,
+      max_tokens: 800,
+      repairTokens: 700,
+      model: env.GROQ_MODEL,
+    },
+    logMeta: { chunks: retryBuilt.chunksSent, prompt_chars: retryBuilt.promptChars, retry: 'small_context' },
+  });
+  return candidate;
+}
+
+function selectBestScript(candidates, fallback, threshold) {
+  const valid = candidates.filter(c => c && c.valid && c.script);
+  const passing = valid.filter(c => c.quality && c.quality.score >= threshold);
+  if (passing.length) return passing.sort((a, b) => b.quality.score - a.quality.score)[0];
+  if (valid.length) return valid.sort((a, b) => (b.quality.score || 0) - (a.quality.score || 0))[0];
+  return fallback;
+}
+
+async function generateVideoScriptWithFallback(concept, chunks, lowGrounding) {
+  const threshold = env.VIDEO_SCRIPT_MIN_QUALITY_SCORE;
+  const fallbackScript = normalizeScript(fallbackVideoScriptM1(concept, chunks, lowGrounding), concept, chunks, lowGrounding);
+  const candidates = [];
+  const configuredProvider = env.VIDEO_SCRIPT_PROVIDER === 'groq' ? 'groq' : 'ollama';
+  const localPrompt = prompts.VIDEO_SCRIPT(concept, chunks, { lowGrounding });
+
+  if (configuredProvider === 'groq') {
+    const groq = await generateGroqVideoCandidate(concept, chunks, lowGrounding, 'direct_groq_video_script_provider');
+    candidates.push(groq);
+    if (!groq.valid && !env.VIDEO_SCRIPT_USE_LOCAL_IF_GROQ_FAILS) {
+      throw groq.error || new Error('groq_video_script_failed');
+    }
+    if (groq.valid && !env.VIDEO_SCRIPT_USE_LOCAL_IF_GROQ_FAILS) {
+      log.info('video_script_selected', { provider: 'groq', quality_score: groq.quality && groq.quality.score });
+      return groq.script;
+    }
+    if ((!groq.valid || !groq.quality.passed) && env.VIDEO_SCRIPT_USE_LOCAL_IF_GROQ_FAILS) {
+      const local = await generateScriptCandidate({
+        provider: 'ollama',
+        prompt: localPrompt,
+        concept,
+        chunks,
+        lowGrounding,
+        options: { temperature: 0.35, num_ctx: 4096, num_predict: 2200 },
+      });
+      candidates.push(local);
+    }
+    const selected = selectBestScript(candidates, { provider: 'fallback', script: fallbackScript, quality: scoreVideoScript(fallbackScript, { concept, chunks, lowGrounding, threshold }), valid: true }, threshold);
+    log.info('video_script_selected', { provider: selected.provider, quality_score: selected.quality && selected.quality.score });
+    return selected.script;
+  }
+
+  const local = await generateScriptCandidate({
+    provider: 'ollama',
+    prompt: localPrompt,
+    concept,
+    chunks,
+    lowGrounding,
+    options: { temperature: 0.35, num_ctx: 4096, num_predict: 2200 },
+  });
+  candidates.push(local);
+
+  if (local.valid && local.quality.score >= threshold) {
+    log.info('video_script_selected', { provider: 'ollama', quality_score: local.quality.score });
+    return local.script;
+  }
+
+  if (env.VIDEO_SCRIPT_GROQ_FALLBACK_ON_WEAK) {
+    if (isGroqConfigured()) {
+      log.warn('video_script_fallback', {
+        provider: 'groq',
+        reason: local.valid ? 'local script below threshold' : 'local script invalid',
+        local_score: local.quality && local.quality.score,
+        threshold,
+      });
+      const groq = await generateGroqVideoCandidate(concept, chunks, lowGrounding, local.valid ? 'local_script_below_threshold' : 'local_script_invalid');
+      candidates.push(groq);
+      if (groq.valid && groq.quality.passed && (!local.valid || groq.quality.score > local.quality.score)) {
+        log.info('video_script_selected', { provider: 'groq', quality_score: groq.quality.score, local_score: local.quality && local.quality.score });
+        return groq.script;
+      }
+    } else {
+      log.warn('video_script_groq_fallback_unavailable', { reason: 'missing_groq_api_key' });
+    }
+  }
+
+  if (local.valid && (env.VIDEO_SCRIPT_USE_LOCAL_IF_GROQ_FAILS || !env.VIDEO_SCRIPT_GROQ_FALLBACK_ON_WEAK)) {
+    log.info('video_script_selected', {
+      provider: 'ollama',
+      quality_score: local.quality.score,
+      reasons: (local.quality.reasons || []).slice(0, 4),
+    });
+    return local.script;
+  }
+
+  const fallbackQuality = scoreVideoScript(fallbackScript, { concept, chunks, lowGrounding, threshold });
+  log.warn('video_script_selected', { provider: 'fallback', quality_score: fallbackQuality.score });
+  return fallbackScript;
 }
 
 async function generateVideo({ userId, materialId, concept }) {
-  await ai.assertModelsAvailable({ generation: true, embedding: true });
+  await ai.assertModelsAvailable({ generation: false, embedding: true });
   const db = getDb();
   const ins = db.prepare(`INSERT INTO videos (material_id, user_id, status, created_at) VALUES (?,?,?,?)`);
   const r = ins.run(materialId, userId, 'queued', nowIso());
@@ -507,21 +1165,29 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
   };
   try {
     setStatus('processing');
-    jobs.update(jobId, { status: 'running', progress: 5, stage: 'Retrieving source content...' });
+    jobs.update(jobId, { status: 'running', progress: 5, stage: 'Resolving video topic...' });
 
-    // 1. RAG + script
-    const chunks = await retrieve(materialId, concept, { feature: 'video' });
+    // 1. Resolve topic + RAG + script
+    const conceptInfo = await resolveConcept({ materialId, hint: concept });
+    const resolvedConcept = conceptInfo.topic;
+    setStatus('processing', { resolved_concept: resolvedConcept });
+    jobs.update(jobId, { progress: 10, stage: `Retrieving source content for ${resolvedConcept}...` });
+
+    const rag = await retrieveWithMeta(materialId, resolvedConcept, { feature: 'video', k: 10, minScore: 0.08 });
+    const chunks = rag.chunks || [];
+    const lowGrounding = chunks.length < 2 || rag.maxScore < 0.16 || rag.meanScore < 0.10;
+    log.info('video_rag', {
+      videoId,
+      materialId,
+      resolvedConcept,
+      conceptSource: conceptInfo.source,
+      maxScore: Number(rag.maxScore || 0).toFixed(3),
+      meanScore: Number(rag.meanScore || 0).toFixed(3),
+      lowGrounding,
+      chunks: chunks.map(c => ({ id: c.id, score: Number(c.score || 0).toFixed(3), chapter: c.chapter_title || '' })),
+    });
     jobs.update(jobId, { progress: 12, stage: 'Writing tutor script...' });
-    let script;
-    try {
-      const prompt = prompts.VIDEO_SCRIPT(concept, chunks);
-      const raw = await ai.generate(prompt, { format: 'json', temperature: 0.45, num_ctx: 3072, num_predict: 1100 });
-      script = await parseJsonSafe(raw, ScriptSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0, num_predict: 700 }));
-    } catch (e) {
-      log.warn('video_script_fallback', e.message || e);
-      script = fallbackVideoScript(concept, chunks);
-    }
-    script = normalizeScript(script, concept, chunks);
+    const script = await generateVideoScriptWithFallback(resolvedConcept, chunks, lowGrounding);
     setStatus('processing', { script_md: JSON.stringify(script) });
     jobs.update(jobId, { progress: 25, stage: 'Creating narration...' });
 
@@ -544,7 +1210,10 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
         imgForFfmpeg = await renderSlideFrameWithFfmpeg(s, path.join(workDir, `slide_${i}_frame.png`), i, script.slides.length);
       }
       try {
-        await tts.synthesize(s.narration, audioFile);
+        await tts.synthesizeSentences(tts._internals.splitSentences(s.narration), audioFile, {
+          pauseMs: env.TTS_PAUSE_MS_SENTENCE,
+          sectionPauseMs: env.TTS_PAUSE_MS_SECTION,
+        });
         assertAudioFile(audioFile);
       } catch (ttsErr) {
         log.warn(`video_tts_slide_${i}`, `TTS failed, using silence: ${ttsErr.message || ttsErr}`);
@@ -573,7 +1242,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
     fs.writeFileSync(audioManifest, JSON.stringify({ audio: audioPaths }, null, 2));
     const finalPath = path.join(env.UPLOAD_DIR, 'videos', `${videoId}.mp4`);
     jobs.update(jobId, { progress: 90, stage: 'Merging narration and visuals...' });
-    await ffmpeg([
+    const finalArgs = [
       '-y',
       '-f', 'concat', '-safe', '0', '-i', listFile,
       '-c:v', 'libx264',
@@ -582,7 +1251,18 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
       '-b:a', '160k',
       '-movflags', '+faststart',
       finalPath,
-    ]);
+    ];
+    if (env.VIDEO_AUDIO_NORMALIZE) {
+      const normalizedArgs = finalArgs.slice(0, -1).concat(['-af', 'loudnorm=I=-16:LRA=11:TP=-1.5', finalPath]);
+      try {
+        await ffmpeg(normalizedArgs);
+      } catch (normErr) {
+        log.warn('video_loudnorm_fallback', normErr.message || normErr);
+        await ffmpeg(finalArgs);
+      }
+    } else {
+      await ffmpeg(finalArgs);
+    }
 
     const mediaInfo = await probeMedia(finalPath);
     if (!hasStream(mediaInfo, 'video')) throw new Error('video_render_failed: no video stream in output');
@@ -604,4 +1284,17 @@ function getVideo(userId, id) {
 }
 
 module.exports = { generateVideo, getVideo };
-module.exports._internals = { FFMPEG_BIN, FFPROBE_BIN, ffmpeg, ffprobe, probeMedia, renderSlideFrameWithFfmpeg };
+module.exports._internals = {
+  FFMPEG_BIN,
+  FFPROBE_BIN,
+  ffmpeg,
+  ffprobe,
+  probeMedia,
+  renderSlideFrameWithFfmpeg,
+  resolveConcept,
+  fallbackVideoScriptM1,
+  normalizeScript,
+  generateVideoScriptWithFallback,
+  scoreVideoScript,
+  preferredDiagramVisualType,
+};

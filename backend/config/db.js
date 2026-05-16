@@ -37,6 +37,7 @@ function migrate() {
   ensureColumn(db, 'chunks', 'source_page', 'INTEGER');
   ensureColumn(db, 'chunks', 'chapter_title', "TEXT DEFAULT ''");
   ensureColumn(db, 'chunks', 'heading', "TEXT DEFAULT ''");
+  ensureColumnFromMigration(db, 'videos', 'resolved_concept', '002_add_video_resolved_concept.sql');
   return db;
 }
 
@@ -44,6 +45,14 @@ function ensureColumn(db, table, column, definition) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!cols.some(c => c.name === column)) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+function ensureColumnFromMigration(db, table, column, fileName) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some(c => c.name === column)) {
+    const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', fileName), 'utf8');
+    db.exec(sql);
   }
 }
 

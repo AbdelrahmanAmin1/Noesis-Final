@@ -15,7 +15,7 @@ const router = express.Router();
 router.post('/', requireAuth, videoLimiter, async (req, res, next) => {
   try {
     const { material_id, concept } = req.body || {};
-    if (!material_id || !concept) throw new HttpError(400, 'missing_fields');
+    if (!material_id) throw new HttpError(400, 'missing_fields');
     const db = getDb();
     const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
