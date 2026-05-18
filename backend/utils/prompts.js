@@ -6,16 +6,52 @@ const path = require('path');
 const TEMPLATE_DIR = path.join(__dirname, '..', 'prompts', 'templates');
 const templateCache = new Map();
 
-const SYSTEM_BASE_FALLBACK = 'You are Noesis, a focused academic tutor specializing in Computer Science - especially Object-Oriented Programming and Data Structures. Use proper CS terminology (classes, objects, inheritance, polymorphism, encapsulation, abstraction, interfaces, arrays, linked lists, stacks, queues, trees, graphs, hash tables, sorting, searching, Big-O notation) where applicable. Be precise, concise, and pedagogically clear. IMPORTANT: Base your answers primarily on the source excerpts provided. Cite chunk IDs as [chunk:ID] when grounding claims. If the source excerpts do not contain enough information to answer accurately, say so explicitly rather than inventing facts. Prefer source material over general knowledge.';
+const SYSTEM_BASE_FALLBACK = 'You are Noesis, an expert CS tutor specializing in Object-Oriented Programming and Data Structures. You teach like a passionate university lecturer — clear definitions, deep explanations, real code examples, diagrams, analogies, and step-by-step walkthroughs. Use proper CS terminology (classes, objects, inheritance, polymorphism, encapsulation, abstraction, interfaces, arrays, linked lists, stacks, queues, trees, graphs, hash tables, sorting, searching, Big-O notation). Be pedagogically clear and thorough — explain the WHY, not just the WHAT. Use the source excerpts to detect the topic, identify course-specific definitions, and ground key claims. Then ENHANCE the explanation with your professional CS knowledge: add depth, code examples, diagrams, analogies, common mistakes, and complexity analysis. Do not restrict yourself to only repeating the source — use it as a foundation and build a complete educational explanation on top. Never hallucinate course-specific facts not in the source. If source coverage is weak, teach from standard CS knowledge and say so.';
 
 const NOTES_SUMMARY_FALLBACK = `{{SYSTEM_BASE}}
 
-Task: Write a study-quality markdown note titled "{{TITLE}}". Use the source excerpts below. Cite chunk ids inline as [chunk:ID] when grounding a claim. Structure the note as: (1) Definition / Overview, (2) Key properties and characteristics, (3) Implementation details with code examples where relevant, (4) Time and space complexity analysis if applicable, (5) Common mistakes or misconceptions, (6) Exam-ready summary. Use h2/h3 headings, short paragraphs, and bullet lists where helpful.
+Task: Write a comprehensive, visually attractive study note titled "{{TITLE}}". Use the source excerpts as your grounding, then enhance with professional CS knowledge to create a complete educational resource.
+
+Required structure:
+## 1. Overview
+Clear definition. Why this concept matters. Where it is used.
+
+## 2. Deep Explanation
+Thorough explanation of how it works. Use a real-world analogy to build intuition.
+
+## 3. Code Example
+\`\`\`java
+// Include a complete, annotated code example (8-15 lines minimum)
+// Add inline comments explaining each significant line
+\`\`\`
+
+## 4. Step-by-Step Walkthrough
+Walk through the code or concept step by step. Show what happens at each stage.
+
+## 5. Complexity Analysis
+Time and space complexity with a comparison table if relevant:
+| Operation | Time | Space |
+|-----------|------|-------|
+
+## 6. Common Mistakes
+> **Warning:** List 2-3 common mistakes students make, with explanation of why they are wrong.
+
+## 7. Quick Reference
+> **Exam Tip:** Key facts to remember, formatted as a concise checklist.
+
+## Related Topics
+List 2-3 related concepts the student should study next.
 
 Source excerpts:
 {{SOURCE_EXCERPTS}}
 
-Output: ONLY the markdown body. No preamble.`;
+Rules:
+- Write 800-1500 words. Be thorough, not shallow.
+- Include at least one complete code example with inline comments.
+- Use markdown formatting: headings, bold, code blocks, tables, blockquotes.
+- Use > **Note:** for important callouts and > **Warning:** for common mistakes.
+- Do not include raw chunk IDs in the output — they are for your reference only.
+- Output ONLY the markdown body. No preamble.`;
 
 const FLASHCARDS_FALLBACK = `{{SYSTEM_BASE}}
 
@@ -79,63 +115,53 @@ Output: only markdown.`;
 
 const VIDEO_SCRIPT_FALLBACK = `{{SYSTEM_BASE}}
 
-Task: Write a tutor-whiteboard narrated explainer video script (8-12 slides) on: "{{CONCEPT}}". This should feel like an expert tutor explaining the material at a whiteboard — not a plain bullet deck.
+Task: Write a deep educational tutor video script (8-12 slides) on: "{{CONCEPT}}". This must feel like an expert tutor at a whiteboard — teaching deeply with explanations, code, and visuals.
 
-Follow this educational slide sequence (skip slides that don't apply to the concept):
-1. TITLE slide (visual_type: "mindmap") — Topic name + 2-3 learning objectives as bullets.
-2. DEFINITION slide (visual_type: "mindmap") — Formal definition, why it matters, where it's used.
-3. ANALOGY slide (visual_type: "comparison") — A real-world analogy that builds intuition.
-4. CORE CONCEPT slide (visual_type: "flow" or "mindmap") — Step-by-step explanation of the main idea.
-5. WORKED EXAMPLE slide (visual_type: "flow") — Walk through a concrete example step by step.
-6. CODE EXAMPLE slide (visual_type: "code") — Show implementation with annotations. Put code in example_code field.
-7. VISUAL DIAGRAM slide — Use the best visual_type for the concept:
-   - "class_diagram" for OOP relationships (inheritance, composition)
-   - "tree" for tree/BST/heap structures
-   - "stack_queue" for stack or queue operations
-   - "linkedlist" for linked list traversal or insertion
-   - "bigo_chart" for complexity comparisons
-   - "flow" for algorithms or processes
-8. COMMON MISTAKES slide (visual_type: "comparison") — Show 2-3 mistakes vs. correct approaches.
-9. COMPLEXITY slide (visual_type: "bigo_chart" or "comparison") — Time/space complexity analysis.
-10. SUMMARY slide (visual_type: "summary") — Key takeaways as a recap mindmap.
-11. QUIZ slide (visual_type: "mindmap") — One check-for-understanding question with the answer.
+Educational slide sequence (skip only if truly irrelevant):
+1. TITLE — Hook: why this topic matters + 2-3 learning objectives.
+2. DEFINITION — Formal definition, real-world context, where it is used.
+3. ANALOGY — Fully developed real-world analogy mapped to the concept.
+4. CORE CONCEPT — Step-by-step explanation of the main idea with concrete examples.
+5. WORKED EXAMPLE — Walk through a specific example showing inputs, operations, outputs.
+6. CODE EXAMPLE — Complete working code (8-15 lines with comments) in example_code field. Narration explains each line.
+7. VISUAL DIAGRAM — Best visual_type: class_diagram (OOP), tree (BST/heap), stack_queue (stack/queue), linkedlist, bigo_chart (complexity), flow (algorithms).
+8. COMMON MISTAKES — 2-3 mistakes with WHY they are wrong vs. the correct approach.
+9. COMPLEXITY — Time/space analysis with concrete comparisons.
+10. SUMMARY — Key takeaways as recap.
+11. QUIZ — One check-for-understanding question with the answer.
 
 Source excerpts:
 {{SOURCE_EXCERPTS}}
 
 Output STRICT JSON only:
-{"slides":[{"title":"...","visual_type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart","bullets":["...","..."],"visual_nodes":["concept A","concept B"],"visual_edges":[["concept A","concept B"]],"callouts":["..."],"example_code":"...","narration":"..."}]}
+{"slides":[{"title":"...","visual_type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart","bullets":["...","..."],"visual_nodes":["Node","LinkedList","head","next"],"visual_edges":[["head","Node"]],"callouts":["..."],"example_code":"...","narration":"..."}]}
 
 Rules:
-- Produce 8-12 slides. Every slide MUST have narration (2-4 sentences, spoken like a tutor).
-- Use 2-5 short bullets per slide.
-- visual_nodes must name concrete concepts from the source.
-- visual_edges must connect node labels that appear in visual_nodes.
-- callouts are short tutor hints or warnings (1-2 per slide).
-- example_code is optional — include only on code slides.
-- Ground narration in the source excerpts. Cite chunk ids like [chunk:12].
-- Narration should explain WHY, not just WHAT. Build understanding progressively.`;
+- Produce 8-12 slides. Every slide MUST have deep narration (4-8 sentences for teaching slides, 2-4 for title/quiz/recap).
+- Bullets can be up to 120 characters. Write meaningful content, not vague labels.
+- visual_nodes must use concrete names (class names, data values, operations) not abstract labels.
+- Narration must EXPLAIN and TEACH. Build understanding progressively. Vary sentence openings.
+- Do not include raw chunk references in bullets or callouts.
+- Code slides: put full annotated code in example_code. Narrate line-by-line.`;
 
 const VIDEO_SCRIPT_M1_FALLBACK = `{{SYSTEM_BASE}}
 
-Task: Write a structured AI tutor video script on "{{CONCEPT}}" for a beginner CS student.
+Task: Write a deep, educational AI tutor video script on "{{CONCEPT}}" for a beginner CS student. This should feel like an expert tutor explaining at a whiteboard — teaching deeply, not just listing topics.
 
 Grounding status: {{GROUNDING_STATUS}}
 {{GROUNDING_INSTRUCTION}}
 
-Required slide sequence, exactly 8-10 slides:
-1. title
-2. objectives
-3. concept
-4. analogy
-5. diagram
-6. code
-7. step_by_step
-8. mistakes
-9. recap
-10. quiz
-
-Each video must teach the concept, not merely label it. Include a clear definition, why it matters, a simple analogy, a code example when relevant, a step-by-step explanation, a visual diagram or mindmap, a common mistake, a recap, and a mini quiz.
+Required slide sequence (8-10 slides):
+1. title — Hook the student: why should they care about this topic?
+2. objectives — 3 specific learning outcomes
+3. concept — Deep definition with WHY it matters and WHERE it is used
+4. analogy — Fully developed real-world analogy mapped to the technical concept
+5. diagram — Visual model using the best diagram type for this concept
+6. code — Complete working code example (8-15 lines) with inline comments
+7. step_by_step — Walk through the code/concept step by step, showing what happens at each stage
+8. mistakes — 2-3 common mistakes with explanation of WHY they are wrong
+9. recap — Summarize the key takeaways
+10. quiz — One meaningful check-for-understanding question with answer
 
 Source excerpts:
 {{SOURCE_EXCERPTS}}
@@ -165,13 +191,18 @@ Output STRICT JSON only:
 
 Rules:
 - Produce 8-10 slides.
-- Every slide must have meaningful narration, 2-4 sentences, spoken like a tutor.
-- Use 2-5 short bullets per slide. Keep each bullet under 70 characters.
-- Use retrieved source chunks when available and cite chunk ids as [chunk:ID] in narration or callouts.
-- Do not claim unsupported details are from the uploaded material.
-- If grounding is LOW, the first slide narration and a callout must say the uploaded material did not contain enough specific information, then continue using general CS knowledge.
-- Code slides should include compact Java or pseudocode when relevant.
-- Quiz slide should include one question and the answer in bullets or callouts.`;
+- NARRATION IS THE MOST IMPORTANT PART. Each slide narration must be 4-8 sentences for concept/analogy/code/step_by_step slides. Explain deeply — the WHY, not just the WHAT. Speak like a tutor who wants the student to truly understand.
+- For title/objectives/recap/quiz slides, 2-4 sentences is acceptable.
+- Use 2-5 bullets per slide. Each bullet can be up to 120 characters — write meaningful explanations, not vague labels.
+- visual_nodes must name concrete concepts, data values, or class names — not abstract labels like "Definition" or "Purpose".
+- visual_edges must connect labels that appear in visual_nodes.
+- callouts are short tutor tips or warnings (1-2 per slide). Do not include raw chunk references.
+- For CODE slides: put complete, working code (8-15 lines with comments) in the example_code field. The narration should explain the code line by line.
+- For ANALOGY slides: fully develop the analogy. Map each part of the real-world scenario to the technical concept.
+- For DIAGRAM slides: use the best visual_type for the concept (class_diagram for OOP, tree for trees, linkedlist for linked lists, stack_queue for stacks/queues, bigo_chart for complexity, flow for algorithms).
+- If grounding is LOW, say so in slide 1 narration + callout, then teach from standard CS knowledge.
+- Do NOT use generic bullets like "What X means" or "Why it matters" — actually explain what it means and why it matters.
+- Vary sentence openings in narration. Use transitions: "Now let us look at...", "The key insight is...", "Notice how...".`;
 
 const VIDEO_CONCEPT_EXTRACT_FALLBACK = `{{SYSTEM_BASE}}
 
@@ -247,11 +278,21 @@ const visualTemplates = require('./visual-templates');
 
 const SYSTEM_BASE = readTemplate('system-base.txt', SYSTEM_BASE_FALLBACK);
 
-const NOTES_SUMMARY = (chunks, title) => renderTemplate('notes-summary.txt', NOTES_SUMMARY_FALLBACK, {
-  SYSTEM_BASE,
-  TITLE: title,
-  SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 900, maxTotalChars: 5200 }),
-});
+const NOTES_GROUNDING = {
+  strong: 'The source material covers this topic thoroughly. Use it as your primary reference — cite definitions, examples, and key points from the source. Then enhance with professional CS knowledge for completeness.',
+  moderate: 'The source material partially covers this topic. Start from what is provided, then supplement freely with standard CS knowledge to create a complete educational note.',
+  weak: 'The uploaded material has minimal content on this topic. Teach from professional CS knowledge. Note in the Overview that source coverage was limited, then deliver a comprehensive note.',
+};
+
+const NOTES_SUMMARY = (chunks, title, opts = {}) => {
+  const tier = opts.groundingTier || 'moderate';
+  const groundingLine = `\nGrounding: ${tier.toUpperCase()}. ${NOTES_GROUNDING[tier] || NOTES_GROUNDING.moderate}\n`;
+  return renderTemplate('notes-summary.txt', NOTES_SUMMARY_FALLBACK, {
+    SYSTEM_BASE: SYSTEM_BASE + groundingLine,
+    TITLE: title,
+    SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 1000, maxTotalChars: 7000 }),
+  });
+};
 
 const FLASHCARDS = (chunks, count) => renderTemplate('flashcards.txt', FLASHCARDS_FALLBACK, {
   SYSTEM_BASE,
@@ -296,14 +337,18 @@ const VIDEO_SCRIPT = (concept, chunks, opts = {}) => {
     ? `\nVisual hint for "${concept}": use visual_type "${tpl.type}" with nodes like ${JSON.stringify(tpl.nodes.slice(0, 5))}.`
     : '';
   const lowGrounding = !!opts.lowGrounding;
+  const tier = opts.groundingTier || (lowGrounding ? 'weak' : 'strong');
+  const groundingInstructions = {
+    strong: 'The source material covers this topic well. Use it as your foundation — cite key definitions and facts from the source. Then enhance with your CS knowledge: add depth, analogies, code examples, and common mistakes that go beyond the source.',
+    moderate: 'The source material gives partial context on this topic. Start from what the source provides, then freely supplement with standard CS knowledge to create a complete, deep explanation.',
+    weak: 'The uploaded material has minimal coverage of this topic. Teach from professional CS knowledge. Disclose in the first slide that the uploaded material did not contain detailed content on this specific topic, then deliver a thorough lesson.',
+  };
   return renderTemplate('video-script.txt', VIDEO_SCRIPT_M1_FALLBACK, {
     SYSTEM_BASE,
     CONCEPT: concept,
-    GROUNDING_STATUS: lowGrounding ? 'LOW' : 'OK',
-    GROUNDING_INSTRUCTION: lowGrounding
-      ? 'The uploaded material has weak or sparse support for this topic. Start with a clear disclaimer, then teach using general CS knowledge without pretending unsupported details came from the upload.'
-      : 'Use the uploaded material as the main grounding source and cite chunk ids for source-backed details.',
-    SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 650, maxTotalChars: 3600 }) + hint,
+    GROUNDING_STATUS: tier.toUpperCase(),
+    GROUNDING_INSTRUCTION: groundingInstructions[tier] || groundingInstructions.moderate,
+    SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 900, maxTotalChars: 6000 }) + hint,
   });
 };
 

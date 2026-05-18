@@ -140,11 +140,11 @@ async function processMaterial(materialId, jobId) {
 
     const chunks = chunkByChapter(text, chapters);
     if (chunks.length === 0) throw new Error('no_chunks_created');
-    const insChunk = db.prepare('INSERT INTO chunks (material_id, chapter_id, idx, text, token_count, chapter_title) VALUES (?,?,?,?,?,?)');
+    const insChunk = db.prepare('INSERT INTO chunks (material_id, chapter_id, idx, text, token_count, chapter_title, heading) VALUES (?,?,?,?,?,?,?)');
     const inserted = [];
     db.transaction(() => {
       for (const c of chunks) {
-        const r = insChunk.run(materialId, chapterIds[c.chapter_idx] || null, c.idx, c.text, c.token_count, c.chapter_title || '');
+        const r = insChunk.run(materialId, chapterIds[c.chapter_idx] || null, c.idx, c.text, c.token_count, c.chapter_title || '', c.heading || '');
         inserted.push({ id: r.lastInsertRowid, text: c.text });
       }
     })();

@@ -162,16 +162,28 @@ function cleanText(s) {
     .trim();
 }
 
-// Detect chapters via heading regex; fallback to single chapter.
+// Detect chapters via heading regex + short-line heuristic; fallback to single chapter.
 function detectChapters(text) {
   const lines = text.split('\n');
   const headings = [];
-  const re = /^\s*(?:chapter\s+\d+|ch\.?\s*\d+|section\s+\d+|\d+\.\s+\S|#{1,3}\s+\S)/i;
+  const re = /^\s*(?:chapter\s+\d+|ch\.?\s*\d+|section\s+\d+|\d+\.\s+\S|#{1,3}\s+\S|topic\s*[:]\s*\S|module\s+\d+)/i;
   let charPos = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (line.trim().length > 0 && line.trim().length < 120 && re.test(line)) {
-      headings.push({ idx: headings.length, title: line.trim().replace(/^#+\s*/, '').slice(0, 120), char_start: charPos });
+    const trimmed = line.trim();
+    if (trimmed.length > 0 && trimmed.length < 120) {
+      let isHeading = re.test(line);
+      if (!isHeading && trimmed.length < 60 && /^[A-Z]/.test(trimmed) && !/[.!?,;:]$/.test(trimmed)) {
+        const prevBlank = i === 0 || lines[i - 1].trim() === '';
+        const nextBlank = i >= lines.length - 1 || lines[i + 1].trim() === '';
+        if (prevBlank && nextBlank) isHeading = true;
+      }
+      if (!isHeading && /^Slide\s+\d+/i.test(trimmed)) {
+        isHeading = true;
+      }
+      if (isHeading) {
+        headings.push({ idx: headings.length, title: trimmed.replace(/^#+\s*/, '').replace(/^Slide\s+\d+\s*/i, '').slice(0, 120) || `Section ${headings.length + 1}`, char_start: charPos });
+      }
     }
     charPos += line.length + 1;
   }

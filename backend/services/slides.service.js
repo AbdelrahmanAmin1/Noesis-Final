@@ -270,7 +270,7 @@ function computeLayout(slide, width = W, height = H) {
 function slideVisualData(slide, bullets) {
   const visual = slide.visual || {};
   const nodes = cleanList(slide.visual_nodes && slide.visual_nodes.length ? slide.visual_nodes : visual.nodes, [slide.title, ...bullets])
-    .map(n => compactText(n, 42))
+    .map(n => compactText(n, 64))
     .slice(0, 10);
   const edges = (Array.isArray(slide.visual_edges) && slide.visual_edges.length ? slide.visual_edges : visual.edges || [])
     .filter(e => Array.isArray(e) && e.length >= 2)
@@ -414,8 +414,8 @@ function drawClassDiagram(ctx, slide, visual, bullets, region) {
   const fields = bullets.filter(b => /field|property|private|data|state|attribute/i.test(b)).slice(0, 3);
   const methods = bullets.filter(b => /method|public|function|operation|get|set|use/i.test(b)).slice(0, 3);
   const splitAt = Math.max(1, Math.ceil(bullets.length / 2));
-  const safeFields = (fields.length ? fields : bullets.slice(0, splitAt)).map(b => compactText(b.replace(/^-+\s*/, ''), 42));
-  const safeMethods = (methods.length ? methods : bullets.slice(splitAt)).map(b => compactText(b.replace(/^-+\s*/, ''), 42));
+  const safeFields = (fields.length ? fields : bullets.slice(0, splitAt)).map(b => compactText(b.replace(/^-+\s*/, ''), 56));
+  const safeMethods = (methods.length ? methods : bullets.slice(splitAt)).map(b => compactText(b.replace(/^-+\s*/, ''), 56));
   const box = { x: r.x + r.w / 2 - 260, y: r.y + 8, w: 520, h: Math.min(282, r.h - 16) };
   const fieldSep = box.y + 66;
   const methodSep = box.y + Math.floor(box.h * 0.58);
@@ -641,16 +641,16 @@ function svgBox(text, x, y, w, h, fill = '#dbeafe', stroke = '#94a3b8') {
   const chars = Math.max(10, Math.floor(w / 14));
   return [
     `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`,
-    svgText(compactText(text, 58), x + 14, y + 26, 17, INK, chars, 2, '700'),
+    svgText(compactText(text, 72), x + 14, y + 26, 17, INK, chars, 2, '700'),
   ].join('\n');
 }
 
 function renderSvg(slide) {
   const visualType = inferVisualType(slide);
   const layout = computeLayout(slide, W, H);
-  const bullets = cleanList(slide.bullets, ['Source-grounded concept', 'Tutor explanation']).map(b => compactText(b, 74)).slice(0, MAX_BULLETS);
+  const bullets = cleanList(slide.bullets, ['Source-grounded concept', 'Tutor explanation']).map(b => compactText(b, 120)).slice(0, MAX_BULLETS);
   const visual = slideVisualData(slide, bullets);
-  const callouts = cleanList(slide.callouts, []).map(c => compactText(c, 86)).slice(0, 3);
+  const callouts = cleanList(slide.callouts, []).map(c => compactText(c, 120)).slice(0, 3);
   const bulletLines = bullets.map((b, i) => svgText(`- ${b}`, layout.bullets.x + 24, layout.bullets.y + 74 + i * 54, 19, '#1e293b', Math.floor((layout.bullets.w - 48) / 12), 2)).join('\n');
   const nodeBoxes = visual.nodes.slice(0, 8).map((node, i) => {
     const cols = layout.mode === 'diagram' ? 4 : 3;
@@ -689,8 +689,8 @@ async function renderWithCanvas(slide, outPath) {
   const ctx = canvas.getContext('2d');
   const visualType = inferVisualType(slide);
   const layout = computeLayout(slide, W, H);
-  const bullets = cleanList(slide.bullets, ['Source-grounded concept', 'Tutor explanation']).map(b => compactText(b, 92)).slice(0, MAX_BULLETS);
-  const callouts = cleanList(slide.callouts, []).map(c => compactText(c, 96)).slice(0, 3);
+  const bullets = cleanList(slide.bullets, ['Source-grounded concept', 'Tutor explanation']).map(b => compactText(b, 140)).slice(0, MAX_BULLETS);
+  const callouts = cleanList(slide.callouts, []).map(c => compactText(c, 120)).slice(0, 3);
   const visual = slideVisualData({ ...slide, visual_type: visualType }, bullets);
 
   ctx.fillStyle = '#f8fafc';

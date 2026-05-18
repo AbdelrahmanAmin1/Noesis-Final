@@ -33,6 +33,18 @@ const SYNONYMS = {
   'big-o': ['time complexity', 'space complexity', 'asymptotic analysis', 'upper bound', 'growth rate', 'worst case'],
   'big o': ['time complexity', 'space complexity', 'asymptotic analysis', 'upper bound', 'growth rate'],
   'complexity': ['big-o', 'time complexity', 'space complexity', 'asymptotic', 'best case', 'worst case', 'average case'],
+  'generics': ['type parameter', 'generic type', 'bounded type', 'type erasure', 'wildcard', 'parameterized type', 'type safety'],
+  'exception handling': ['try catch', 'throw', 'checked exception', 'unchecked exception', 'finally block', 'error propagation'],
+  'design patterns': ['creational', 'structural', 'behavioral', 'factory', 'singleton', 'observer', 'strategy', 'decorator'],
+  'factory pattern': ['factory method', 'abstract factory', 'creational pattern', 'object creation', 'decoupling instantiation'],
+  'observer pattern': ['event listener', 'publish subscribe', 'callback', 'notification', 'behavioral pattern'],
+  'decorator pattern': ['wrapper', 'structural pattern', 'dynamic behavior', 'composition over inheritance'],
+  'dynamic programming': ['memoization', 'tabulation', 'overlapping subproblems', 'optimal substructure', 'dp table', 'bottom-up'],
+  'greedy algorithm': ['greedy choice', 'local optimum', 'activity selection', 'huffman coding', 'knapsack'],
+  'doubly linked list': ['prev pointer', 'next pointer', 'bidirectional traversal', 'double ended'],
+  'circular queue': ['ring buffer', 'circular buffer', 'wrap around', 'modulo indexing'],
+  'priority queue': ['min heap', 'max heap', 'priority scheduling', 'heapify', 'binary heap'],
+  'balanced bst': ['avl tree', 'red-black tree', 'self-balancing', 'rotation', 'height-balanced'],
 };
 
 function expandQuery(query) {

@@ -9,7 +9,7 @@ const { getDb } = require('../config/db');
 const ai = require('./ai.service');
 const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
-const { retrieveWithMeta } = require('./rag.service');
+const { retrieveWithMeta, groundingTier: computeGroundingTier } = require('./rag.service');
 const tts = require('./tts.service');
 const slides = require('./slides.service');
 const jobs = require('./jobs.service');
@@ -176,6 +176,10 @@ function cleanTextList(value, fallback = []) {
 function compactText(text, max = 64) {
   const value = String(text || '').replace(/\s+/g, ' ').trim();
   return value.length > max ? `${value.slice(0, max - 1)}...` : value;
+}
+
+function stripChunkRefs(text) {
+  return String(text || '').replace(/\[chunk:\d+\]/g, '').replace(/\s{2,}/g, ' ').trim();
 }
 
 const FILE_EXT_RE = /\.(pdf|docx?|pptx?|txt|md)$/i;
@@ -681,10 +685,9 @@ function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
   const c = normalizeName(concept) || inferKnownConcept(chunks);
   const p = conceptProfile(c);
   const sourceNotes = sourceTakeaways(chunks);
-  const sourceCallout = chunks && chunks[0] ? `[chunk:${chunks[0].id}]` : '';
   const groundingCallout = lowGrounding
     ? 'Uploaded material had weak support; using general CS knowledge.'
-    : (sourceCallout ? `Grounded with ${sourceCallout}` : 'Grounded in available study material.');
+    : 'Grounded in your study material.';
   const introNarration = lowGrounding
     ? `The uploaded material does not contain enough specific information about ${c}. I will say that clearly, then teach the standard CS idea using general knowledge.`
     : `In this lesson, we will study ${c} using the uploaded material where it gives useful evidence.`;
@@ -717,17 +720,17 @@ function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
         slideType: 'concept',
         title: `What is ${c}?`,
         visual_type: 'mindmap',
-        bullets: [p.definition, p.why].map(x => compactText(x, 68)),
+        bullets: [p.definition, p.why].map(x => compactText(x, 120)),
         visual_nodes: [c, 'Definition', 'Purpose', 'Interface', 'Trade-off'],
         visual_edges: [[c, 'Definition'], [c, 'Purpose'], [c, 'Trade-off']],
-        callouts: sourceCallout ? [sourceCallout] : [],
+        callouts: [groundingCallout],
         narration: `${p.definition} ${p.why} This is the core idea to remember before looking at code.`,
       },
       {
         slideType: 'analogy',
         title: 'Simple Analogy',
         visual_type: 'comparison',
-        bullets: [p.analogy, 'Map the analogy to code', 'Know where it stops'].map(x => compactText(x, 68)),
+        bullets: [p.analogy, 'Map the analogy to code', 'Know where it stops'].map(x => compactText(x, 120)),
         visual_nodes: ['Analogy', c, 'Shared idea', 'Limit'],
         visual_edges: [['Analogy', 'Shared idea'], ['Shared idea', c]],
         callouts: ['Analogies build intuition, not proof.'],
@@ -758,7 +761,7 @@ function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
         slideType: 'step_by_step',
         title: 'Step by Step',
         visual_type: 'flow',
-        bullets: p.steps.map(x => compactText(x, 58)),
+        bullets: p.steps.map(x => compactText(x, 100)),
         visual_nodes: p.steps,
         visual_edges: p.steps.slice(0, -1).map((n, i) => [n, p.steps[i + 1]]),
         callouts: ['Trace one example before generalizing.'],
@@ -768,7 +771,7 @@ function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
         slideType: 'mistakes',
         title: 'Common Mistakes',
         visual_type: 'comparison',
-        bullets: p.mistakes.map(x => compactText(x, 62)),
+        bullets: p.mistakes.map(x => compactText(x, 100)),
         visual_nodes: ['Mistake', 'Correct Habit', ...p.mistakes.slice(0, 2)],
         visual_edges: [['Mistake', 'Correct Habit']],
         callouts: ['Most bugs come from violating the main rule.'],
@@ -778,7 +781,7 @@ function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
         slideType: 'recap',
         title: 'Recap',
         visual_type: 'summary',
-        bullets: [p.definition, p.why, 'Use examples to test understanding'].map(x => compactText(x, 68)),
+        bullets: [p.definition, p.why, 'Use examples to test understanding'].map(x => compactText(x, 120)),
         visual_nodes: [c, 'Definition', 'Purpose', 'Example', 'Mistake'],
         visual_edges: [[c, 'Definition'], [c, 'Purpose'], [c, 'Example'], [c, 'Mistake']],
         callouts: ['Say the recap without looking.'],
@@ -810,11 +813,12 @@ function normalizeScript(script, concept, chunks, lowGrounding = false) {
     const visualType = s.visual_type || visual.type;
     const rawBullets = Array.isArray(s.bullets) && s.bullets.length ? s.bullets : fb.bullets;
     const bullets = rawBullets
-      .map(b => String(b || '').replace(/\s+/g, ' ').trim())
+      .map(b => stripChunkRefs(String(b || '').replace(/\s+/g, ' ').trim()))
       .filter(Boolean)
-      .map(b => compactText(b, 72))
+      .map(b => compactText(b, 140))
       .slice(0, 5);
-    const nodes = cleanTextList(s.visual_nodes && s.visual_nodes.length ? s.visual_nodes : visual.nodes, [s.title || concept, ...bullets]).slice(0, 8);
+    const nodes = cleanTextList(s.visual_nodes && s.visual_nodes.length ? s.visual_nodes : visual.nodes, [s.title || concept, ...bullets])
+      .map(n => stripChunkRefs(n)).slice(0, 8);
     const edges = (Array.isArray(s.visual_edges) && s.visual_edges.length ? s.visual_edges : visual.edges || [])
       .filter(edge => Array.isArray(edge) && edge.length >= 2)
       .map(edge => [String(edge[0] || '').trim(), String(edge[1] || '').trim()])
@@ -825,14 +829,14 @@ function normalizeScript(script, concept, chunks, lowGrounding = false) {
     return {
       slideType,
       slide_type: slideType,
-      title: compactText(s.title || fb.title || (i === 0 ? concept : `Part ${i + 1}`), 86),
+      title: compactText(s.title || fb.title || (i === 0 ? concept : `Part ${i + 1}`), 100),
       visual_type: VISUAL_TYPES.includes(visualType)
         ? visualType
         : (inferredVisualType !== 'mindmap' ? inferredVisualType : (i === slidesIn.length - 1 ? 'summary' : typeByIndex[i % typeByIndex.length])),
       bullets,
       visual_nodes: nodes,
       visual_edges: edges,
-      callouts: cleanTextList(s.callouts, fb.callouts || []).map(c => compactText(c, 80)).slice(0, 3),
+      callouts: cleanTextList(s.callouts, fb.callouts || []).map(c => stripChunkRefs(c)).map(c => compactText(c, 120)).slice(0, 3),
       example_code: String(s.example_code || s.exampleCode || fb.example_code || '').slice(0, 1000),
       narration: String(s.narration || fb.narration || '').replace(/\s+/g, ' ').trim(),
     };
@@ -885,7 +889,7 @@ async function generateScriptCandidate({ provider, prompt, concept, chunks, lowG
       feature: 'video_script',
       format: 'json',
       temperature: options.temperature ?? 0.35,
-      num_ctx: options.num_ctx || 4096,
+      num_ctx: options.num_ctx || 8192,
       num_predict: options.num_predict,
       max_tokens: options.max_tokens,
       model: options.model,
@@ -956,9 +960,9 @@ function buildCompactGroqVideoPrompt(concept, chunks, lowGrounding, budget = {})
     source = compactChunks.map(c => (
       `[chunk:${c.id}] score=${c.score} title="${c.title}" excerpt="${c.text}"`
     )).join('\n\n');
-    prompt = `Generate a grounded AI tutor video lesson JSON for "${concept}".
+    prompt = `Generate a deep educational AI tutor video lesson JSON for "${concept}".
 
-Grounding: ${lowGrounding ? 'LOW. First slide must disclose weak uploaded-material support, then use general CS knowledge.' : 'Use source chunks when possible and cite chunk ids.'}
+Grounding: ${lowGrounding ? 'LOW. First slide must disclose weak uploaded-material support, then teach from professional CS knowledge.' : 'Use source chunks as foundation, then enhance with deep CS explanations, code examples, and analogies.'}
 
 Source chunks:
 ${source || '(No source chunks available.)'}
@@ -967,12 +971,13 @@ Return ONLY strict JSON with this shape:
 {"topic":"${concept}","audienceLevel":"beginner","learningObjectives":["..."],"slides":[{"slideType":"title|objectives|concept|analogy|diagram|code|step_by_step|mistakes|recap|quiz","title":"...","bullets":["..."],"narration":"...","visual":{"type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart","nodes":["..."],"edges":[["...","..."]]},"callouts":["..."],"example_code":""}]}
 
 Rules:
-- 8-10 slides.
-- Include title, objectives, concept, analogy, diagram, code or step_by_step, mistakes, recap, and quiz.
-- Narration must be 2-4 useful sentences per slide.
-- Use short bullets, 2-5 per slide.
-- Use diverse visual types, not only mindmaps.
-- Include code/example when relevant for OOP or Data Structures.
+- 8-10 slides covering: title, objectives, concept, analogy, diagram, code, step_by_step, mistakes, recap, quiz.
+- NARRATION IS THE MOST IMPORTANT PART. Write 4-8 sentences per teaching slide (concept/analogy/code/step_by_step). Explain the WHY, not just WHAT. Teach like a passionate tutor.
+- Bullets can be up to 120 chars. Write meaningful content, not vague labels like "What X means".
+- visual_nodes must use concrete names (class names, data values) not abstract labels like "Definition".
+- For CODE slides: put complete working code (8-15 lines with comments) in example_code. Narrate line by line.
+- Do not include raw chunk references in bullets or callouts.
+- Use diverse visual types appropriate to the concept.
 - Avoid placeholders and generic text.`;
     if (prompt.length <= maxInputChars || maxChunkChars <= 350) break;
     maxChunkChars = Math.floor(maxChunkChars * 0.75);
@@ -1062,12 +1067,12 @@ function selectBestScript(candidates, fallback, threshold) {
   return fallback;
 }
 
-async function generateVideoScriptWithFallback(concept, chunks, lowGrounding) {
+async function generateVideoScriptWithFallback(concept, chunks, lowGrounding, groundingTier = 'moderate') {
   const threshold = env.VIDEO_SCRIPT_MIN_QUALITY_SCORE;
   const fallbackScript = normalizeScript(fallbackVideoScriptM1(concept, chunks, lowGrounding), concept, chunks, lowGrounding);
   const candidates = [];
   const configuredProvider = env.VIDEO_SCRIPT_PROVIDER === 'groq' ? 'groq' : 'ollama';
-  const localPrompt = prompts.VIDEO_SCRIPT(concept, chunks, { lowGrounding });
+  const localPrompt = prompts.VIDEO_SCRIPT(concept, chunks, { lowGrounding, groundingTier });
 
   if (configuredProvider === 'groq') {
     const groq = await generateGroqVideoCandidate(concept, chunks, lowGrounding, 'direct_groq_video_script_provider');
@@ -1086,7 +1091,7 @@ async function generateVideoScriptWithFallback(concept, chunks, lowGrounding) {
         concept,
         chunks,
         lowGrounding,
-        options: { temperature: 0.35, num_ctx: 4096, num_predict: 2200 },
+        options: { temperature: 0.35, num_ctx: 8192, num_predict: 4000 },
       });
       candidates.push(local);
     }
@@ -1101,7 +1106,7 @@ async function generateVideoScriptWithFallback(concept, chunks, lowGrounding) {
     concept,
     chunks,
     lowGrounding,
-    options: { temperature: 0.35, num_ctx: 4096, num_predict: 2200 },
+    options: { temperature: 0.35, num_ctx: 8192, num_predict: 4000 },
   });
   candidates.push(local);
 
@@ -1176,6 +1181,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
     const rag = await retrieveWithMeta(materialId, resolvedConcept, { feature: 'video', k: 10, minScore: 0.08 });
     const chunks = rag.chunks || [];
     const lowGrounding = chunks.length < 2 || rag.maxScore < 0.16 || rag.meanScore < 0.10;
+    const groundingTier = computeGroundingTier(rag);
     log.info('video_rag', {
       videoId,
       materialId,
@@ -1187,7 +1193,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
       chunks: chunks.map(c => ({ id: c.id, score: Number(c.score || 0).toFixed(3), chapter: c.chapter_title || '' })),
     });
     jobs.update(jobId, { progress: 12, stage: 'Writing tutor script...' });
-    const script = await generateVideoScriptWithFallback(resolvedConcept, chunks, lowGrounding);
+    const script = await generateVideoScriptWithFallback(resolvedConcept, chunks, lowGrounding, groundingTier);
     setStatus('processing', { script_md: JSON.stringify(script) });
     jobs.update(jobId, { progress: 25, stage: 'Creating narration...' });
 
@@ -1210,7 +1216,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
         imgForFfmpeg = await renderSlideFrameWithFfmpeg(s, path.join(workDir, `slide_${i}_frame.png`), i, script.slides.length);
       }
       try {
-        await tts.synthesizeSentences(tts._internals.splitSentences(s.narration), audioFile, {
+        await tts.synthesizeSentences(tts._internals.splitSentences(stripChunkRefs(s.narration)), audioFile, {
           pauseMs: env.TTS_PAUSE_MS_SENTENCE,
           sectionPauseMs: env.TTS_PAUSE_MS_SECTION,
         });

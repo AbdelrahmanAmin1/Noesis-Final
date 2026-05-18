@@ -118,6 +118,46 @@ const TEMPLATES = {
     nodes: ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)', 'O(n^2)', 'O(2^n)'],
     edges: [['O(1)', 'O(log n)'], ['O(log n)', 'O(n)'], ['O(n)', 'O(n log n)'], ['O(n log n)', 'O(n^2)'], ['O(n^2)', 'O(2^n)']],
   },
+  'doubly linked list': {
+    type: 'linkedlist',
+    nodes: ['NULL', 'Node A', 'Node B', 'Node C', 'NULL'],
+    edges: [['NULL', 'Node A'], ['Node A', 'Node B'], ['Node B', 'Node C'], ['Node C', 'NULL']],
+  },
+  'circular queue': {
+    type: 'flow',
+    nodes: ['Front', 'Slot 0', 'Slot 1', 'Slot 2', 'Slot 3', 'Rear'],
+    edges: [['Front', 'Slot 0'], ['Slot 0', 'Slot 1'], ['Slot 1', 'Slot 2'], ['Slot 2', 'Slot 3'], ['Slot 3', 'Front']],
+  },
+  'priority queue': {
+    type: 'tree',
+    nodes: ['1 (highest)', '3', '5', '7', '9', '11', '13'],
+    edges: [['1 (highest)', '3'], ['1 (highest)', '5'], ['3', '7'], ['3', '9'], ['5', '11'], ['5', '13']],
+  },
+  'factory pattern': {
+    type: 'class_diagram',
+    nodes: ['ShapeFactory', '<<interface>> Shape', 'Circle', 'Rectangle', 'createShape()'],
+    edges: [['ShapeFactory', '<<interface>> Shape'], ['<<interface>> Shape', 'Circle'], ['<<interface>> Shape', 'Rectangle'], ['ShapeFactory', 'createShape()']],
+  },
+  'observer pattern': {
+    type: 'class_diagram',
+    nodes: ['Subject', 'Observer (interface)', 'ConcreteObserver A', 'ConcreteObserver B', 'notify()'],
+    edges: [['Subject', 'Observer (interface)'], ['Observer (interface)', 'ConcreteObserver A'], ['Observer (interface)', 'ConcreteObserver B'], ['Subject', 'notify()']],
+  },
+  'decorator pattern': {
+    type: 'class_diagram',
+    nodes: ['Component (interface)', 'ConcreteComponent', 'Decorator (abstract)', 'BorderDecorator', 'ScrollDecorator'],
+    edges: [['Component (interface)', 'ConcreteComponent'], ['Component (interface)', 'Decorator (abstract)'], ['Decorator (abstract)', 'BorderDecorator'], ['Decorator (abstract)', 'ScrollDecorator']],
+  },
+  'dynamic programming': {
+    type: 'flow',
+    nodes: ['Original problem', 'Subproblem 1', 'Subproblem 2', 'Memo table', 'Optimal solution'],
+    edges: [['Original problem', 'Subproblem 1'], ['Original problem', 'Subproblem 2'], ['Subproblem 1', 'Memo table'], ['Subproblem 2', 'Memo table'], ['Memo table', 'Optimal solution']],
+  },
+  'greedy algorithm': {
+    type: 'flow',
+    nodes: ['Problem', 'Local best choice', 'Reduce problem', 'Repeat', 'Global solution'],
+    edges: [['Problem', 'Local best choice'], ['Local best choice', 'Reduce problem'], ['Reduce problem', 'Repeat'], ['Repeat', 'Global solution']],
+  },
 };
 
 function findTemplate(concept) {

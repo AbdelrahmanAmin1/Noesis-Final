@@ -133,9 +133,17 @@ async function retrieveWithMeta(materialId, query, kOrOpts = 6, minScore = 0.05)
   return { chunks, maxScore, meanScore };
 }
 
+function groundingTier(result) {
+  const { chunks, maxScore } = result;
+  const count = (chunks || []).length;
+  if (count >= 3 && maxScore > 0.40) return 'strong';
+  if (count >= 2 && maxScore > 0.16) return 'moderate';
+  return 'weak';
+}
+
 async function retrieve(materialId, query, kOrOpts = 6, minScore = 0.05) {
   const result = await retrieveWithMeta(materialId, query, kOrOpts, minScore);
   return result.chunks;
 }
 
-module.exports = { embedAndStore, retrieve, retrieveWithMeta, cosine, float32ToBuf, bufToFloat32, FEATURE_K };
+module.exports = { embedAndStore, retrieve, retrieveWithMeta, groundingTier, cosine, float32ToBuf, bufToFloat32, FEATURE_K };

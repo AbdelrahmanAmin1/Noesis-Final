@@ -20,6 +20,7 @@ function getProvider(name) {
 
 function getProviderFor(feature) {
   if (feature === 'video_script') return env.VIDEO_SCRIPT_PROVIDER || 'ollama';
+  if (feature === 'notes') return env.NOTES_PROVIDER || env.AI_PROVIDER;
   return env.AI_PROVIDER;
 }
 
@@ -111,6 +112,11 @@ async function healthCheck() {
       ok: ollamaHealth.ok !== false,
       provider: 'ollama',
       model: env.OLLAMA_EMBED_MODEL,
+    },
+    notes: {
+      provider: env.NOTES_PROVIDER,
+      groqConfigured: !!env.GROQ_API_KEY,
+      maxOutputTokens: env.NOTES_PROVIDER === 'groq' ? env.GROQ_NOTES_MAX_OUTPUT_TOKENS : undefined,
     },
     videoScript: {
       provider: env.VIDEO_SCRIPT_PROVIDER,

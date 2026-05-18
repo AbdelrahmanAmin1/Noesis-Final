@@ -98,11 +98,13 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
   const [status, setStatus] = React.useState('');
   const [title, setTitle] = React.useState('');
   const [body, setBody] = React.useState('');
+  const [mode, setMode] = React.useState('read');
 
   React.useEffect(() => {
     setTitle(current ? current.t : '');
     setBody(current ? current.body_md || '' : '');
     setStatus('');
+    setMode('read');
   }, [current && current.id]);
 
   const tags = React.useMemo(() => {
@@ -168,10 +170,23 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
               {tags.tags.map((t) => <span key={t} className="chip">#{t}</span>)}
               <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-3)' }}>{current.updated ? `Updated ${current.updated}` : ''}</span>
             </div>
-            <input className="input" value={title} onChange={e => setTitle(e.target.value)} style={ns.titleInput}/>
-            <textarea className="input" value={body} onChange={e => setBody(e.target.value)} style={ns.bodyInput} placeholder="Write your note..." />
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, gap: 8 }}>
+              {mode === 'edit' ? (
+                <input className="input" value={title} onChange={e => setTitle(e.target.value)} style={{ ...ns.titleInput, marginBottom: 0, flex: 1 }}/>
+              ) : (
+                <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 300, margin: 0, flex: 1, color: 'var(--fg-0)' }}>{title || 'Untitled'}</h1>
+              )}
+              <button className="btn btn-ghost" onClick={() => setMode(mode === 'read' ? 'edit' : 'read')} style={{ fontSize: 11.5, padding: '6px 12px', whiteSpace: 'nowrap' }}>
+                {mode === 'read' ? 'Edit' : 'Read'}
+              </button>
+            </div>
+            {mode === 'edit' ? (
+              <textarea className="input" value={body} onChange={e => setBody(e.target.value)} style={ns.bodyInput} placeholder="Write your note..." />
+            ) : (
+              <div className="md-rendered" style={ns.mdBody} dangerouslySetInnerHTML={{ __html: window.DOMPurify ? window.DOMPurify.sanitize(window.marked ? window.marked.parse(body || '') : body) : (body || '') }} />
+            )}
             <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
-              <button className="btn btn-accent" disabled={busy || !title.trim()} onClick={save}>{status === 'Saving...' ? 'Saving...' : 'Save'}</button>
+              {mode === 'edit' && <button className="btn btn-accent" disabled={busy || !title.trim()} onClick={save}>{status === 'Saving...' ? 'Saving...' : 'Save'}</button>}
               <button className="btn btn-ghost" disabled={busy} onClick={remove} style={{ color: 'var(--err)' }}>{status === 'Deleting...' ? 'Deleting...' : 'Delete'}</button>
               {materialId && <button className="btn btn-ghost" disabled={busy} onClick={generateCards} style={{ marginLeft: 'auto' }}><Icon.Cards size={12}/> {status === 'Generating flashcards...' ? 'Generating flashcards...' : 'Generate 4 cards'}</button>}
             </div>
@@ -199,6 +214,7 @@ const ns = {
   emptyText: { fontSize: 13, color: 'var(--fg-3)', margin: 0 },
   titleInput: { width: '100%', fontFamily: 'var(--font-display)', fontSize: 32, marginBottom: 14 },
   bodyInput: { width: '100%', minHeight: 420, resize: 'vertical', fontSize: 14.5, lineHeight: 1.7 },
+  mdBody: { minHeight: 420, fontSize: 14.5, lineHeight: 1.75, color: 'var(--fg-1)' },
 };
 
 window.Notes = Notes;

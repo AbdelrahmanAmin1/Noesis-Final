@@ -56,7 +56,14 @@ function scoreVideoScript(script, opts = {}) {
   addCriterion(criteria, 'slide_count_8_to_10', slides.length >= 8 && slides.length <= 10, `Slide count is ${slides.length}; expected 8-10.`, 1);
   addCriterion(criteria, 'learning_objectives', asList(script && script.learningObjectives).length >= 2 || types.includes('objectives'), 'Has learning objectives or objectives slide.', 0.8);
   addCriterion(criteria, 'required_slide_types', requiredTypesOk, 'Covers required teaching slide sequence.', 1.3);
-  addCriterion(criteria, 'narration_depth', narrations.length > 0 && narrations.every(n => n.length >= 70), 'Every slide has meaningful narration.', 1.1);
+  const teachingTypes = ['concept', 'analogy', 'code', 'step_by_step', 'diagram', 'mistakes'];
+  const narrationDeep = narrations.length > 0 && slides.every((s, i) => {
+    const minLen = teachingTypes.includes(slideType(s)) ? 150 : 60;
+    return narrations[i].length >= minLen;
+  });
+  addCriterion(criteria, 'narration_depth', narrationDeep, 'Teaching slides have 150+ char narration; others have 60+.', 1.3);
+  const noBulletTruncation = bulletLists.every(list => list.every(b => !String(b).endsWith('...')));
+  addCriterion(criteria, 'no_truncated_bullets', noBulletTruncation, 'No bullets end with "..." (truncated).', 0.7);
   addCriterion(criteria, 'meaningful_bullets', bulletLists.length > 0 && bulletLists.every(list => list.length >= 2 && list.some(b => String(b).length >= 8)), 'Bullets are present and meaningful.', 0.9);
   addCriterion(criteria, 'visual_diversity', visualTypes.length >= 3 && !(visualTypes.length === 1 && visualTypes[0] === 'mindmap'), `Visual types: ${visualTypes.join(', ') || 'none'}.`, 0.9);
   addCriterion(criteria, 'concept_coverage', conceptCovered, `Mentions concept "${concept}".`, 0.8);

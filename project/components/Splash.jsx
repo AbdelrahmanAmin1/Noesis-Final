@@ -60,7 +60,7 @@ const Splash = ({ onDone }) => {
           animation: phase >= 1 ? 'splashRing 2.4s ease-out 0.4s infinite' : 'none',
         }}/>
         <img
-          src="assets/noesis_logo.webp"
+          src="assets/noesis_primary_logo.png"
           alt=""
           width={72} height={72}
           style={{

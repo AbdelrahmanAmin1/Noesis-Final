@@ -33,6 +33,7 @@ const env = {
   MAX_UPLOAD_MB: parseInt(process.env.MAX_UPLOAD_MB || '25', 10),
 
   AI_PROVIDER: process.env.AI_PROVIDER || 'ollama',
+  NOTES_PROVIDER: (process.env.NOTES_PROVIDER || process.env.AI_PROVIDER || 'ollama').toLowerCase(),
   VIDEO_SCRIPT_PROVIDER: (process.env.VIDEO_SCRIPT_PROVIDER || 'ollama').toLowerCase(),
   VIDEO_SCRIPT_GROQ_FALLBACK_ON_WEAK: boolEnv('VIDEO_SCRIPT_GROQ_FALLBACK_ON_WEAK', false),
   VIDEO_SCRIPT_MIN_QUALITY_SCORE: numberEnv('VIDEO_SCRIPT_MIN_QUALITY_SCORE', 0.75, 0, 1),
@@ -46,10 +47,11 @@ const env = {
   GROQ_BASE_URL: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1',
   GROQ_API_KEY: process.env.GROQ_API_KEY || '',
   GROQ_MODEL: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-  GROQ_VIDEO_MAX_OUTPUT_TOKENS: parseInt(process.env.GROQ_VIDEO_MAX_OUTPUT_TOKENS || '1000', 10),
-  GROQ_VIDEO_TOP_K_CHUNKS: parseInt(process.env.GROQ_VIDEO_TOP_K_CHUNKS || '4', 10),
-  GROQ_VIDEO_MAX_CHUNK_CHARS: parseInt(process.env.GROQ_VIDEO_MAX_CHUNK_CHARS || '900', 10),
-  GROQ_VIDEO_MAX_INPUT_CHARS: parseInt(process.env.GROQ_VIDEO_MAX_INPUT_CHARS || '12000', 10),
+  GROQ_VIDEO_MAX_OUTPUT_TOKENS: parseInt(process.env.GROQ_VIDEO_MAX_OUTPUT_TOKENS || '4000', 10),
+  GROQ_VIDEO_TOP_K_CHUNKS: parseInt(process.env.GROQ_VIDEO_TOP_K_CHUNKS || '6', 10),
+  GROQ_VIDEO_MAX_CHUNK_CHARS: parseInt(process.env.GROQ_VIDEO_MAX_CHUNK_CHARS || '1200', 10),
+  GROQ_VIDEO_MAX_INPUT_CHARS: parseInt(process.env.GROQ_VIDEO_MAX_INPUT_CHARS || '16000', 10),
+  GROQ_NOTES_MAX_OUTPUT_TOKENS: parseInt(process.env.GROQ_NOTES_MAX_OUTPUT_TOKENS || '2000', 10),
 
   TTS_ENGINE: process.env.TTS_ENGINE || 'piper',
   TTS_BIN: process.env.TTS_BIN || 'piper',

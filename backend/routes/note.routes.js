@@ -7,7 +7,7 @@ const { aiLimiter } = require('../middleware/rateLimit');
 const { getDb } = require('../config/db');
 const { HttpError } = require('../middleware/error');
 const ai = require('../services/ai.service');
-const { retrieve } = require('../services/rag.service');
+const { retrieveWithMeta, groundingTier } = require('../services/rag.service');
 const prompts = require('../utils/prompts');
 
 const router = express.Router();
@@ -90,9 +90,10 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     if (chapter_id && !chapterTitle) throw new HttpError(404, 'chapter_not_found');
     const q = query || chapterTitle || m.title;
     await ai.assertModelsAvailable({ generation: true, embedding: true });
-    const chunks = await retrieve(material_id, q, { feature: 'notes' });
-    const prompt = prompts.NOTES_SUMMARY(chunks, chapterTitle || m.title);
-    const md = String(await ai.generate(prompt, { temperature: 0.35, num_ctx: 3072, num_predict: 500 }) || '').trim();
+    const rag = await retrieveWithMeta(material_id, q, { feature: 'notes' });
+    const tier = groundingTier(rag);
+    const prompt = prompts.NOTES_SUMMARY(rag.chunks, chapterTitle || m.title, { groundingTier: tier });
+    const md = String(await ai.generate(prompt, { feature: 'notes', temperature: 0.35, num_ctx: 4096, num_predict: 2000 }) || '').trim();
     if (!md) throw new HttpError(502, 'ai_empty_response', 'The local model returned an empty note. Try again.');
     const r = db.prepare(`INSERT INTO notes (user_id, material_id, folder, title, body_md, tags_json, created_at, updated_at)
                           VALUES (?,?,?,?,?,?,?,?)`).run(

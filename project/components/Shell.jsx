@@ -9,7 +9,7 @@ const Logo = ({ size = 24, showWord = true, onClick }) => (
     }}
   >
     <img
-      src="assets/noesis_logo.webp"
+      src="assets/noesis_primary_logo.png"
       alt=""
       width={size}
       height={size}
@@ -46,7 +46,7 @@ const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
   const Icon = window.Icon;
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [streakDays, setStreakDays] = React.useState(0);
-  const [weekBars, setWeekBars] = React.useState([0,0,0,0,0,0,0]);
+  const [weekBars, setWeekBars] = React.useState([0, 0, 0, 0, 0, 0, 0]);
   const [userName, setUserName] = React.useState('');
   const [userSub, setUserSub] = React.useState('');
 
@@ -54,21 +54,21 @@ const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
     window.NoesisAPI.dashboard.get()
       .then(d => {
         setStreakDays(d.streak_days || 0);
-        setWeekBars((d.weekly_hours || [0,0,0,0,0,0,0]).map(h => h > 0 ? 1 : 0));
+        setWeekBars((d.weekly_hours || [0, 0, 0, 0, 0, 0, 0]).map(h => h > 0 ? 1 : 0));
       })
-      .catch(() => {});
+      .catch(() => { });
     window.NoesisAPI.auth.me()
       .then(d => {
         setUserName((d.user && d.user.name) || '');
         setUserSub((d.prefs && d.prefs.subject) || '');
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   return (
     <aside style={ss.sidebar}>
       <div style={{ padding: '22px 22px 16px' }}>
-        <Logo size={22} onClick={onHome}/>
+        <Logo size={22} onClick={onHome} />
       </div>
 
       <div style={{ padding: '6px 10px' }}>
@@ -98,7 +98,7 @@ const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
         <div style={ss.streakBox}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: 10, letterSpacing: '0.08em', color: 'var(--fg-3)', textTransform: 'uppercase' }}>Streak</span>
-            <Icon.Flame size={12} style={{ color: 'var(--accent)' }}/>
+            <Icon.Flame size={12} style={{ color: 'var(--accent)' }} />
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
             <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, color: 'var(--fg-0)' }}>{streakDays}</span>
@@ -128,14 +128,14 @@ const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
         {menuOpen && (
           <div style={ss.menu}>
             <button style={ss.menuItem} onClick={() => { setMenuOpen(false); onSettings(); }}>
-              <Icon.Users size={13}/> Profile
+              <Icon.Users size={13} /> Profile
             </button>
             <button style={ss.menuItem} onClick={() => { setMenuOpen(false); onSettings(); }}>
-              <Icon.Eye size={13}/> Appearance
+              <Icon.Eye size={13} /> Appearance
             </button>
-            <div style={{ height: 1, background: 'var(--line)', margin: '4px 0' }}/>
+            <div style={{ height: 1, background: 'var(--line)', margin: '4px 0' }} />
             <button style={{ ...ss.menuItem, color: 'var(--err)' }} onClick={() => { setMenuOpen(false); onLogout && onLogout(); }}>
-              <Icon.LogOut size={13}/> Log out
+              <Icon.LogOut size={13} /> Log out
             </button>
           </div>
         )}
