@@ -4,3 +4,12 @@ backend/.env
 .env
 backend/.env
 **/.env
+*.log
+/.claude/
+/package-lock.json
+backend/.next/
+backend/bin/
+backend/tts-models/*
+!backend/tts-models/README.md
+project/frontend*.log
+project/uploads/

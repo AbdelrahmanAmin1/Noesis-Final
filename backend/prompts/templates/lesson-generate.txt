@@ -1,0 +1,69 @@
+{{SYSTEM_BASE}}
+
+Task: Generate one structured EducationalLesson JSON object for "{{TOPIC}}".
+
+Audience: beginner CS student.
+Lesson type: {{LESSON_TYPE}}
+Grounding: {{GROUNDING_STATUS}}
+
+Use the uploaded source excerpts for course-specific wording and facts. Use the curated local knowledge for depth, code examples, diagrams, common mistakes, and complexity. Do not merely summarize the source. Teach like a real tutor.
+
+Uploaded source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Curated local knowledge:
+{{CURATED_KNOWLEDGE}}
+
+Return ONLY valid JSON with this exact shape:
+{
+  "topic": "{{TOPIC}}",
+  "audienceLevel": "beginner",
+  "lessonType": "oop|data_structure|algorithm|general",
+  "sourceMaterial": {
+    "title": "{{TITLE}}",
+    "grounding": "{{GROUNDING_STATUS}}",
+    "selectedChunkIds": []
+  },
+  "learningObjectives": ["...", "...", "..."],
+  "prerequisites": ["..."],
+  "sections": [
+    {
+      "type": "hook|definition|deep_explanation|analogy|code_example|code_walkthrough|diagram|mindmap|common_mistakes|complexity|checkpoint|recap|next_steps",
+      "title": "...",
+      "content": "...",
+      "cards": [{"title":"...","text":"..."}],
+      "code": {
+        "language": "java",
+        "content": "...",
+        "explanation": [{"lineRange":"1-3","text":"..."}]
+      },
+      "diagram": {
+        "type": "uml_class|inheritance_tree|linked_list|stack|queue|tree|big_o_chart|mindmap|flow",
+        "nodes": [],
+        "edges": [],
+        "operations": [],
+        "caption": ""
+      },
+      "callouts": [{"type":"remember|exam_tip|warning|source","text":"...","sourceChunkIds":[]}],
+      "quiz": [{"question":"...","options":["..."],"answer":"...","explanation":"..."}]
+    }
+  ],
+  "relatedTopics": ["..."]
+}
+
+Required content:
+- Include hook, definition, deep_explanation, diagram, code_example, code_walkthrough, common_mistakes, checkpoint, recap, and next_steps sections.
+- Include a complete real code example, not pseudocode, when the topic is OOP, Data Structures, or Algorithms.
+- Include line-by-line code explanation.
+- Include a semantic diagram spec. OOP needs UML/class relationship diagrams. Data structures need operation or memory-style diagrams.
+- Include common mistakes with the correction.
+- Include a mini quiz with answer and explanation.
+- Do not include raw markdown fences in JSON strings unless they are inside code.content.
+- Do not show raw chunk references in visible content; put source ids only in sourceChunkIds.
+- Never use placeholder phrases such as "Trace an example", "Define the idea", "Apply main rule", "Code sketch", or "Avoid mistakes".
+
+Topic-specific rules:
+- Inheritance must include Shape, Circle, Rectangle, extends, method overriding, UML inheritance arrow, and a composition warning.
+- Polymorphism must include superclass reference, subclass object, dynamic dispatch, overriding vs overloading, and static/final warning.
+- Linked List must include node, head, next, traversal, insertion, deletion, memory-style diagram, and complexity table/cards.
+- Stack must include LIFO, push, pop, peek, vertical stack diagram, underflow, and real use cases.

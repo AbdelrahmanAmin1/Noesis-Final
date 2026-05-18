@@ -35,6 +35,7 @@ const Logo = ({ size = 24, showWord = true, onClick }) => (
 const SIDEBAR = [
   { key: 'dashboard', label: 'Today', icon: 'Home' },
   { key: 'materials', label: 'Materials', icon: 'Folder' },
+  { key: 'study-plan', label: 'Study Plan', icon: 'Calendar' },
   { key: 'tutor', label: 'AI Tutor', icon: 'Sparkle' },
   { key: 'notes', label: 'Notes', icon: 'PenNib' },
   { key: 'flashcards', label: 'Flashcards', icon: 'Cards' },

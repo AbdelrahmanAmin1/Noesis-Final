@@ -1,0 +1,37 @@
+{
+  "topic": "Linked List",
+  "aliases": ["Singly Linked List", "Node", "Nodes", "Pointers", "References", "head pointer"],
+  "definition": "A singly linked list is a chain of nodes where each node stores data and a next reference to the following node.",
+  "deepExplanation": "A linked list trades direct indexing for flexible reference changes. The head reference points to the first node. Traversal follows next references until null. Insertions and deletions are mostly about changing links in the correct order so the remaining chain is not lost.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "Insert at front",
+      "code": "class Node {\n  int data;\n  Node next;\n  Node(int data) { this.data = data; }\n}\n\nNode insertFront(Node head, int value) {\n  Node node = new Node(value);\n  node.next = head;\n  return node;\n}"
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "linked_list",
+      "nodes": ["head", "Node(10)", "Node(20)", "Node(30)", "null"],
+      "edges": [["head", "Node(10)"], ["Node(10)", "Node(20)"], ["Node(20)", "Node(30)"], ["Node(30)", "null"]],
+      "caption": "The head points to the first node, and each next reference points to the next node."
+    }
+  ],
+  "commonMistakes": [
+    "Overwriting next before saving the rest of the chain.",
+    "Forgetting to stop traversal at null.",
+    "Assuming linked lists provide O(1) random access by index."
+  ],
+  "complexity": {
+    "accessByIndex": "O(n)",
+    "search": "O(n)",
+    "insertAtHead": "O(1)",
+    "deleteAfterKnownNode": "O(1)",
+    "space": "O(n)"
+  },
+  "practiceQuestions": [
+    "When inserting at the front, what should newNode.next point to?"
+  ],
+  "visualTemplates": ["linked_list", "operation_sequence", "complexity_table"]
+}

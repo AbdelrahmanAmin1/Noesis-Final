@@ -116,6 +116,10 @@
     tutor: {
       start: (b) => req('POST', '/tutor/sessions', b),
       get: (id) => req('GET', '/tutor/sessions/' + id),
+      status: (id) => req('GET', '/tutor/sessions/' + id + '/status'),
+      continue: (id, b) => req('POST', '/tutor/sessions/' + id + '/continue', b),
+      sources: (id) => req('GET', '/tutor/sessions/' + id + '/sources'),
+      trace: (id) => req('GET', '/tutor/sessions/' + id + '/trace'),
       changeMode: (id, mode) => req('PATCH', '/tutor/sessions/' + id + '/mode', { mode }),
       answer: (id, idx, b) => req('POST', '/tutor/sessions/' + id + '/step/' + idx + '/answer', b),
       addNote: (id, b) => req('POST', '/tutor/sessions/' + id + '/notes', b),
@@ -130,6 +134,14 @@
     videos: {
       generate: (b) => req('POST', '/videos', b),
       get: (id) => req('GET', '/videos/' + id),
+      storyboards: (materialId) => req('GET', '/videos/storyboard' + (materialId ? '?material_id=' + encodeURIComponent(materialId) : '')),
+      storyboard: (id) => req('GET', '/videos/storyboard/' + id),
+      createStoryboard: (b) => req('POST', '/videos/storyboard', b),
+      updateScene: (id, sceneId, b) => req('PATCH', '/videos/storyboard/' + id + '/scene/' + encodeURIComponent(sceneId), b),
+      regenerateScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/regenerate-scene', b),
+      approveStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/approve'),
+      renderStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/render'),
+      scenePreviewUrl: (id, sceneId) => BASE + '/videos/storyboard/' + id + '/scene/' + encodeURIComponent(sceneId) + '/preview',
       fileUrl: (id) => BASE + '/videos/' + id + '/file',
       fileBlobUrl: async (id) => {
         const res = await req('GET', '/videos/' + id + '/file', null, { raw: true });
@@ -137,6 +149,15 @@
         const blob = await res.blob();
         return URL.createObjectURL(blob);
       },
+    },
+
+    study: {
+      learningMap: (materialId) => req('GET', '/study/learning-map' + (materialId ? '?material_id=' + encodeURIComponent(materialId) : '')),
+      createPlan: (b) => req('POST', '/study/plans', b || {}),
+      activePlan: () => req('GET', '/study/plans/active'),
+      getPlan: (id) => req('GET', '/study/plans/' + id),
+      approvePlan: (id) => req('POST', '/study/plans/' + id + '/approve'),
+      completeTask: (id) => req('POST', '/study/tasks/' + id + '/complete'),
     },
 
     jobs: {

@@ -1,0 +1,39 @@
+{
+  "topic": "Binary Search Tree",
+  "aliases": ["BST", "ordered binary tree", "left subtree", "right subtree"],
+  "definition": "A binary search tree is a binary tree where every node keeps smaller values in the left subtree and larger values in the right subtree.",
+  "deepExplanation": "A BST turns comparison into direction. At each node, compare the target value with the current value. Smaller means move left; larger means move right. This can make search, insert, and delete efficient when the tree is balanced, but a badly ordered insertion sequence can make the tree behave like a linked list.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "BST search",
+      "code": "class Node {\n  int value;\n  Node left, right;\n}\n\nboolean contains(Node root, int target) {\n  Node current = root;\n  while (current != null) {\n    if (target == current.value) return true;\n    if (target < current.value) current = current.left;\n    else current = current.right;\n  }\n  return false;\n}"
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "tree",
+      "nodes": ["8", "3", "10", "1", "6", "14"],
+      "edges": [["8", "3", "left"], ["8", "10", "right"], ["3", "1", "left"], ["3", "6", "right"], ["10", "14", "right"]],
+      "operations": ["compare", "go left if smaller", "go right if larger"],
+      "caption": "Each comparison removes about half the remaining tree when the tree is balanced."
+    }
+  ],
+  "commonMistakes": [
+    "Assuming every BST operation is always O(log n) even when the tree is unbalanced.",
+    "Putting equal values inconsistently and breaking search rules.",
+    "Deleting a node with two children without preserving the in-order order."
+  ],
+  "complexity": {
+    "search_balanced": "O(log n)",
+    "insert_balanced": "O(log n)",
+    "delete_balanced": "O(log n)",
+    "search_worst": "O(n)",
+    "space": "O(n)"
+  },
+  "practiceQuestions": [
+    "Where would value 6 go in a BST whose root is 8 and left child is 3?",
+    "Why can a sorted insertion order make a BST slow?"
+  ],
+  "visualTemplates": ["tree", "operation_sequence", "complexity_table"]
+}

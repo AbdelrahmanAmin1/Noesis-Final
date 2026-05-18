@@ -37,7 +37,104 @@ function migrate() {
   ensureColumn(db, 'chunks', 'source_page', 'INTEGER');
   ensureColumn(db, 'chunks', 'chapter_title', "TEXT DEFAULT ''");
   ensureColumn(db, 'chunks', 'heading', "TEXT DEFAULT ''");
+  ensureColumn(db, 'chunks', 'slide_number', 'INTEGER');
+  ensureColumn(db, 'chunks', 'slide_title', "TEXT DEFAULT ''");
+  ensureColumn(db, 'chunks', 'section_title', "TEXT DEFAULT ''");
+  ensureColumn(db, 'chunks', 'has_code', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'chunks', 'keywords_json', "TEXT DEFAULT '[]'");
+  ensureColumn(db, 'notes', 'lesson_json', 'TEXT');
+  ensureColumn(db, 'notes', 'source_map_json', 'TEXT');
+  ensureColumn(db, 'videos', 'lesson_json', 'TEXT');
+  ensureColumn(db, 'videos', 'storyboard_json', 'TEXT');
+  ensureColumn(db, 'videos', 'quality_json', 'TEXT');
   ensureColumnFromMigration(db, 'videos', 'resolved_concept', '002_add_video_resolved_concept.sql');
+  ensureColumn(db, 'user_prefs', 'study_profile_json', 'TEXT');
+  ensureColumn(db, 'tutor_sessions', 'status', "TEXT NOT NULL DEFAULT 'ready'");
+  ensureColumn(db, 'tutor_sessions', 'topic', 'TEXT');
+  ensureColumn(db, 'tutor_sessions', 'source_title', 'TEXT');
+  ensureColumn(db, 'tutor_sessions', 'sources_json', "TEXT DEFAULT '[]'");
+  ensureColumn(db, 'tutor_sessions', 'trace_json', "TEXT DEFAULT '{}'");
+  ensureColumn(db, 'tutor_sessions', 'learning_map_json', 'TEXT');
+  ensureColumn(db, 'tutor_sessions', 'last_error', 'TEXT');
+  ensureColumn(db, 'tutor_sessions', 'updated_at', 'TEXT');
+  ensureColumn(db, 'tutor_steps', 'step_id', 'TEXT');
+  ensureColumn(db, 'tutor_steps', 'step_json', 'TEXT');
+  ensureColumn(db, 'tutor_steps', 'status', "TEXT DEFAULT 'locked'");
+  ensureColumn(db, 'tutor_steps', 'source_refs_json', "TEXT DEFAULT '[]'");
+  ensureColumn(db, 'tutor_steps', 'trace_json', "TEXT DEFAULT '{}'");
+  ensureColumn(db, 'tutor_notes', 'step_id', 'TEXT');
+  ensureColumn(db, 'tutor_notes', 'note_kind', "TEXT DEFAULT 'manual'");
+  ensureColumn(db, 'tutor_notes', 'source_refs_json', "TEXT DEFAULT '[]'");
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_tutor_steps_session_step_id ON tutor_steps(session_id, step_id)');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS video_storyboards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      material_id INTEGER NOT NULL,
+      video_id INTEGER,
+      topic TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft',
+      lesson_json TEXT NOT NULL,
+      storyboard_json TEXT NOT NULL,
+      quality_json TEXT NOT NULL DEFAULT '{}',
+      renderer TEXT DEFAULT 'canvas',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      approved_at TEXT,
+      rendered_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE,
+      FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_video_storyboards_user ON video_storyboards(user_id, updated_at);
+    CREATE TABLE IF NOT EXISTS video_storyboard_scenes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      storyboard_id INTEGER NOT NULL,
+      scene_id TEXT NOT NULL,
+      scene_order INTEGER NOT NULL,
+      scene_json TEXT NOT NULL,
+      quality_json TEXT NOT NULL DEFAULT '{}',
+      approved INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (storyboard_id) REFERENCES video_storyboards(id) ON DELETE CASCADE
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_video_storyboard_scene_key ON video_storyboard_scenes(storyboard_id, scene_id);
+    CREATE TABLE IF NOT EXISTS study_plans (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      goal TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      plan_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      approved_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_study_plans_user ON study_plans(user_id, status, updated_at);
+    CREATE TABLE IF NOT EXISTS study_plan_tasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      plan_id INTEGER NOT NULL,
+      day INTEGER NOT NULL,
+      task_order INTEGER NOT NULL,
+      task_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      completed_at TEXT,
+      FOREIGN KEY (plan_id) REFERENCES study_plans(id) ON DELETE CASCADE
+    );
+    CREATE TABLE IF NOT EXISTS learning_maps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      material_id INTEGER,
+      root_topic TEXT NOT NULL,
+      map_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_learning_maps_user ON learning_maps(user_id, material_id, updated_at);
+  `);
   return db;
 }
 

@@ -13,6 +13,7 @@ const jobs = require('./jobs.service');
 const log = require('../utils/logger');
 const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
+const topicResolver = require('./topic-resolver.service');
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -30,9 +31,10 @@ function fileTypeFromExt(ext) {
 
 function listForUser(userId) {
   const db = getDb();
-  return db.prepare(`SELECT id, title, type, status, progress, created_at,
+  const rows = db.prepare(`SELECT id, title, type, status, progress, created_at,
                      (SELECT COUNT(*) FROM chapters c WHERE c.material_id = m.id) AS chapters
                      FROM materials m WHERE user_id=? ORDER BY created_at DESC`).all(userId);
+  return rows.map(row => ({ ...row, display_title: displayTitleForMaterial(db, row) }));
 }
 
 function getOwned(userId, id) {
@@ -52,7 +54,25 @@ function getOwned(userId, id) {
     ORDER BY c.mastery_pct ASC, c.name ASC
     LIMIT 12
   `).all(userId, id);
-  return { ...m, chapters, concepts };
+  return { ...m, display_title: displayTitleForMaterial(db, m), chapters, concepts };
+}
+
+function isGenericMaterialTitle(title) {
+  return topicResolver.isGenericTopic(title) || /^\d+$/.test(String(title || '').trim());
+}
+
+function displayTitleForMaterial(db, material) {
+  const title = String(material && material.title || '').replace(/\s+/g, ' ').trim();
+  if (!isGenericMaterialTitle(title)) return title || `Material #${material.id}`;
+  const chunks = db.prepare(`SELECT id, idx, text, chapter_title, heading, slide_title, section_title
+                             FROM chunks WHERE material_id=? ORDER BY idx LIMIT 8`).all(material.id);
+  const ranked = topicResolver.rankTopicsFromChunks(chunks);
+  const sourceTitle = chunks.map(c => c.chapter_title || c.heading || c.slide_title || c.section_title).find(Boolean);
+  const topic = ranked && ranked.topic;
+  if (sourceTitle && topic) return `${sourceTitle} — ${topic}`;
+  if (topic) return topic;
+  if (sourceTitle) return sourceTitle;
+  return `Material #${material.id}`;
 }
 
 function getChunks(userId, materialId, chapterId) {
@@ -60,10 +80,12 @@ function getChunks(userId, materialId, chapterId) {
   const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
   if (!m) throw new HttpError(404, 'material_not_found');
   if (chapterId) {
-    return db.prepare('SELECT id, idx, text FROM chunks WHERE material_id=? AND chapter_id=? ORDER BY idx')
+    return db.prepare(`SELECT id, idx, text, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json
+                       FROM chunks WHERE material_id=? AND chapter_id=? ORDER BY idx`)
       .all(materialId, chapterId);
   }
-  return db.prepare('SELECT id, idx, text FROM chunks WHERE material_id=? ORDER BY idx').all(materialId);
+  return db.prepare(`SELECT id, idx, text, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json
+                     FROM chunks WHERE material_id=? ORDER BY idx`).all(materialId);
 }
 
 function deleteMaterial(userId, id) {
@@ -140,12 +162,27 @@ async function processMaterial(materialId, jobId) {
 
     const chunks = chunkByChapter(text, chapters);
     if (chunks.length === 0) throw new Error('no_chunks_created');
-    const insChunk = db.prepare('INSERT INTO chunks (material_id, chapter_id, idx, text, token_count, chapter_title, heading) VALUES (?,?,?,?,?,?,?)');
+    const insChunk = db.prepare(`INSERT INTO chunks
+      (material_id, chapter_id, idx, text, token_count, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
     const inserted = [];
     db.transaction(() => {
       for (const c of chunks) {
-        const r = insChunk.run(materialId, chapterIds[c.chapter_idx] || null, c.idx, c.text, c.token_count, c.chapter_title || '', c.heading || '');
-        inserted.push({ id: r.lastInsertRowid, text: c.text });
+        const r = insChunk.run(
+          materialId,
+          chapterIds[c.chapter_idx] || null,
+          c.idx,
+          c.text,
+          c.token_count,
+          c.chapter_title || '',
+          c.heading || '',
+          c.slide_number || null,
+          c.slide_title || '',
+          c.section_title || c.heading || '',
+          c.has_code ? 1 : 0,
+          c.keywords_json || JSON.stringify(c.keywords || [])
+        );
+        inserted.push({ id: r.lastInsertRowid, text: c.text, chapter_title: c.chapter_title || '', heading: c.heading || '' });
       }
     })();
     setStatus('processing', 60);
@@ -173,4 +210,4 @@ async function processMaterial(materialId, jobId) {
   }
 }
 
-module.exports = { listForUser, getOwned, getChunks, createPending, deleteMaterial, processMaterial };
+module.exports = { listForUser, getOwned, getChunks, createPending, deleteMaterial, processMaterial, displayTitleForMaterial };

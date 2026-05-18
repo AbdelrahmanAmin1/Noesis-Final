@@ -1,0 +1,1561 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { z } = require('zod');
+const env = require('../config/env');
+const ai = require('./ai.service');
+const prompts = require('../utils/prompts');
+const { extractJson, parseJsonSafe } = require('../utils/jsonSafe');
+const diagrams = require('./diagram.service');
+
+const SECTION_TYPES = [
+  'hook',
+  'definition',
+  'deep_explanation',
+  'analogy',
+  'code_example',
+  'code_walkthrough',
+  'diagram',
+  'mindmap',
+  'common_mistakes',
+  'complexity',
+  'checkpoint',
+  'recap',
+  'next_steps',
+];
+
+const DIAGRAM_TYPES = ['uml_class', 'inheritance_tree', 'linked_list', 'stack', 'queue', 'tree', 'big_o_chart', 'mindmap', 'flow'];
+const CALLOUT_TYPES = ['remember', 'exam_tip', 'warning', 'source'];
+
+const CodeExplanationSchema = z.union([
+  z.string(),
+  z.object({
+    lineRange: z.string().optional().default(''),
+    text: z.string().min(1),
+  }),
+]);
+
+const CodeSchema = z.object({
+  language: z.string().optional().default('text'),
+  content: z.string().optional().default(''),
+  explanation: z.array(CodeExplanationSchema).optional().default([]),
+}).optional();
+
+const DiagramSchema = z.object({
+  type: z.enum(DIAGRAM_TYPES).optional().default('mindmap'),
+  nodes: z.array(z.any()).optional().default([]),
+  edges: z.array(z.any()).optional().default([]),
+  operations: z.array(z.string()).optional().default([]),
+  caption: z.string().optional().default(''),
+}).optional();
+
+const SectionSchema = z.object({
+  type: z.enum(SECTION_TYPES),
+  title: z.string().min(1),
+  content: z.string().optional().default(''),
+  cards: z.array(z.any()).optional().default([]),
+  code: CodeSchema,
+  diagram: DiagramSchema,
+  callouts: z.array(z.object({
+    type: z.enum(CALLOUT_TYPES).optional().default('remember'),
+    text: z.string().min(1),
+    sourceChunkIds: z.array(z.union([z.number(), z.string()])).optional().default([]),
+  })).optional().default([]),
+  quiz: z.array(z.any()).optional().default([]),
+});
+
+const EducationalLessonSchema = z.object({
+  topic: z.string().min(2),
+  audienceLevel: z.string().optional().default('beginner'),
+  lessonType: z.enum(['oop', 'data_structure', 'algorithm', 'general']).optional().default('general'),
+  sourceMaterial: z.object({
+    title: z.string().optional().default(''),
+    grounding: z.string().optional().default('moderate'),
+    selectedChunkIds: z.array(z.union([z.number(), z.string()])).optional().default([]),
+  }).optional().default({}),
+  learningObjectives: z.array(z.string()).optional().default([]),
+  prerequisites: z.array(z.string()).optional().default([]),
+  sections: z.array(SectionSchema).min(6),
+  relatedTopics: z.array(z.string()).optional().default([]),
+});
+
+const VideoSceneSchema = z.object({
+  sceneType: z.enum(['hook', 'objectives', 'definition', 'deep_explanation', 'diagram', 'code_example', 'code_walkthrough', 'common_mistakes', 'complexity', 'checkpoint', 'recap']),
+  title: z.string().min(1),
+  narration: z.string().min(1),
+  onScreenText: z.array(z.string()).optional().default([]),
+  visual: z.object({
+    type: z.enum(['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart']).optional().default('mindmap'),
+    description: z.string().optional().default(''),
+    nodes: z.array(z.any()).optional().default([]),
+    edges: z.array(z.any()).optional().default([]),
+    operations: z.array(z.string()).optional().default([]),
+    caption: z.string().optional().default(''),
+  }).optional().default({}),
+  codeFocus: z.object({
+    language: z.string().optional().default('text'),
+    content: z.string().optional().default(''),
+    lineRange: z.string().optional().default(''),
+    highlightLines: z.array(z.number()).optional().default([]),
+    explanation: z.string().optional().default(''),
+  }).optional(),
+  focusTarget: z.string().optional().default(''),
+  pointerLabel: z.string().optional().default(''),
+  animationType: z.string().optional().default('focus'),
+  durationTargetSec: z.number().optional().default(24),
+});
+
+function cleanText(value, max = null) {
+  const text = String(value || '')
+    .replace(/\\n/g, '\n')
+    .replace(/\[chunk:\s*\d+\]/gi, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (max && text.length > max) return `${text.slice(0, max - 1).trim()}...`;
+  return text;
+}
+
+function inlineText(value, max = null) {
+  const text = cleanText(value).replace(/\s+/g, ' ').trim();
+  if (max && text.length > max) return `${text.slice(0, max - 1).trim()}...`;
+  return text;
+}
+
+function uniqueList(values, max = 12) {
+  const seen = new Set();
+  const out = [];
+  for (const value of values || []) {
+    const text = inlineText(value, 180);
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function detectLessonType(topic) {
+  const lower = String(topic || '').toLowerCase();
+  if (/(inheritance|polymorphism|encapsulation|abstraction|class|object|interface|oop)/.test(lower)) return 'oop';
+  if (/(linked list|stack|queue|tree|heap|array|hash|graph|data structure)/.test(lower)) return 'data_structure';
+  if (/(algorithm|sort|search|recursion|dynamic programming|big-o|complexity)/.test(lower)) return 'algorithm';
+  return 'general';
+}
+
+function topicKey(topic) {
+  return String(topic || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+function listKnowledgeFiles() {
+  const root = path.join(__dirname, '..', 'knowledge');
+  const out = [];
+  const walk = (dir) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name.endsWith('.json')) out.push(full);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+function loadCuratedKnowledge(topic) {
+  const wanted = topicKey(topic);
+  for (const file of listKnowledgeFiles()) {
+    try {
+      const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+      const keys = [json.topic, ...(json.aliases || [])].map(topicKey);
+      if (keys.includes(wanted) || keys.some(k => k.length >= 5 && wanted.length >= 5 && (wanted.includes(k) || k.includes(wanted)))) {
+        return { ...json, _file: file };
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+function curatedAsPrompt(knowledge) {
+  if (!knowledge) return '(No curated local topic file matched. Use standard CS knowledge carefully.)';
+  return JSON.stringify({
+    topic: knowledge.topic,
+    aliases: knowledge.aliases || [],
+    definition: knowledge.definition || '',
+    deepExplanation: knowledge.deepExplanation || '',
+    codeExamples: knowledge.codeExamples || [],
+    diagrams: knowledge.diagrams || [],
+    commonMistakes: knowledge.commonMistakes || [],
+    complexity: knowledge.complexity || {},
+    practiceQuestions: knowledge.practiceQuestions || [],
+    visualTemplates: knowledge.visualTemplates || [],
+  }, null, 2).slice(0, 6000);
+}
+
+function section(type, title, content, extra = {}) {
+  return {
+    type,
+    title,
+    content: cleanText(content),
+    cards: extra.cards || [],
+    code: extra.code,
+    diagram: extra.diagram,
+    callouts: extra.callouts || [],
+    quiz: extra.quiz || [],
+  };
+}
+
+function fallbackLesson(topic, opts = {}) {
+  const t = inlineText(topic || 'Object-Oriented Programming', 90);
+  const lower = t.toLowerCase();
+  const materialTitle = opts.materialTitle || opts.title || '';
+  const grounding = opts.groundingTier || 'moderate';
+  const selectedChunkIds = (opts.chunks || []).slice(0, 6).map(c => c.id).filter(Boolean);
+
+  if (lower.includes('inheritance')) return inheritanceLesson(t, materialTitle, grounding, selectedChunkIds);
+  if (lower.includes('polymorphism')) return polymorphismLesson(t, materialTitle, grounding, selectedChunkIds);
+  if (lower.includes('linked list')) return linkedListLesson(t, materialTitle, grounding, selectedChunkIds);
+  if (lower.includes('stack')) return stackLesson(t, materialTitle, grounding, selectedChunkIds);
+  const curated = loadCuratedKnowledge(t);
+  if (curated) return curatedFallbackLesson(t, curated, materialTitle, grounding, selectedChunkIds);
+  return genericLesson(t, materialTitle, grounding, selectedChunkIds);
+}
+
+function baseLesson(topic, lessonType, materialTitle, grounding, selectedChunkIds) {
+  return {
+    topic,
+    audienceLevel: 'beginner',
+    lessonType,
+    sourceMaterial: { title: materialTitle || '', grounding, selectedChunkIds },
+    learningObjectives: [],
+    prerequisites: [],
+    sections: [],
+    relatedTopics: [],
+  };
+}
+
+function inheritanceLesson(topic, materialTitle, grounding, selectedChunkIds) {
+  const lesson = baseLesson('Inheritance in OOP', 'oop', materialTitle, grounding, selectedChunkIds);
+  lesson.learningObjectives = [
+    'Explain how a child class reuses and specializes a parent class.',
+    'Read and write Java inheritance code using extends and method overriding.',
+    'Use a UML inheritance arrow to distinguish inheritance from composition.',
+  ];
+  lesson.prerequisites = ['Classes and objects', 'Methods', 'Basic Java syntax'];
+  lesson.sections = [
+    section('hook', 'Why Inheritance Matters', 'Inheritance lets you model an "is-a" relationship. If every Shape has an area, Circle and Rectangle should not duplicate the idea of being a shape. They inherit the shared contract and specialize the details.'),
+    section('definition', 'Definition', 'Inheritance is an OOP mechanism where a subclass receives fields and methods from a superclass and can add or override behavior. In Java, a class declares this relationship with extends.'),
+    section('deep_explanation', 'Mental Model', 'Think of the parent class as the general promise and the child class as the specific version. Shape promises that every shape can calculate area. Circle fulfills that promise one way, and Rectangle fulfills it another way. The inherited relationship organizes code, but it should only be used when the child truly is a kind of the parent.'),
+    section('diagram', 'UML Inheritance Diagram', 'A UML inheritance arrow points from the child class toward the parent class. The arrow means Circle and Rectangle are specialized Shapes.', {
+      diagram: {
+        type: 'uml_class',
+        nodes: [
+          { id: 'Shape', label: 'Shape', kind: 'abstract', fields: [], methods: ['area()'] },
+          { id: 'Circle', label: 'Circle', fields: ['radius'], methods: ['area()'] },
+          { id: 'Rectangle', label: 'Rectangle', fields: ['width', 'height'], methods: ['area()'] },
+        ],
+        edges: [['Circle', 'Shape', 'extends'], ['Rectangle', 'Shape', 'extends']],
+        caption: 'Circle and Rectangle inherit the Shape contract and override area().',
+      },
+    }),
+    section('code_example', 'Java Example', 'This example shows an abstract parent class and two child classes that override the same method.', {
+      code: {
+        language: 'java',
+        content: 'abstract class Shape {\n  abstract double area();\n}\n\nclass Circle extends Shape {\n  private final double radius;\n  Circle(double radius) { this.radius = radius; }\n  @Override double area() { return Math.PI * radius * radius; }\n}\n\nclass Rectangle extends Shape {\n  private final double width, height;\n  Rectangle(double width, double height) { this.width = width; this.height = height; }\n  @Override double area() { return width * height; }\n}',
+        explanation: [
+          { lineRange: '1-3', text: 'Shape defines the common contract: every Shape must know how to compute area.' },
+          { lineRange: '5', text: 'Circle extends Shape, so it is a specialized kind of Shape.' },
+          { lineRange: '8', text: '@Override tells Java that Circle supplies its own area formula.' },
+          { lineRange: '11-14', text: 'Rectangle reuses the same parent contract but implements a different formula.' },
+        ],
+      },
+    }),
+    section('code_walkthrough', 'Line-by-Line Walkthrough', 'Start at Shape: it does not know the formula, but it defines the required behavior. Circle stores radius because a circle needs radius to compute area. Rectangle stores width and height. The shared parent keeps the model consistent while each child owns its specialized calculation.'),
+    section('common_mistakes', 'Common Mistakes', '', {
+      cards: [
+        { title: 'Using inheritance for code reuse only', text: 'If the child is not truly a kind of the parent, composition is usually safer.' },
+        { title: 'Forgetting @Override', text: 'Without @Override, a typo can silently create a new method instead of replacing the parent behavior.' },
+        { title: 'Mixing in polymorphism too early', text: 'Polymorphism uses inheritance, but inheritance itself is the parent-child relationship.' },
+      ],
+      callouts: [{ type: 'warning', text: 'Do not say Circle has-a Shape. Circle is-a Shape. A Drawing has-a list of Shapes.' }],
+    }),
+    section('checkpoint', 'Mini Checkpoint', 'Which relationship is inheritance: Car is a Vehicle, or Car has an Engine?', {
+      quiz: [{
+        question: 'Which one is an inheritance relationship?',
+        options: ['Car has an Engine', 'Car is a Vehicle', 'Playlist has Songs', 'House has Rooms'],
+        answer: 'Car is a Vehicle',
+        explanation: '"Is-a" points to inheritance. "Has-a" points to composition.',
+      }],
+    }),
+    section('recap', 'Recap', 'Inheritance models a true is-a relationship. The parent class captures shared behavior or contracts. Child classes extend the parent and can override methods to specialize behavior.'),
+    section('next_steps', 'Next Steps', 'Study polymorphism next, because polymorphism explains how a Shape reference can call Circle or Rectangle behavior at runtime.'),
+  ];
+  lesson.relatedTopics = ['Polymorphism', 'Abstract classes', 'Composition'];
+  return normalizeLesson(lesson, { topic, skipEnsureFallback: true });
+}
+
+function polymorphismLesson(topic, materialTitle, grounding, selectedChunkIds) {
+  const lesson = baseLesson('Polymorphism in OOP', 'oop', materialTitle, grounding, selectedChunkIds);
+  lesson.learningObjectives = [
+    'Explain same method call, different runtime behavior.',
+    'Trace dynamic dispatch through a superclass reference.',
+    'Contrast overriding with overloading and static/final methods.',
+  ];
+  lesson.prerequisites = ['Inheritance', 'Method overriding', 'Object references'];
+  lesson.sections = [
+    section('hook', 'Why Polymorphism Matters', 'Polymorphism lets code depend on a general type while runtime objects decide the exact behavior. That is what makes extensible designs possible.'),
+    section('definition', 'Definition', 'Polymorphism means one interface or superclass reference can refer to different subclass objects, and the overridden method that runs is chosen by the object type at runtime.'),
+    section('deep_explanation', 'Dynamic Dispatch', 'The variable type controls what methods are legal to call, but the actual object controls which overridden implementation runs. A Shape reference can point to a Circle or Rectangle. Calling area() looks the same, but Java dispatches to the runtime object method.'),
+    section('diagram', 'Runtime Dispatch Diagram', 'The call shape.area() travels through a Shape reference, then lands on the implementation belonging to the actual object.', {
+      diagram: {
+        type: 'flow',
+        nodes: ['Shape shape', 'new Circle(2)', 'shape.area()', 'Circle.area()', '12.57'],
+        edges: [['Shape shape', 'new Circle(2)'], ['shape.area()', 'Circle.area()'], ['Circle.area()', '12.57']],
+        caption: 'Same call site, different behavior depending on the runtime object.',
+      },
+    }),
+    section('code_example', 'Java Example', 'This code uses a superclass reference to call subclass behavior.', {
+      code: {
+        language: 'java',
+        content: 'Shape shape = new Circle(2);\nSystem.out.println(shape.area());\n\nshape = new Rectangle(3, 4);\nSystem.out.println(shape.area());',
+        explanation: [
+          { lineRange: '1', text: 'The reference type is Shape, but the object is Circle.' },
+          { lineRange: '2', text: 'Java runs Circle.area() because the object is a Circle.' },
+          { lineRange: '4', text: 'The same reference now points to a Rectangle object.' },
+          { lineRange: '5', text: 'The same method call now runs Rectangle.area().' },
+        ],
+      },
+    }),
+    section('common_mistakes', 'Common Mistakes', '', {
+      cards: [
+        { title: 'Confusing overloading with overriding', text: 'Overloading chooses among parameter lists at compile time. Overriding chooses subclass behavior at runtime.' },
+        { title: 'Expecting static methods to dispatch dynamically', text: 'Static methods are resolved by the class, not by the runtime object.' },
+        { title: 'Trying to override final methods', text: 'final prevents overriding, so polymorphic replacement cannot happen.' },
+      ],
+    }),
+    section('checkpoint', 'Mini Checkpoint', 'If Shape s = new Rectangle(3,4), which method runs when s.area() is called?', {
+      quiz: [{
+        question: 'Which implementation runs?',
+        options: ['Shape.area()', 'Rectangle.area()', 'Circle.area()', 'No method can run'],
+        answer: 'Rectangle.area()',
+        explanation: 'Dynamic dispatch uses the runtime object type, which is Rectangle.',
+      }],
+    }),
+    section('recap', 'Recap', 'Polymorphism is about one call shape and multiple runtime behaviors. The reference type gives the shared interface; the object type provides the method implementation.'),
+    section('next_steps', 'Next Steps', 'Practice tracing overriding, then compare it with method overloading using small Java examples.'),
+  ];
+  lesson.relatedTopics = ['Inheritance', 'Method overriding', 'Interfaces'];
+  return normalizeLesson(lesson, { topic, skipEnsureFallback: true });
+}
+
+function linkedListLesson(topic, materialTitle, grounding, selectedChunkIds) {
+  const lesson = baseLesson('Linked List', 'data_structure', materialTitle, grounding, selectedChunkIds);
+  lesson.learningObjectives = [
+    'Describe node, data, next, and head pointer.',
+    'Trace traversal, insertion, and deletion without losing references.',
+    'Compare linked-list operation complexity with arrays.',
+  ];
+  lesson.prerequisites = ['Objects or structs', 'References', 'Basic loops'];
+  lesson.sections = [
+    section('hook', 'Why Linked Lists Matter', 'A linked list stores items as nodes connected by references. Unlike an array, nodes do not need to sit next to each other in memory.'),
+    section('definition', 'Definition', 'A singly linked list is a chain of nodes where each node stores data and a next reference to the following node. The head reference points to the first node.'),
+    section('diagram', 'Memory-Style Diagram', 'The useful picture is not boxes in a row only. It is values connected by next references, with head pointing at the first node.', {
+      diagram: {
+        type: 'linked_list',
+        nodes: ['head', 'Node(10)', 'Node(20)', 'Node(30)', 'null'],
+        edges: [['head', 'Node(10)'], ['Node(10)', 'Node(20)'], ['Node(20)', 'Node(30)'], ['Node(30)', 'null']],
+        caption: 'Each node points to the next node, and the last node points to null.',
+      },
+    }),
+    section('code_example', 'Java Node Example', 'This minimal implementation shows the node shape and a front insertion.', {
+      code: {
+        language: 'java',
+        content: 'class Node {\n  int data;\n  Node next;\n  Node(int data) { this.data = data; }\n}\n\nNode insertFront(Node head, int value) {\n  Node node = new Node(value);\n  node.next = head;\n  return node;\n}',
+        explanation: [
+          { lineRange: '1-4', text: 'Each node stores one value and a next reference.' },
+          { lineRange: '7', text: 'Create the new node before changing the list.' },
+          { lineRange: '8', text: 'Point the new node to the old head so the old list is not lost.' },
+          { lineRange: '9', text: 'Return the new node as the new head.' },
+        ],
+      },
+    }),
+    section('code_walkthrough', 'Insertion Walkthrough', 'For front insertion, keep the old head alive. Create the new node, set new.next to the old head, then move head to the new node. If you move head first without saving the old chain, you can lose the rest of the list.'),
+    section('complexity', 'Complexity', 'Head insertion is O(1). Search and traversal are O(n) because you may need to follow every next reference. Deleting after a known previous node is O(1), but finding that previous node is O(n).', {
+      cards: [
+        { title: 'Access by index', text: 'O(n)' },
+        { title: 'Search', text: 'O(n)' },
+        { title: 'Insert at head', text: 'O(1)' },
+        { title: 'Delete after known node', text: 'O(1)' },
+      ],
+    }),
+    section('common_mistakes', 'Common Mistakes', '', {
+      cards: [
+        { title: 'Losing next', text: 'Always save or reconnect next references before overwriting them.' },
+        { title: 'Forgetting null checks', text: 'Traversal must stop when current becomes null.' },
+        { title: 'Thinking linked lists give O(1) indexing', text: 'You cannot jump directly to index i without walking through nodes.' },
+      ],
+    }),
+    section('checkpoint', 'Mini Checkpoint', 'What should node.next point to when inserting at the front?', {
+      quiz: [{
+        question: 'When inserting at the front, newNode.next should point to...',
+        options: ['null always', 'the old head', 'the last node', 'itself'],
+        answer: 'the old head',
+        explanation: 'That preserves the old chain after the new node becomes head.',
+      }],
+    }),
+    section('recap', 'Recap', 'A linked list is a chain of nodes. The head starts traversal. next references define order. Most mistakes come from changing references in the wrong order.'),
+    section('next_steps', 'Next Steps', 'Practice deleting a node by value, then compare singly linked lists with doubly linked lists.'),
+  ];
+  lesson.relatedTopics = ['Doubly linked list', 'Stack', 'Queue'];
+  return normalizeLesson(lesson, { topic, skipEnsureFallback: true });
+}
+
+function stackLesson(topic, materialTitle, grounding, selectedChunkIds) {
+  const lesson = baseLesson('Stack', 'data_structure', materialTitle, grounding, selectedChunkIds);
+  lesson.learningObjectives = ['Explain LIFO order.', 'Trace push, pop, and peek.', 'Recognize underflow and stack use cases.'];
+  lesson.prerequisites = ['Arrays or lists', 'Basic operations'];
+  lesson.sections = [
+    section('hook', 'Why Stacks Matter', 'A stack is perfect for nested work: undo history, browser back, parsing, and function calls. The newest item is handled first.'),
+    section('definition', 'Definition', 'A stack is a Last-In, First-Out data structure. push adds to the top, pop removes from the top, and peek reads the top without removing it.'),
+    section('diagram', 'Vertical Stack Diagram', 'The top is the only active end of the structure.', {
+      diagram: {
+        type: 'stack',
+        nodes: ['top: C', 'B', 'A', 'bottom'],
+        edges: [['push(D)', 'top'], ['pop()', 'C']],
+        caption: 'After pushing A, B, C, the next pop returns C.',
+      },
+    }),
+    section('code_example', 'Java Stack Sketch', 'This small implementation uses an array list as the backing store.', {
+      code: {
+        language: 'java',
+        content: 'class IntStack {\n  private final java.util.ArrayList<Integer> data = new java.util.ArrayList<>();\n  void push(int value) { data.add(value); }\n  int peek() { return data.get(data.size() - 1); }\n  int pop() {\n    if (data.isEmpty()) throw new IllegalStateException(\"underflow\");\n    return data.remove(data.size() - 1);\n  }\n}',
+        explanation: [
+          { lineRange: '3', text: 'push appends at the top end.' },
+          { lineRange: '4', text: 'peek reads the top without removing it.' },
+          { lineRange: '6', text: 'Always check empty state before popping.' },
+          { lineRange: '7', text: 'pop removes and returns the newest item.' },
+        ],
+      },
+    }),
+    section('common_mistakes', 'Common Mistakes', '', {
+      cards: [
+        { title: 'Confusing LIFO with FIFO', text: 'Stacks remove the newest item. Queues remove the oldest item.' },
+        { title: 'Ignoring underflow', text: 'Popping from an empty stack should be handled explicitly.' },
+        { title: 'Removing from the bottom', text: 'That breaks stack behavior and makes tracing incorrect.' },
+      ],
+    }),
+    section('complexity', 'Complexity', 'With a dynamic array or linked list top, push, pop, and peek are O(1). Searching is O(n) because stack order does not support direct lookup by value.'),
+    section('checkpoint', 'Mini Checkpoint', 'Push A, then B, then C. What does pop return?', {
+      quiz: [{ question: 'What comes out first?', options: ['A', 'B', 'C', 'null'], answer: 'C', explanation: 'C was the last item pushed, so it is first out.' }],
+    }),
+    section('recap', 'Recap', 'Stacks are LIFO. Only the top is active. The core operations are push, pop, and peek.'),
+    section('next_steps', 'Next Steps', 'Use stacks to evaluate parentheses matching or undo/redo behavior.'),
+  ];
+  lesson.relatedTopics = ['Queue', 'Recursion', 'Call stack'];
+  return normalizeLesson(lesson, { topic, skipEnsureFallback: true });
+}
+
+function autoCodeExplanations(code, topic) {
+  const lines = String(code || '').split(/\r?\n/);
+  const nonEmpty = lines.map((line, idx) => ({ line: line.trim(), number: idx + 1 })).filter(item => item.line);
+  if (!nonEmpty.length) return [];
+  const first = nonEmpty[0].number;
+  const last = nonEmpty[nonEmpty.length - 1].number;
+  const middle = nonEmpty[Math.floor(nonEmpty.length / 2)].number;
+  const ranges = [
+    { lineRange: `${first}-${Math.min(first + 2, last)}`, text: `This opening part sets up the structure or contract needed for ${topic}.` },
+    { lineRange: `${middle}`, text: `This line is where the main idea of ${topic} becomes visible in code.` },
+    { lineRange: `${Math.max(first, last - 2)}-${last}`, text: `The ending lines complete the operation and show the result or invariant that must hold.` },
+  ];
+  return ranges.filter((item, index, arr) => arr.findIndex(other => other.lineRange === item.lineRange) === index);
+}
+
+function complexityText(complexity) {
+  if (!complexity || typeof complexity !== 'object' || !Object.keys(complexity).length) return '';
+  return Object.entries(complexity)
+    .map(([key, value]) => `${String(key).replace(/_/g, ' ')}: ${value}`)
+    .join('; ');
+}
+
+function curatedFallbackLesson(topic, knowledge, materialTitle, grounding, selectedChunkIds) {
+  const canonical = inlineText(knowledge.topic || topic, 90);
+  const lesson = baseLesson(canonical, detectLessonType(canonical), materialTitle, grounding, selectedChunkIds);
+  const codeExample = Array.isArray(knowledge.codeExamples) && knowledge.codeExamples.length ? knowledge.codeExamples[0] : null;
+  const diagram = Array.isArray(knowledge.diagrams) && knowledge.diagrams.length ? knowledge.diagrams[0] : null;
+  const mistakes = (Array.isArray(knowledge.commonMistakes) ? knowledge.commonMistakes : []).slice(0, 4);
+  const complexity = complexityText(knowledge.complexity);
+  const practice = Array.isArray(knowledge.practiceQuestions) ? knowledge.practiceQuestions : [];
+  const aliases = Array.isArray(knowledge.aliases) ? knowledge.aliases.slice(0, 3).join(', ') : '';
+
+  lesson.learningObjectives = [
+    `Define ${canonical} precisely and explain why it matters.`,
+    `Trace a concrete ${canonical} example using the diagram and code.`,
+    mistakes.length ? `Avoid common ${canonical} mistakes such as ${videoText(mistakes[0], 64)}.` : `Apply ${canonical} without relying on vague labels.`,
+  ];
+  lesson.prerequisites = lesson.lessonType === 'oop' ? ['Classes and objects', 'Methods', 'Basic Java syntax'] : ['Variables', 'References', 'Basic Java syntax'];
+  lesson.sections = [
+    section('hook', `Why ${canonical} Matters`, `${canonical} matters because it gives students a reusable mental model instead of isolated facts. ${knowledge.deepExplanation || knowledge.definition || ''}`),
+    section('definition', 'Definition', knowledge.definition || `${canonical} is a core computer science concept.`),
+    section('deep_explanation', 'Deep Explanation', knowledge.deepExplanation || `Study ${canonical} by naming the parts, tracing one operation, and identifying the rule that must never be broken.`),
+    section('analogy', 'Mental Model', aliases ? `Connect ${canonical} to its neighboring terms: ${aliases}. The analogy is useful only when it preserves the actual rule of the concept.` : `Build a mental model for ${canonical} before memorizing syntax.`),
+    section('diagram', diagram && diagram.caption ? diagram.caption : 'Visual Model', diagram ? `Use this visual model to point to each part of ${canonical} and explain its role.` : `Draw ${canonical} as parts connected by rules.`, {
+      diagram: diagram || { type: 'mindmap', nodes: [canonical, 'Definition', 'Example', 'Mistakes'], edges: [[canonical, 'Definition'], [canonical, 'Example']] },
+    }),
+    section('code_example', codeExample && codeExample.title ? codeExample.title : 'Concrete Code Example', `This code anchors ${canonical} in a real implementation. Read it by asking why each line exists.`, {
+      code: codeExample ? {
+        language: codeExample.language || 'java',
+        content: codeExample.code || codeExample.content || '',
+        explanation: autoCodeExplanations(codeExample.code || codeExample.content || '', canonical),
+      } : {
+        language: 'text',
+        content: `${canonical}: add a concrete operation example`,
+        explanation: [{ lineRange: '1', text: `Replace this with a working ${canonical} example.` }],
+      },
+    }),
+    section('code_walkthrough', 'Line-by-Line Walkthrough', `Trace the example by explaining the setup, the operation line, and the invariant or result. The goal is to say why each line exists, not only what it says.`),
+    section('common_mistakes', 'Common Mistakes', '', {
+      cards: mistakes.length
+        ? mistakes.map(item => ({ title: videoText(item, 42), text: item }))
+        : [{ title: 'Memorizing labels only', text: 'Always connect the name to behavior, code, and a visual example.' }],
+    }),
+    ...(complexity ? [section('complexity', 'Complexity', complexity)] : []),
+    section('checkpoint', 'Mini Checkpoint', practice[0] || `Explain ${canonical} using one diagram and one code example.`, {
+      quiz: practice[0] ? [{ question: practice[0], options: [], answer: 'Explain using the rule from the lesson.', explanation: 'A good answer names the rule, traces the operation, and checks the edge case.' }] : [],
+    }),
+    section('recap', 'Recap', `${canonical} should now connect three things: the definition, the visual model, and the code behavior.`),
+    section('next_steps', 'Next Steps', practice[1] || `Practice ${canonical} by drawing the state before and after one operation.`),
+  ];
+  lesson.relatedTopics = Array.isArray(knowledge.aliases) ? knowledge.aliases.slice(0, 5) : [];
+  return normalizeLesson(lesson, { topic: canonical, skipEnsureFallback: true });
+}
+
+function genericLesson(topic, materialTitle, grounding, selectedChunkIds) {
+  const lesson = baseLesson(topic, detectLessonType(topic), materialTitle, grounding, selectedChunkIds);
+  lesson.learningObjectives = [`Define ${topic}`, `Explain how ${topic} works`, `Apply ${topic} with a concrete example`];
+  lesson.sections = [
+    section('hook', `Why ${topic} Matters`, `${topic} is easier to learn when you connect the definition to a concrete example, a diagram, and one mistake to avoid.`),
+    section('definition', 'Definition', `${topic} is a CS concept that should be explained with its purpose, rules, and trade-offs.`),
+    section('deep_explanation', 'Deep Explanation', `Start by naming the problem ${topic} solves. Then identify the parts, the operation rules, and the reason those rules produce the desired behavior.`),
+    section('diagram', 'Visual Model', `Use a diagram to separate the parts of ${topic} and show how they interact.`, {
+      diagram: { type: 'mindmap', nodes: [topic, 'Purpose', 'Parts', 'Rules', 'Example', 'Mistakes'], edges: [[topic, 'Purpose'], [topic, 'Parts'], [topic, 'Rules'], [topic, 'Example']], caption: `Mindmap for studying ${topic}.` },
+    }),
+    section('code_example', 'Example', 'Add a concrete example before memorizing vocabulary.', {
+      code: { language: 'text', content: `${topic}: concrete example required`, explanation: [{ lineRange: '1', text: 'Replace this with a topic-specific code or operation example.' }] },
+    }),
+    section('common_mistakes', 'Common Mistakes', '', { cards: [{ title: 'Memorizing labels only', text: 'Always connect the name to behavior and examples.' }, { title: 'Skipping edge cases', text: 'Ask what can go wrong at boundaries.' }] }),
+    section('checkpoint', 'Mini Checkpoint', `Explain ${topic} in one sentence and give one example.`),
+    section('recap', 'Recap', `${topic} should be learned as definition, mental model, example, mistake, and practice.`),
+  ];
+  return normalizeLesson(lesson, { topic, skipEnsureFallback: true });
+}
+
+function normalizeCards(cards) {
+  return (Array.isArray(cards) ? cards : [])
+    .map(card => {
+      if (typeof card === 'string') return { title: inlineText(card, 80), text: '' };
+      return {
+        title: inlineText(card && (card.title || card.label || card.name), 80),
+        text: cleanText(card && (card.text || card.content || card.description), 220),
+      };
+    })
+    .filter(card => card.title || card.text)
+    .slice(0, 8);
+}
+
+function normalizeCode(code) {
+  if (!code || typeof code !== 'object') return undefined;
+  const content = cleanText(code.content || code.code || '');
+  if (!content) return undefined;
+  const explanation = (Array.isArray(code.explanation) ? code.explanation : [])
+    .map(item => typeof item === 'string'
+      ? { lineRange: '', text: cleanText(item, 240) }
+      : { lineRange: inlineText(item && item.lineRange, 30), text: cleanText(item && item.text, 260) })
+    .filter(item => item.text)
+    .slice(0, 8);
+  return {
+    language: inlineText(code.language || 'text', 24).toLowerCase(),
+    content,
+    explanation,
+  };
+}
+
+function normalizeCallouts(callouts) {
+  return (Array.isArray(callouts) ? callouts : [])
+    .map(callout => {
+      if (typeof callout === 'string') return { type: 'remember', text: cleanText(callout, 180), sourceChunkIds: [] };
+      const type = CALLOUT_TYPES.includes(callout && callout.type) ? callout.type : 'remember';
+      return {
+        type,
+        text: cleanText(callout && callout.text, 180),
+        sourceChunkIds: Array.isArray(callout && callout.sourceChunkIds) ? callout.sourceChunkIds.slice(0, 6) : [],
+      };
+    })
+    .filter(c => c.text)
+    .slice(0, 5);
+}
+
+function normalizeQuiz(quiz) {
+  return (Array.isArray(quiz) ? quiz : [])
+    .map(q => ({
+      question: cleanText(q && q.question, 220),
+      options: Array.isArray(q && q.options) ? q.options.map(o => inlineText(o, 120)).filter(Boolean).slice(0, 5) : [],
+      answer: inlineText(q && (q.answer || q.correctAnswer), 160),
+      explanation: cleanText(q && q.explanation, 240),
+    }))
+    .filter(q => q.question)
+    .slice(0, 3);
+}
+
+function normalizeSection(raw, index) {
+  const type = SECTION_TYPES.includes(raw && raw.type) ? raw.type : SECTION_TYPES[Math.min(index, SECTION_TYPES.length - 1)];
+  return {
+    type,
+    title: inlineText(raw && raw.title, 90) || type.replace(/_/g, ' '),
+    content: cleanText(raw && raw.content, 2500),
+    cards: normalizeCards(raw && raw.cards),
+    code: normalizeCode(raw && raw.code),
+    diagram: raw && raw.diagram ? diagrams.normalizeDiagram(raw.diagram, type === 'mindmap' ? 'mindmap' : 'flow') : undefined,
+    callouts: normalizeCallouts(raw && raw.callouts),
+    quiz: normalizeQuiz(raw && raw.quiz),
+  };
+}
+
+function ensureRequiredSections(lesson, opts = {}) {
+  const existing = new Set(lesson.sections.map(s => s.type));
+  const fallback = fallbackLesson(lesson.topic || opts.topic || 'Object-Oriented Programming', {
+    title: lesson.sourceMaterial && lesson.sourceMaterial.title,
+    groundingTier: lesson.sourceMaterial && lesson.sourceMaterial.grounding,
+  });
+  const required = ['hook', 'definition', 'deep_explanation', 'diagram', 'code_example', 'code_walkthrough', 'common_mistakes', 'checkpoint', 'recap'];
+  for (const type of required) {
+    if (existing.has(type)) continue;
+    const s = fallback.sections.find(item => item.type === type);
+    if (s) lesson.sections.push(s);
+  }
+}
+
+function normalizeLesson(raw, opts = {}) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const topic = inlineText(src.topic || opts.topic || opts.title || 'Object-Oriented Programming', 90);
+  const lesson = {
+    topic,
+    audienceLevel: inlineText(src.audienceLevel || 'beginner', 40) || 'beginner',
+    lessonType: ['oop', 'data_structure', 'algorithm', 'general'].includes(src.lessonType) ? src.lessonType : detectLessonType(topic),
+    sourceMaterial: {
+      title: inlineText(src.sourceMaterial && src.sourceMaterial.title || opts.materialTitle || opts.title || '', 120),
+      grounding: inlineText(src.sourceMaterial && src.sourceMaterial.grounding || opts.groundingTier || 'moderate', 40),
+      selectedChunkIds: Array.isArray(src.sourceMaterial && src.sourceMaterial.selectedChunkIds)
+        ? src.sourceMaterial.selectedChunkIds.slice(0, 12)
+        : (opts.chunks || []).slice(0, 8).map(c => c.id).filter(Boolean),
+    },
+    learningObjectives: uniqueList(src.learningObjectives || [], 6),
+    prerequisites: uniqueList(src.prerequisites || [], 6),
+    sections: (Array.isArray(src.sections) ? src.sections : []).map(normalizeSection).filter(s => s.title),
+    relatedTopics: uniqueList(src.relatedTopics || [], 8),
+  };
+  if (lesson.learningObjectives.length < 2 && !opts.skipEnsureFallback) {
+    lesson.learningObjectives = fallbackLesson(topic, opts).learningObjectives.slice(0, 4);
+  }
+  if (lesson.sections.length < 6 && !opts.skipEnsureFallback) {
+    const fb = fallbackLesson(topic, opts);
+    lesson.sections = lesson.sections.concat(fb.sections).slice(0, 12);
+  }
+  if (!opts.skipEnsureFallback) ensureRequiredSections(lesson, opts);
+  lesson.sections = lesson.sections.slice(0, 14);
+  return lesson;
+}
+
+function scoreLesson(lesson) {
+  const all = JSON.stringify(lesson || {}).toLowerCase();
+  const visible = lessonToMarkdown(lesson || {});
+  const sections = Array.isArray(lesson && lesson.sections) ? lesson.sections : [];
+  const hasCode = sections.some(s => s.code && s.code.content && s.code.content.length > 40);
+  const hasDiagram = sections.some(s => s.diagram && s.diagram.nodes && s.diagram.nodes.length >= 3);
+  const hasMistakes = sections.some(s => s.type === 'common_mistakes' && (s.cards.length || s.content.length > 40));
+  const hasQuiz = sections.some(s => s.quiz && s.quiz.length);
+  const genericTopic = /^(document|file|material|chapter\s*\d+|\d+)$/i.test(String(lesson && lesson.topic || '').trim());
+  const hasPlaceholders = /(trace an example|define the idea|apply main rule|code sketch|avoid mistakes|placeholder|todo\b|useconcept|concrete example required|replace this with a topic-specific)/i.test(all);
+  const hasGenericChapterText = /\bdefine\s+chapter\b|chapter\s+\d+\s+is a cs concept|chapter\s+\d+\s+should be learned as definition/i.test(visible);
+  const genericMindmapOnly = sections.some((s) => {
+    const diagram = s.diagram || {};
+    const labels = (diagram.nodes || []).map(n => String(typeof n === 'string' ? n : (n.label || n.id || n.name || '')).toLowerCase());
+    const genericLabels = ['purpose', 'parts', 'rules', 'example', 'mistakes'];
+    return (s.type === 'mindmap' || diagram.type === 'mindmap' || diagram.type === 'flow') &&
+      labels.length >= 4 &&
+      labels.filter(label => genericLabels.includes(label)).length >= Math.min(4, labels.length);
+  });
+  const genericFailure = genericTopic || hasGenericChapterText || genericMindmapOnly || hasPlaceholders;
+  const criteria = [
+    sections.length >= 8,
+    hasCode,
+    hasDiagram,
+    hasMistakes,
+    hasQuiz,
+    !genericFailure,
+    (lesson.learningObjectives || []).length >= 2,
+  ];
+  const score = criteria.filter(Boolean).length / criteria.length;
+  return {
+    score: Math.round(score * 1000) / 1000,
+    passed: score >= 0.75 && !genericFailure,
+    hasPlaceholders,
+    genericTopic,
+    hasGenericChapterText,
+    genericMindmapOnly,
+    genericFailure,
+  };
+}
+
+async function parseLessonJson(raw, opts = {}) {
+  const parsed = await parseJsonSafe(raw, EducationalLessonSchema, async (txt) => (
+    ai.generate(prompts.REPAIR_JSON(txt), {
+      provider: opts.provider,
+      feature: 'notes',
+      format: 'json',
+      temperature: 0,
+      max_tokens: 1200,
+      num_predict: 1200,
+    })
+  ));
+  return normalizeLesson(parsed, opts);
+}
+
+async function generateEducationalLesson(opts = {}) {
+  const topic = inlineText(opts.topic || opts.title || 'Object-Oriented Programming', 90);
+  const curated = opts.curatedKnowledge || loadCuratedKnowledge(topic);
+  const selectedChunks = (opts.chunks || []).slice(0, 8);
+  const fallback = fallbackLesson(topic, { ...opts, chunks: selectedChunks });
+  const prompt = prompts.LESSON_GENERATE
+    ? prompts.LESSON_GENERATE(selectedChunks, opts.title || topic, {
+      topic,
+      lessonType: opts.lessonType || detectLessonType(topic),
+      curatedKnowledge: curatedAsPrompt(curated),
+      groundingTier: opts.groundingTier || 'moderate',
+    })
+    : '';
+
+  if (!prompt) return fallback;
+
+  try {
+    const raw = await ai.generate(prompt, {
+      feature: 'notes',
+      format: 'json',
+      temperature: opts.temperature ?? 0.25,
+      num_ctx: opts.num_ctx || 8192,
+      max_tokens: opts.max_tokens || env.GROQ_NOTES_MAX_OUTPUT_TOKENS || 3500,
+      num_predict: opts.num_predict || 3500,
+    });
+    const lesson = await parseLessonJson(raw, { ...opts, topic, chunks: selectedChunks });
+    const quality = scoreLesson(lesson);
+    if (!quality.passed) {
+      const merged = normalizeLesson({
+        ...fallback,
+        sourceMaterial: lesson.sourceMaterial || fallback.sourceMaterial,
+        sections: mergeSections(lesson.sections, fallback.sections),
+      }, { ...opts, topic, chunks: selectedChunks });
+      return { ...merged, quality };
+    }
+    return { ...lesson, quality };
+  } catch (_) {
+    return { ...fallback, quality: { score: 0, passed: false, fallback: true } };
+  }
+}
+
+function mergeSections(primary, fallback) {
+  const byType = new Map();
+  for (const s of fallback || []) byType.set(s.type, s);
+  for (const s of primary || []) {
+    if (s && s.type) byType.set(s.type, s);
+  }
+  const order = ['hook', 'definition', 'deep_explanation', 'analogy', 'diagram', 'mindmap', 'code_example', 'code_walkthrough', 'complexity', 'common_mistakes', 'checkpoint', 'recap', 'next_steps'];
+  return order.map(type => byType.get(type)).filter(Boolean);
+}
+
+function extractMarkdownFromModelOutput(raw) {
+  let text = String(raw || '').trim();
+  if (!text) return '';
+  const candidate = extractJson(text);
+  let parsed = null;
+  if (candidate) {
+    try { parsed = JSON.parse(candidate); } catch (_) { parsed = null; }
+  }
+  if (parsed && typeof parsed === 'object') {
+    if (typeof parsed.markdown === 'string') text = parsed.markdown;
+    else if (typeof parsed.body_md === 'string') text = parsed.body_md;
+    else if (parsed.lesson || parsed.sections) text = lessonToMarkdown(normalizeLesson(parsed.lesson || parsed));
+  }
+  text = text.replace(/\\n/g, '\n');
+  return cleanText(text);
+}
+
+function markdownEscape(text) {
+  return String(text || '').replace(/\|/g, '\\|');
+}
+
+function diagramToMermaid(diagram) {
+  const d = diagrams.normalizeDiagram(diagram);
+  if (!d.nodes.length) return '';
+  if (d.type === 'uml_class' || d.type === 'inheritance_tree') {
+    const lines = ['classDiagram'];
+    for (const node of d.nodes) {
+      lines.push(`class ${node.id.replace(/\W+/g, '') || 'Node'} {`);
+      for (const field of node.fields || []) lines.push(`  ${field}`);
+      for (const method of node.methods || []) lines.push(`  ${method}`);
+      lines.push('}');
+    }
+    for (const edge of d.edges) lines.push(`${edge[1].replace(/\W+/g, '')} <|-- ${edge[0].replace(/\W+/g, '')}`);
+    return lines.join('\n');
+  }
+  const lines = ['flowchart LR'];
+  for (const node of d.nodes) lines.push(`  ${node.id.replace(/\W+/g, '') || 'N'}["${node.label}"]`);
+  for (const edge of d.edges) lines.push(`  ${edge[0].replace(/\W+/g, '')} --> ${edge[1].replace(/\W+/g, '')}`);
+  return lines.join('\n');
+}
+
+function lessonToMarkdown(lessonInput) {
+  const lesson = normalizeLesson(lessonInput || {});
+  const lines = [`# ${lesson.topic}`, ''];
+  if (lesson.learningObjectives.length) {
+    lines.push('## Learning Objectives');
+    for (const obj of lesson.learningObjectives) lines.push(`- ${obj}`);
+    lines.push('');
+  }
+  for (const s of lesson.sections) {
+    lines.push(`## ${s.title}`);
+    if (s.content) lines.push('', s.content, '');
+    for (const card of s.cards || []) {
+      lines.push(`> **${card.title || 'Key idea'}:** ${card.text || ''}`);
+    }
+    if (s.cards && s.cards.length) lines.push('');
+    if (s.code && s.code.content) {
+      lines.push(`\`\`\`${s.code.language || 'text'}`, s.code.content, '```', '');
+      for (const item of s.code.explanation || []) {
+        lines.push(`- ${item.lineRange ? `Lines ${item.lineRange}: ` : ''}${item.text}`);
+      }
+      if (s.code.explanation && s.code.explanation.length) lines.push('');
+    }
+    if (s.diagram && s.diagram.nodes && s.diagram.nodes.length) {
+      const mermaid = diagramToMermaid(s.diagram);
+      if (mermaid) lines.push('```mermaid', mermaid, '```', '');
+      if (s.diagram.caption) lines.push(`_${s.diagram.caption}_`, '');
+    }
+    for (const callout of s.callouts || []) lines.push(`> **${markdownEscape(callout.type)}:** ${callout.text}`);
+    if (s.callouts && s.callouts.length) lines.push('');
+    for (const q of s.quiz || []) {
+      lines.push(`**Question:** ${q.question}`);
+      if (q.options && q.options.length) for (const opt of q.options) lines.push(`- ${opt}`);
+      if (q.answer) lines.push(`**Answer:** ${q.answer}`);
+      if (q.explanation) lines.push(q.explanation);
+      lines.push('');
+    }
+  }
+  if (lesson.relatedTopics.length) {
+    lines.push('## Related Topics');
+    for (const item of lesson.relatedTopics) lines.push(`- ${item}`);
+  }
+  return cleanText(lines.join('\n'));
+}
+
+function sectionByType(lesson, type) {
+  return (lesson.sections || []).find(s => s.type === type) || null;
+}
+
+function textSentences(text, minChars = 170) {
+  const value = inlineText(text, 900);
+  if (value.length >= minChars) return value;
+  return `${value} Notice the reason behind the rule: the structure is useful because it gives code a predictable way to organize behavior and avoid duplicated or fragile logic.`;
+}
+
+function legacyLessonToVideoScript(lessonInput) {
+  const lesson = normalizeLesson(lessonInput || {});
+  const hook = sectionByType(lesson, 'hook');
+  const def = sectionByType(lesson, 'definition');
+  const deep = sectionByType(lesson, 'deep_explanation');
+  const analogy = sectionByType(lesson, 'analogy');
+  const diagram = sectionByType(lesson, 'diagram') || sectionByType(lesson, 'mindmap');
+  const code = sectionByType(lesson, 'code_example');
+  const walk = sectionByType(lesson, 'code_walkthrough');
+  const complexity = sectionByType(lesson, 'complexity');
+  const mistakes = sectionByType(lesson, 'common_mistakes');
+  const checkpoint = sectionByType(lesson, 'checkpoint');
+  const recap = sectionByType(lesson, 'recap');
+  const next = sectionByType(lesson, 'next_steps');
+
+  const slide = (slideType, title, bullets, narration, extra = {}) => ({
+    slideType,
+    slide_type: slideType,
+    title: inlineText(title, 100),
+    visual_type: extra.visual_type || 'mindmap',
+    bullets: uniqueList(bullets, 5),
+    visual_nodes: uniqueList(extra.visual_nodes || bullets, 8),
+    visual_edges: (extra.visual_edges || []).slice(0, 12),
+    callouts: uniqueList(extra.callouts || [], 3),
+    example_code: extra.example_code || '',
+    narration: textSentences(narration, slideType === 'title' || slideType === 'quiz' ? 80 : 150),
+  });
+
+  const diagramVisual = diagram && diagram.diagram ? diagrams.toSlideVisual(diagram.diagram) : { type: 'mindmap', nodes: [lesson.topic, 'Definition', 'Example', 'Mistakes'], edges: [[lesson.topic, 'Definition']] };
+  const codeObj = code && code.code;
+  const walkBullets = codeObj && codeObj.explanation && codeObj.explanation.length
+    ? codeObj.explanation.map(item => `${item.lineRange ? item.lineRange + ': ' : ''}${item.text}`)
+    : [walk && walk.content, 'Trace inputs, state changes, and output'].filter(Boolean);
+  const mistakeBullets = mistakes && mistakes.cards && mistakes.cards.length
+    ? mistakes.cards.map(c => `${c.title}: ${c.text}`)
+    : [mistakes && mistakes.content, 'Name the misconception and the correction'].filter(Boolean);
+  const quiz = checkpoint && checkpoint.quiz && checkpoint.quiz[0];
+
+  const slides = [
+    slide('title', lesson.topic, [hook && hook.content, ...(lesson.learningObjectives || []).slice(0, 2)], hook && hook.content || `Today we will learn ${lesson.topic}.`, {
+      visual_type: 'mindmap',
+      visual_nodes: [lesson.topic, 'Why it matters', 'Code', 'Diagram', 'Mistakes'],
+      visual_edges: [[lesson.topic, 'Why it matters'], [lesson.topic, 'Code'], [lesson.topic, 'Diagram']],
+      callouts: lesson.sourceMaterial && lesson.sourceMaterial.grounding === 'weak' ? ['Uploaded material had limited detail; enhanced with standard CS knowledge.'] : [],
+    }),
+    slide('objectives', 'Learning Objectives', lesson.learningObjectives, `By the end, you should be able to ${lesson.learningObjectives.join(', ').replace(/, ([^,]*)$/, ', and $1')}.`, {
+      visual_type: 'summary',
+      visual_nodes: ['Objectives', ...lesson.learningObjectives.slice(0, 4)],
+      visual_edges: lesson.learningObjectives.slice(0, 4).map(o => ['Objectives', o]),
+    }),
+    slide('concept', def ? def.title : 'Core Definition', [def && def.content, deep && deep.content].filter(Boolean), `${def ? def.content : ''} ${deep ? deep.content : ''}`, {
+      visual_type: 'mindmap',
+      visual_nodes: [lesson.topic, 'Core rule', 'Why it matters', 'Where used'],
+      visual_edges: [[lesson.topic, 'Core rule'], [lesson.topic, 'Why it matters']],
+    }),
+    slide('analogy', analogy ? analogy.title : 'Mental Model', [analogy && analogy.content, deep && deep.content].filter(Boolean), analogy && analogy.content ? analogy.content : deep && deep.content || def && def.content || '', {
+      visual_type: 'comparison',
+      visual_nodes: ['Real-world idea', lesson.topic, 'Shared behavior', 'Limit'],
+      visual_edges: [['Real-world idea', 'Shared behavior'], ['Shared behavior', lesson.topic]],
+    }),
+    slide('diagram', diagram ? diagram.title : 'Visual Model', [diagram && diagram.content, diagram && diagram.diagram && diagram.diagram.caption].filter(Boolean), `${diagram ? diagram.content : ''} ${diagram && diagram.diagram ? diagram.diagram.caption : ''}`, {
+      visual_type: diagramVisual.type,
+      visual_nodes: diagramVisual.nodes,
+      visual_edges: diagramVisual.edges,
+    }),
+    slide('code', code ? code.title : 'Concrete Code Example', [code && code.content, 'Read the code through the concept, not just syntax'].filter(Boolean), `${code ? code.content : ''} The code example turns the idea into something you can trace. Read it line by line and ask what each line contributes to the concept.`, {
+      visual_type: 'code',
+      visual_nodes: ['Code', 'State', 'Rule', 'Output'],
+      visual_edges: [['State', 'Rule'], ['Rule', 'Output']],
+      example_code: codeObj && codeObj.content || '',
+    }),
+    slide('step_by_step', walk ? walk.title : 'Line-by-Line Walkthrough', walkBullets, `${walk ? walk.content : ''} ${walkBullets.join(' ')}`, {
+      visual_type: 'flow',
+      visual_nodes: walkBullets.slice(0, 5),
+      visual_edges: walkBullets.slice(0, 4).map((b, i) => [b, walkBullets[i + 1]]).filter(e => e[1]),
+    }),
+    slide('mistakes', mistakes ? mistakes.title : 'Common Mistakes', mistakeBullets, `${mistakeBullets.join(' ')} These mistakes matter because they produce code that looks plausible but violates the actual concept.`, {
+      visual_type: 'comparison',
+      visual_nodes: ['Mistake', 'Why wrong', 'Correct idea', lesson.topic],
+      visual_edges: [['Mistake', 'Why wrong'], ['Why wrong', 'Correct idea']],
+      callouts: (mistakes && mistakes.callouts || []).map(c => c.text),
+    }),
+    slide('recap', 'Complexity and Recap', [complexity && complexity.content, recap && recap.content, next && next.content].filter(Boolean), `${complexity ? complexity.content : ''} ${recap ? recap.content : ''} ${next ? next.content : ''}`, {
+      visual_type: complexity ? 'bigo_chart' : 'summary',
+      visual_nodes: ['Definition', 'Diagram', 'Code', 'Mistake', 'Practice'],
+      visual_edges: [['Definition', 'Diagram'], ['Diagram', 'Code'], ['Code', 'Practice']],
+    }),
+    slide('quiz', checkpoint ? checkpoint.title : 'Mini Checkpoint', [quiz && quiz.question, quiz && quiz.answer, checkpoint && checkpoint.content].filter(Boolean), `${checkpoint ? checkpoint.content : ''} ${quiz ? `The answer is ${quiz.answer}. ${quiz.explanation || ''}` : ''}`, {
+      visual_type: 'summary',
+      visual_nodes: ['Question', 'Think', 'Answer', 'Explain'],
+      visual_edges: [['Question', 'Think'], ['Think', 'Answer'], ['Answer', 'Explain']],
+    }),
+  ];
+
+  return {
+    topic: lesson.topic,
+    audienceLevel: lesson.audienceLevel,
+    learningObjectives: lesson.learningObjectives,
+    slides,
+  };
+}
+
+function videoText(value, max = 120) {
+  const text = String(value || '')
+    .replace(/\\n/g, ' ')
+    .replace(/\[chunk:\s*\d+\]/gi, '')
+    .replace(/[‐‑‒–—]/g, '-')
+    .replace(/\.{3,}/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\.{3,}$/g, '');
+  if (!max || text.length <= max) return text;
+  const slice = text.slice(0, max).replace(/\s+\S*$/, '').trim();
+  return (slice || text.slice(0, max).trim()).replace(/[,;:\-.]+$/g, '');
+}
+
+const HANGING_WORD_RE = /\b(?:a|an|and|as|at|because|before|but|by|for|from|if|in|into|is|of|on|or|that|the|then|through|to|with|while)$/i;
+
+function videoList(values, max = 4, charMax = 96) {
+  const seen = new Set();
+  const out = [];
+  for (const value of values || []) {
+    const text = focusLabel(value, charMax);
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    if (/^(callout|source note)$/i.test(text)) continue;
+    seen.add(key);
+    out.push(text);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function focusLabel(value, charMax = 38) {
+  const text = videoText(value, 0);
+  if (!text) return '';
+  const semantic = semanticLabel(text);
+  if (semantic) return semantic;
+  const token = text.match(/\b[A-Z][A-Za-z0-9_]*\.[A-Za-z0-9_]+\(\)/);
+  if (token) return token[0];
+  const compact = text
+    .replace(/[.!?]+$/g, '')
+    .split(/\s+/)
+    .filter(word => !/^(the|a|an|to|with|through|because|that|this|these|those|your|you)$/i.test(word))
+    .slice(0, 5)
+    .join(' ');
+  if (!compact || compact.length > charMax || HANGING_WORD_RE.test(compact)) return '';
+  return compact;
+}
+
+function semanticLabel(value) {
+  const text = videoText(value, 0);
+  const lower = text.toLowerCase();
+  if (/\bwhat you will be able\b|\blearning objectives?\b/.test(lower)) return 'Objectives';
+  if (/\brecap\b|\bnext step\b/.test(lower)) return 'Recap';
+  if (/\bdefine\b|\bdefinition\b/.test(lower)) return 'Definition';
+  if (/\btrace\b|\bworked example\b|\bconcrete example\b/.test(lower)) return 'Worked example';
+  if (/\bavoid\b|\bcommon mistake\b|\bmistakes?\b/.test(lower)) return 'Common mistake';
+  if (/\bsame method\b|\bmethod call\b/.test(lower)) return 'Same method call';
+  if (/\bchild class\b/.test(lower)) return 'Child class';
+  if (/\bparent class\b/.test(lower)) return 'Parent class';
+  if (/\bshape\b/.test(lower) && /\breference\b/.test(lower)) return 'Shape reference';
+  if (/\bsuperclass\b/.test(lower) && /\breference\b/.test(lower)) return 'Superclass reference';
+  if (/\bruntime\b/.test(lower) && /\bobject\b/.test(lower)) return 'Runtime object';
+  if (/\bdynamic dispatch\b|\bdispatch\b/.test(lower)) return 'Dynamic dispatch';
+  if (/\bcircle\.area\(\)|circle area/.test(lower)) return 'Circle.area()';
+  if (/\brectangle\.area\(\)|rectangle area/.test(lower)) return 'Rectangle.area()';
+  if (/\bcircle\b/.test(lower) && /\bobject\b/.test(lower)) return 'Circle object';
+  if (/\brectangle\b/.test(lower) && /\bobject\b/.test(lower)) return 'Rectangle object';
+  if (/\boverload/.test(lower)) return 'Overloading contrast';
+  if (/\boverrid/.test(lower)) return 'Overriding';
+  if (/\bstatic\b|\bfinal\b/.test(lower)) return 'Static/final warning';
+  if (/\bcomposition\b/.test(lower)) return 'Composition contrast';
+  if (/\bnode\b/.test(lower) && /\bnext\b/.test(lower)) return 'Node.next';
+  if (/\bhead\b/.test(lower)) return 'Head pointer';
+  if (/\bnull\b/.test(lower)) return 'Null stop';
+  if (/\binsert/.test(lower)) return 'Insertion step';
+  if (/\bdelete|deletion/.test(lower)) return 'Deletion step';
+  if (/\bpush\b/.test(lower)) return 'Push';
+  if (/\bpop\b/.test(lower)) return 'Pop';
+  if (/\bpeek\b/.test(lower)) return 'Peek';
+  if (/\blifo\b/.test(lower)) return 'LIFO';
+  if (/\bnested\b/.test(lower) && /\bstack\b/.test(lower)) return 'Stack use case';
+  if (/\btop\b/.test(lower) && /\bactive\b/.test(lower)) return 'Top item';
+  if (/\benqueue\b/.test(lower)) return 'Enqueue';
+  if (/\bdequeue\b/.test(lower)) return 'Dequeue';
+  if (/\brear\b/.test(lower)) return 'Rear pointer';
+  if (/\bfifo\b|\bfirst-in\b|\bfirst in\b|oldest item leaves/.test(lower)) return 'FIFO';
+  if (/\bunderflow\b/.test(lower)) return 'Underflow';
+  if (/\bbinary search tree\b|\bbst\b/.test(lower)) return 'BST rule';
+  if (/\bcomparison\b/.test(lower) && /\bhalf\b/.test(lower)) return 'Halving search';
+  if (/\bdeleting\b|\btwo children\b/.test(lower)) return 'Delete case';
+  if (/\bo\(1\)/i.test(text)) return 'O(1)';
+  if (/\bo\(n\)/i.test(text)) return 'O(n)';
+  if (/\bdominant term\b|\bgrowth rate\b|\bbig-o\b/.test(lower)) return 'Growth rate';
+  if (/\bcomplexity\b/.test(lower)) return 'Complexity';
+  if (/\bprivate\b|\bbalance\b/.test(lower) && /\bfield|state|private\b/.test(lower)) return 'Private state';
+  if (/\bpublic\b/.test(lower) && /\bmethod\b/.test(lower)) return 'Public methods';
+  if (/\binvariant\b|\bvalid state\b/.test(lower)) return 'Invariant';
+  if (/\babstraction\b|\bobject does\b|\bpublic contract\b|\bcontract\b/.test(lower)) return 'Public contract';
+  if (/\bworking code\b|\bcode example\b/.test(lower)) return 'Code example';
+  if (/\bread\b/.test(lower) && /\broles\b/.test(lower)) return 'Code roles';
+  if (/\bpoint\b/.test(lower) && /\bpart\b/.test(lower)) return 'Diagram roles';
+  if (/\banalogy\b/.test(lower) && /\bstops?\b/.test(lower)) return 'Analogy limit';
+  if (/\bwhy\b/.test(lower) && /\bline\b/.test(lower)) return 'Line purpose';
+  if (/\btie\b/.test(lower) && /\bcost\b/.test(lower)) return 'Operation cost';
+  if (/\bsay why\b|\banswer is correct\b/.test(lower)) return 'Reason';
+  if (/\bmental model\b/.test(lower)) return 'Mental model';
+  if (/\bdefinition\b/.test(lower)) return 'Definition';
+  if (/\bmistake\b/.test(lower)) return 'Common mistake';
+  return '';
+}
+
+function displayTitle(value, fallback = 'Tutor scene') {
+  const text = videoText(value, 0).replace(/[.!?]+$/g, '');
+  if (!text) return fallback;
+  if (text.length <= 64 && !HANGING_WORD_RE.test(text)) return text;
+  return semanticLabel(text) || fallback;
+}
+
+function codeSceneTitle(lineRange, explanation, stepIndex = 0) {
+  const label = lineRangeLabel(lineRange) || `Step ${stepIndex + 1}`;
+  const semantic = semanticLabel(explanation) || 'Code reason';
+  return `${label}: ${semantic}`;
+}
+
+function videoNarration(parts, opts = {}) {
+  const minChars = opts.minChars || 220;
+  const topic = opts.topic || 'this concept';
+  const kind = opts.kind || 'concept';
+  const seed = (Array.isArray(parts) ? parts : [parts])
+    .map(part => videoText(part, 1200))
+    .filter(Boolean)
+    .join(' ');
+  let text = seed;
+  if (text.length < minChars) {
+    if (kind === 'code') {
+      text += ` Read the code as a chain of reasons. First ask what state the line creates, then ask what rule it enforces, and finally ask what would break if the line were removed. That is how ${topic} becomes understandable instead of memorized.`;
+    } else if (kind === 'diagram') {
+      text += ` Use the visual as a map: point to each part, name its role, then describe the relationship between the parts. The goal is to make ${topic} visible before you try to remember terminology.`;
+    } else {
+      text += ` The important move is to connect the definition to a concrete situation. A real lesson should show why the rule exists, how it changes the design, and where students usually confuse it with a neighboring idea.`;
+    }
+  }
+  return videoText(text, 1400);
+}
+
+function parseLineRange(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/(\d+)\s*(?:-\s*(\d+))?/);
+  if (!match) return [];
+  const start = Number(match[1]);
+  const end = Number(match[2] || match[1]);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return [];
+  const out = [];
+  for (let line = Math.min(start, end); line <= Math.max(start, end); line++) out.push(line);
+  return out.slice(0, 12);
+}
+
+function cleanCodeExplanation(item, fallbackRange = '') {
+  if (typeof item === 'string') return { lineRange: fallbackRange, text: videoText(item, 240) };
+  return {
+    lineRange: videoText(item && item.lineRange || fallbackRange, 24),
+    text: videoText(item && item.text || '', 260),
+  };
+}
+
+function defaultVisualForLesson(lesson) {
+  const lower = String(lesson.topic || '').toLowerCase();
+  if (lower.includes('inheritance') || lower.includes('polymorphism')) {
+    return {
+      type: 'class_diagram',
+      nodes: [
+        { id: 'Shape', label: 'Shape', fields: [], methods: ['area()'] },
+        { id: 'Circle', label: 'Circle', fields: ['radius'], methods: ['area()'] },
+        { id: 'Rectangle', label: 'Rectangle', fields: ['width', 'height'], methods: ['area()'] },
+      ],
+      edges: [['Circle', 'Shape', 'extends'], ['Rectangle', 'Shape', 'extends']],
+      caption: 'A subclass points to the superclass it extends.',
+    };
+  }
+  if (lower.includes('linked list')) {
+    return { type: 'linkedlist', nodes: ['head', '10', '20', '30', 'null'], edges: [['head', '10'], ['10', '20'], ['20', '30'], ['30', 'null']], operations: ['insert', 'delete'], caption: 'Each node stores data and a next reference.' };
+  }
+  if (lower.includes('stack')) {
+    return { type: 'stack_queue', nodes: ['top', '42', '17', '8'], operations: ['push', 'pop', 'peek'], caption: 'Only the top item is accessible.' };
+  }
+  if (lower.includes('queue')) {
+    return { type: 'stack_queue', nodes: ['front', 'A', 'B', 'C', 'rear'], operations: ['enqueue', 'dequeue', 'peek'], caption: 'Items leave from the front and enter at the rear.' };
+  }
+  if (lower.includes('tree') || lower.includes('bst')) {
+    return { type: 'tree', nodes: ['8', '3', '10', '1', '6', '14'], edges: [['8', '3'], ['8', '10'], ['3', '1'], ['3', '6'], ['10', '14']], caption: 'Left values are smaller; right values are larger.' };
+  }
+  return { type: 'mindmap', nodes: [lesson.topic, 'Definition', 'Example', 'Visual model', 'Mistakes'], edges: [[lesson.topic, 'Definition'], [lesson.topic, 'Example'], [lesson.topic, 'Visual model']] };
+}
+
+function diagramToVideoVisual(diagram) {
+  const normalized = diagrams.normalizeDiagram(diagram || {});
+  return {
+    type: diagrams.diagramTypeToVisualType(normalized.type),
+    nodes: normalized.nodes,
+    edges: normalized.edges,
+    operations: normalized.operations,
+    caption: normalized.caption,
+  };
+}
+
+function scene(sceneType, title, narration, onScreenText, extra = {}) {
+  const rawVisual = extra.visual || {};
+  const visual = {
+    type: rawVisual.type || 'mindmap',
+    description: videoText(rawVisual.description || rawVisual.caption || '', 180),
+    nodes: rawVisual.nodes || [],
+    edges: rawVisual.edges || [],
+    operations: rawVisual.operations || [],
+    caption: videoText(rawVisual.caption || '', 180),
+  };
+  return VideoSceneSchema.parse({
+    sceneType,
+    title: displayTitle(title),
+    narration: videoNarration(narration, { minChars: extra.minChars, topic: extra.topic, kind: extra.kind }),
+    onScreenText: videoList(onScreenText, extra.maxText || 2, extra.textMax || 38).concat([]).slice(0, extra.maxText || 2),
+    visual,
+    codeFocus: extra.codeFocus,
+    focusTarget: focusLabel(extra.focusTarget || (Array.isArray(onScreenText) && onScreenText[0]) || title, 38),
+    pointerLabel: focusLabel(extra.pointerLabel || (Array.isArray(onScreenText) && onScreenText[0]) || title, 34),
+    animationType: videoText(extra.animationType || animationTypeForVisual(visual.type), 32),
+    durationTargetSec: extra.durationTargetSec || (sceneType === 'code_walkthrough' ? 30 : 24),
+  });
+}
+
+function animationTypeForVisual(type) {
+  if (type === 'code') return 'line_highlight';
+  if (type === 'class_diagram') return 'uml_pointer';
+  if (type === 'linkedlist') return 'linked_list_pointer';
+  if (type === 'stack_queue') return 'operation_arrow';
+  if (type === 'tree') return 'tree_focus';
+  return 'focus_pointer';
+}
+
+function lineRangeLabel(range) {
+  const lines = parseLineRange(range);
+  if (!lines.length) return '';
+  return lines.length === 1 ? `Line ${lines[0]}` : `Lines ${lines[0]}-${lines[lines.length - 1]}`;
+}
+
+function codeFocusScenes(lesson, codeSection) {
+  const code = codeSection && codeSection.code && codeSection.code.content ? codeSection.code : null;
+  if (!code) return [];
+  const explanations = (code.explanation || [])
+    .map((item, i) => cleanCodeExplanation(item, i === 0 ? '1-2' : ''))
+    .filter(item => item.text)
+    .slice(0, 4);
+  const fallbackExplanations = explanations.length ? explanations : [
+    { lineRange: '1-2', text: 'Identify the definition or setup lines before reading the operation.' },
+    { lineRange: '3-5', text: 'Find the line where the concept changes state or specializes behavior.' },
+    { lineRange: '6-8', text: 'Explain why the final line produces the expected result.' },
+  ];
+  return fallbackExplanations.map((item, i) => {
+    const highlights = parseLineRange(item.lineRange);
+    const label = lineRangeLabel(item.lineRange) || `Step ${i + 1}`;
+    const title = codeSceneTitle(item.lineRange, item.text, i);
+    const focus = semanticLabel(item.text) || label;
+    return scene('code_walkthrough', title, [
+      `${label}: ${item.text}`,
+      `The reason this part matters is that it connects syntax to the rule behind ${lesson.topic}.`,
+      'If you skip this line, the example either loses its state, breaks the relationship, or stops proving the concept.',
+    ], [
+      label,
+      focus,
+      'Why this line exists',
+    ], {
+      topic: lesson.topic,
+      kind: 'code',
+      visual: { type: 'code', nodes: ['Code', label, 'Reason', 'Result'], edges: [['Code', label], [label, 'Reason'], ['Reason', 'Result']] },
+      codeFocus: {
+        language: code.language || 'text',
+        content: code.content,
+        lineRange: item.lineRange || (highlights[0] ? String(highlights[0]) : '1'),
+        highlightLines: highlights.length ? highlights : [1],
+        explanation: item.text,
+      },
+      durationTargetSec: 30,
+      minChars: 260,
+      textMax: 88,
+      pointerLabel: focus,
+      focusTarget: focus,
+    });
+  });
+}
+
+function sectionCards(sectionInput) {
+  return (sectionInput && sectionInput.cards || [])
+    .map(card => `${card.title || 'Mistake'}: ${card.text || ''}`)
+    .filter(Boolean);
+}
+
+function lessonToVideoScenes(lessonInput) {
+  const lesson = normalizeLesson(lessonInput || {});
+  const hook = sectionByType(lesson, 'hook');
+  const def = sectionByType(lesson, 'definition');
+  const deep = sectionByType(lesson, 'deep_explanation');
+  const analogy = sectionByType(lesson, 'analogy');
+  const diagram = sectionByType(lesson, 'diagram') || sectionByType(lesson, 'mindmap');
+  const code = sectionByType(lesson, 'code_example');
+  const complexity = sectionByType(lesson, 'complexity');
+  const mistakes = sectionByType(lesson, 'common_mistakes');
+  const checkpoint = sectionByType(lesson, 'checkpoint');
+  const recap = sectionByType(lesson, 'recap');
+  const next = sectionByType(lesson, 'next_steps');
+  let diagramVisual = diagram && diagram.diagram ? diagramToVideoVisual(diagram.diagram) : defaultVisualForLesson(lesson);
+  if (lesson.lessonType === 'oop' && diagramVisual.type !== 'class_diagram') {
+    diagramVisual = defaultVisualForLesson(lesson);
+  }
+  const mistakeText = sectionCards(mistakes);
+  const quiz = checkpoint && checkpoint.quiz && checkpoint.quiz[0];
+
+  const scenes = [
+    scene('hook', lesson.topic, hook && hook.content || `Today we will learn ${lesson.topic} by connecting definition, visual model, code, and common mistakes.`, [
+      hook && hook.content,
+      ...(lesson.learningObjectives || []).slice(0, 2),
+    ], {
+      topic: lesson.topic,
+      visual: { type: 'mindmap', nodes: [lesson.topic, 'Why it matters', 'Visual model', 'Code', 'Mistakes'], edges: [[lesson.topic, 'Why it matters'], [lesson.topic, 'Visual model'], [lesson.topic, 'Code']] },
+      minChars: 180,
+      textMax: 94,
+    }),
+    scene('objectives', 'What You Will Be Able To Do', `By the end, you should be able to ${lesson.learningObjectives.join(', ').replace(/, ([^,]*)$/, ', and $1')}.`, lesson.learningObjectives, {
+      topic: lesson.topic,
+      visual: { type: 'summary', nodes: ['Objectives', ...lesson.learningObjectives.slice(0, 4)], edges: lesson.learningObjectives.slice(0, 4).map(o => ['Objectives', o]) },
+      minChars: 160,
+      textMax: 88,
+    }),
+    scene('definition', def ? def.title : 'Core Definition', [def && def.content, deep && deep.content], [
+      def && def.content,
+      'Name the relationship before memorizing syntax',
+      'Check the rule against a concrete example',
+    ], {
+      topic: lesson.topic,
+      visual: { type: 'mindmap', nodes: [lesson.topic, 'Definition', 'Rule', 'Example', 'Boundary'], edges: [[lesson.topic, 'Definition'], ['Definition', 'Rule'], ['Rule', 'Example']] },
+      minChars: 260,
+      textMax: 96,
+    }),
+    scene('deep_explanation', analogy ? analogy.title : 'Mental Model', [analogy && analogy.content, deep && deep.content], [
+      analogy && analogy.content || deep && deep.content,
+      'Mental model first, syntax second',
+      'Know where the analogy stops',
+    ], {
+      topic: lesson.topic,
+      visual: { type: 'comparison', nodes: ['Mental model', lesson.topic, 'What matches', 'Where it breaks'], edges: [['Mental model', 'What matches'], ['What matches', lesson.topic], [lesson.topic, 'Where it breaks']] },
+      minChars: 260,
+    }),
+    scene('diagram', diagram ? diagram.title : 'Visual Model', [diagram && diagram.content, diagram && diagram.diagram && diagram.diagram.caption], [
+      diagram && diagram.content,
+      diagram && diagram.diagram && diagram.diagram.caption,
+      'Point to each part and say its role',
+    ], {
+      topic: lesson.topic,
+      kind: 'diagram',
+      visual: diagramVisual,
+      minChars: 250,
+    }),
+  ];
+
+  if (code && code.code && code.code.content) {
+    scenes.push(scene('code_example', code.title || 'Concrete Code Example', [
+      code.content,
+      'Before the walkthrough, scan the code for the parent idea, the specialized behavior, and the line that proves the concept.',
+    ], [
+      'Working code example',
+      'Read for roles, not memorization',
+      'Next scenes explain exact lines',
+    ], {
+      topic: lesson.topic,
+      kind: 'code',
+      visual: { type: 'code', nodes: ['Code', 'State', 'Rule', 'Output'], edges: [['State', 'Rule'], ['Rule', 'Output']] },
+      codeFocus: {
+        language: code.code.language || 'text',
+        content: code.code.content,
+        lineRange: '1-3',
+        highlightLines: [1, 2, 3],
+        explanation: 'Start by locating the setup or contract.',
+      },
+      minChars: 230,
+      durationTargetSec: 28,
+    }));
+    scenes.push(...codeFocusScenes(lesson, code).slice(0, 3));
+  }
+
+  scenes.push(scene('common_mistakes', mistakes ? mistakes.title : 'Common Mistakes', [
+    mistakeText.join(' '),
+    `The mistake section matters because students often know the vocabulary of ${lesson.topic} before they know when the idea should or should not be used.`,
+  ], mistakeText.length ? mistakeText : [mistakes && mistakes.content, 'Explain the correction, not only the mistake'], {
+    topic: lesson.topic,
+    visual: { type: 'comparison', nodes: ['Mistake', 'Why it fails', 'Correct habit', lesson.topic], edges: [['Mistake', 'Why it fails'], ['Why it fails', 'Correct habit']] },
+    minChars: 230,
+    textMax: 96,
+  }));
+
+  if (complexity) {
+    scenes.push(scene('complexity', complexity.title || 'Complexity', complexity.content, [
+      complexity.content,
+      'Tie the cost to the operation',
+      'Separate best case from worst case',
+    ], {
+      topic: lesson.topic,
+      visual: { type: 'bigo_chart', nodes: ['O(1)', 'O(log n)', 'O(n)', 'O(n^2)'], edges: [] },
+      minChars: 210,
+    }));
+  }
+
+  scenes.push(scene('checkpoint', checkpoint ? checkpoint.title : 'Mini Checkpoint', [
+    checkpoint && checkpoint.content,
+    quiz ? `Question: ${quiz.question} Answer: ${quiz.answer}. ${quiz.explanation || ''}` : '',
+  ], [
+    quiz && quiz.question || checkpoint && checkpoint.content || `Explain ${lesson.topic} in your own words`,
+    quiz && `Answer: ${quiz.answer}`,
+    'Say why the answer is correct',
+  ], {
+    topic: lesson.topic,
+    visual: { type: 'summary', nodes: ['Question', 'Think', 'Answer', 'Reason'], edges: [['Question', 'Think'], ['Think', 'Answer'], ['Answer', 'Reason']] },
+    minChars: 190,
+    textMax: 88,
+  }));
+
+  scenes.push(scene('recap', 'Recap and Next Step', [
+    recap && recap.content,
+    next && next.content,
+    `A strong understanding of ${lesson.topic} means you can explain the definition, read code, draw the visual model, and predict the common mistake before it happens.`,
+  ], [
+    recap && recap.content,
+    next && next.content,
+    'Definition, diagram, code, mistake, practice',
+  ], {
+    topic: lesson.topic,
+    visual: { type: 'summary', nodes: [lesson.topic, 'Definition', 'Diagram', 'Code', 'Mistake', 'Practice'], edges: [[lesson.topic, 'Definition'], [lesson.topic, 'Diagram'], [lesson.topic, 'Code'], [lesson.topic, 'Mistake']] },
+    minChars: 180,
+  }));
+
+  return scenes.slice(0, 12);
+}
+
+function visualDetailsMap(visual) {
+  const nodes = visual && Array.isArray(visual.nodes) ? visual.nodes : [];
+  const details = {};
+  for (const node of nodes) {
+    if (!node || typeof node !== 'object') continue;
+    const label = node.label || node.id || node.name;
+    if (!label) continue;
+    details[label] = {
+      fields: Array.isArray(node.fields) ? node.fields : [],
+      methods: Array.isArray(node.methods) ? node.methods : [],
+      kind: node.kind || '',
+    };
+  }
+  return details;
+}
+
+function visualNodes(visual) {
+  return (visual && Array.isArray(visual.nodes) ? visual.nodes : [])
+    .map(node => {
+      if (node && typeof node === 'object') return node.label || node.id || node.name || '';
+      return node;
+    })
+    .filter(Boolean);
+}
+
+function visualEdges(visual) {
+  return (visual && Array.isArray(visual.edges) ? visual.edges : [])
+    .map(edge => {
+      if (Array.isArray(edge)) return [edge[0], edge[1], edge[2]].filter(Boolean);
+      if (edge && typeof edge === 'object') return [edge.from || edge.source, edge.to || edge.target, edge.label].filter(Boolean);
+      return null;
+    })
+    .filter(edge => edge && edge[0] && edge[1]);
+}
+
+function sceneTypeToSlideType(type) {
+  const map = {
+    hook: 'title',
+    objectives: 'objectives',
+    definition: 'concept',
+    deep_explanation: 'analogy',
+    diagram: 'diagram',
+    code_example: 'code',
+    code_walkthrough: 'step_by_step',
+    common_mistakes: 'mistakes',
+    complexity: 'recap',
+    checkpoint: 'quiz',
+    recap: 'recap',
+  };
+  return map[type] || 'concept';
+}
+
+function videoScenesToScript(lesson, scenes) {
+  const slides = scenes.map((s) => {
+    const slideType = sceneTypeToSlideType(s.sceneType);
+    const nodes = visualNodes(s.visual);
+    const edges = visualEdges(s.visual);
+    const focusBullets = videoList(s.onScreenText, 2, 38);
+    return {
+      slideType,
+      slide_type: slideType,
+      sceneType: s.sceneType,
+      title: s.title,
+      visual_type: s.visual && s.visual.type || 'mindmap',
+      bullets: focusBullets.length ? focusBullets : [focusLabel(s.title || lesson.topic) || 'Core idea'],
+      visual_nodes: nodes,
+      visual_edges: edges,
+      visual_node_details: visualDetailsMap(s.visual),
+      operations: s.visual && s.visual.operations || [],
+      caption: s.visual && s.visual.caption || '',
+      example_code: s.codeFocus && s.codeFocus.content || '',
+      code_focus: s.codeFocus,
+      focusTarget: s.focusTarget || '',
+      pointerLabel: s.pointerLabel || '',
+      animationType: s.animationType || animationTypeForVisual(s.visual && s.visual.type),
+      narration: s.narration,
+      durationTargetSec: s.durationTargetSec,
+    };
+  });
+  return {
+    topic: lesson.topic,
+    audienceLevel: lesson.audienceLevel,
+    learningObjectives: lesson.learningObjectives,
+    scenes,
+    slides,
+  };
+}
+
+function lessonToVideoScript(lessonInput) {
+  const lesson = normalizeLesson(lessonInput || {});
+  const scenes = lessonToVideoScenes(lesson);
+  return videoScenesToScript(lesson, scenes);
+}
+
+function collectSourceMap(lesson) {
+  const ids = new Set((lesson.sourceMaterial && lesson.sourceMaterial.selectedChunkIds) || []);
+  for (const s of lesson.sections || []) {
+    for (const c of s.callouts || []) {
+      for (const id of c.sourceChunkIds || []) ids.add(id);
+    }
+  }
+  return { chunkIds: [...ids] };
+}
+
+function prepareStoredNote(row) {
+  if (!row) return row;
+  let lessonJson = row.lesson_json || null;
+  let body = row.body_md || '';
+  if (!lessonJson && body) {
+    const candidate = extractJson(body);
+    let parsed = null;
+    if (candidate) {
+      try { parsed = JSON.parse(candidate); } catch (_) { parsed = null; }
+    }
+    if (parsed && (parsed.sections || parsed.lesson)) {
+      const lesson = normalizeLesson(parsed.lesson || parsed, { title: row.title });
+      lessonJson = JSON.stringify(lesson);
+      body = lessonToMarkdown(lesson);
+    } else {
+      const clean = extractMarkdownFromModelOutput(body);
+      if (clean !== body) body = clean;
+    }
+  }
+  return { ...row, lesson_json: lessonJson, body_md: body };
+}
+
+module.exports = {
+  EducationalLessonSchema,
+  VideoSceneSchema,
+  SECTION_TYPES,
+  DIAGRAM_TYPES,
+  cleanText,
+  extractMarkdownFromModelOutput,
+  loadCuratedKnowledge,
+  curatedAsPrompt,
+  detectLessonType,
+  fallbackLesson,
+  normalizeLesson,
+  generateEducationalLesson,
+  lessonToMarkdown,
+  lessonToVideoScenes,
+  lessonToVideoScript,
+  scoreLesson,
+  collectSourceMap,
+  prepareStoredNote,
+};

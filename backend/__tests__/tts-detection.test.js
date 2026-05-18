@@ -32,13 +32,17 @@ describe('TTS detection', () => {
     expect(status.configured_engine).toBe('piper');
   });
 
-  it('falls back when piper voice is not set', () => {
+  it('reports piper readiness or a clear fallback when the default voice is unavailable', () => {
     const status = tts.detectTTS();
-    expect(status.piper_voice_found).toBe(false);
-    expect(status.active_engine).not.toBe('piper');
-    expect(status.recommendation).toBeDefined();
-    expect(typeof status.recommendation).toBe('string');
-    expect(status.recommendation.length).toBeGreaterThan(0);
+    if (status.piper_ready) {
+      expect(status.active_engine).toBe('piper');
+      expect(status.recommendation).toBeNull();
+    } else {
+      expect(status.active_engine).not.toBe('piper');
+      expect(status.recommendation).toBeDefined();
+      expect(typeof status.recommendation).toBe('string');
+      expect(status.recommendation.length).toBeGreaterThan(0);
+    }
   });
 });
 

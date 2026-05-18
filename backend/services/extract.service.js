@@ -157,6 +157,8 @@ function cleanText(s) {
   return String(s || '')
     .replace(/\r\n/g, '\n')
     .replace(/\u0000/g, '')
+    .replace(/[\uF0A7\uF075\uF0B7\u2022]/g, '\n- ')
+    .replace(/\n\s*-\s*\n/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -182,7 +184,12 @@ function detectChapters(text) {
         isHeading = true;
       }
       if (isHeading) {
-        headings.push({ idx: headings.length, title: trimmed.replace(/^#+\s*/, '').replace(/^Slide\s+\d+\s*/i, '').slice(0, 120) || `Section ${headings.length + 1}`, char_start: charPos });
+        let title = trimmed.replace(/^#+\s*/, '').replace(/^Slide\s+\d+\s*[:.-]?\s*/i, '').slice(0, 120).trim();
+        if (/^Slide\s+\d+/i.test(trimmed) && !title) {
+          const next = lines.slice(i + 1).map(l => l.trim()).find(l => l && l.length < 120 && !/^[-•]$/.test(l));
+          title = next ? next.replace(/^Title:\s*/i, '').trim() : `Slide ${headings.length + 1}`;
+        }
+        headings.push({ idx: headings.length, title: title || `Section ${headings.length + 1}`, char_start: charPos });
       }
     }
     charPos += line.length + 1;

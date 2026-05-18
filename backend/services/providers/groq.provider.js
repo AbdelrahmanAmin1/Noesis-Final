@@ -101,6 +101,34 @@ async function groqFetch(pathname, body, opts = {}) {
   }
 }
 
+function systemPromptFor(opts = {}) {
+  const wantsJson = opts.format === 'json';
+  if (opts.feature === 'notes' && wantsJson) {
+    return 'You are Noesis, an expert CS tutor. Generate only strict EducationalLesson JSON that matches the requested schema. Do not wrap it in markdown.';
+  }
+  if (opts.feature === 'notes') {
+    return 'You are Noesis, an expert CS tutor. Generate polished study notes in clean markdown only. Do not return JSON unless explicitly requested.';
+  }
+  if (opts.feature === 'video_script') {
+    return 'You are Noesis, an expert CS video tutor. Generate only strict JSON for deep educational lessons and storyboards. Use concrete examples, code, diagrams, and teacher-style narration.';
+  }
+  if (opts.feature === 'tutor') {
+    return 'You are Noesis, an expert interactive CS tutor. Generate strict JSON for one Socratic tutor step with clear explanation, a question, hint, concrete example, optional code, visual data, and grounded source references. Never output placeholders.';
+  }
+  if (wantsJson) {
+    return 'You are Noesis, an expert CS tutor. Output only valid JSON matching the user request.';
+  }
+  return 'You are Noesis, an expert CS tutor. Teach clearly with deep explanations, concrete examples, and careful grounding.';
+}
+
+function maxTokensFor(opts = {}) {
+  if (opts.max_tokens) return opts.max_tokens;
+  if (opts.feature === 'notes') return env.GROQ_NOTES_MAX_OUTPUT_TOKENS || 2500;
+  if (opts.feature === 'video_script') return env.GROQ_VIDEO_MAX_OUTPUT_TOKENS || 4000;
+  if (opts.feature === 'tutor') return opts.num_predict || 1200;
+  return opts.num_predict || env.GROQ_VIDEO_MAX_OUTPUT_TOKENS || 1000;
+}
+
 async function chatCompletion(prompt, opts = {}, useResponseFormat = true) {
   const model = opts.model || env.GROQ_MODEL;
   if (!model) {
@@ -111,7 +139,7 @@ async function chatCompletion(prompt, opts = {}, useResponseFormat = true) {
   const messages = [
     {
       role: 'system',
-      content: 'You are Noesis, an AI tutor that generates grounded educational video lesson JSON. Output only valid JSON.',
+      content: systemPromptFor(opts),
     },
     {
       role: 'user',
@@ -122,7 +150,7 @@ async function chatCompletion(prompt, opts = {}, useResponseFormat = true) {
     model,
     messages,
     temperature: opts.temperature ?? 0.4,
-    max_tokens: opts.max_tokens || opts.num_predict || env.GROQ_VIDEO_MAX_OUTPUT_TOKENS || 1000,
+    max_tokens: maxTokensFor(opts),
   };
   if (opts.format === 'json' && useResponseFormat) {
     body.response_format = { type: 'json_object' };

@@ -64,3 +64,17 @@ describe('VIDEO_SCRIPT prompt', () => {
     expect(result).toContain('visual');
   });
 });
+
+describe('LESSON_GENERATE prompt', () => {
+  it('asks for structured EducationalLesson JSON and bans placeholders', () => {
+    const result = prompts.LESSON_GENERATE(
+      [{ id: 3, text: 'Inheritance uses extends between parent and child classes.' }],
+      'Inheritance',
+      { topic: 'Inheritance', lessonType: 'oop', groundingTier: 'strong', curatedKnowledge: '{"topic":"Inheritance"}' }
+    );
+    expect(result).toContain('EducationalLesson');
+    expect(result).toContain('"sections"');
+    expect(result).toContain('Shape');
+    expect(result).toContain('Code sketch');
+  });
+});

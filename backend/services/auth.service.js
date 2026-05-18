@@ -75,10 +75,34 @@ function me(userId) {
 }
 
 function saveOnboarding(userId, payload) {
-  const { subject, courses, goal, daily_minutes } = payload || {};
+  const {
+    subject,
+    courses,
+    goal,
+    daily_minutes,
+    current_level,
+    deadline,
+    days_per_week,
+    minutes_per_session,
+    learning_style,
+    weak_topics,
+    preferred_language,
+    confidence,
+  } = payload || {};
   const db = getDb();
-  db.prepare(`UPDATE user_prefs SET subject=?, goal=?, daily_minutes=? WHERE user_id=?`)
-    .run(subject || null, goal || null, parseInt(daily_minutes || 45, 10), userId);
+  const profile = {
+    currentLevel: current_level || payload.currentLevel || 'beginner',
+    deadline: deadline || '',
+    daysPerWeek: parseInt(days_per_week || payload.daysPerWeek || 5, 10),
+    minutesPerSession: parseInt(minutes_per_session || payload.minutesPerSession || daily_minutes || 45, 10),
+    learningStyle: learning_style || payload.learningStyle || 'mixed',
+    weakTopics: Array.isArray(weak_topics || payload.weakTopics) ? (weak_topics || payload.weakTopics).slice(0, 12) : [],
+    preferredLanguage: preferred_language || payload.preferredLanguage || 'java',
+    confidence: confidence || payload.confidence || 'medium',
+    goal: goal || 'understand',
+  };
+  db.prepare(`UPDATE user_prefs SET subject=?, goal=?, daily_minutes=?, study_profile_json=? WHERE user_id=?`)
+    .run(subject || null, goal || null, parseInt(daily_minutes || profile.minutesPerSession || 45, 10), JSON.stringify(profile), userId);
   if (Array.isArray(courses)) {
     const ins = db.prepare('INSERT INTO courses (user_id, code, title, professor) VALUES (?,?,?,?)');
     const tx = db.transaction((items) => {

@@ -3,6 +3,8 @@
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
 const { getDb } = require('../config/db');
+const learningMaps = require('../services/learning-map.service');
+const studyPlans = require('../services/study-plan.service');
 
 const router = express.Router();
 
@@ -138,6 +140,14 @@ router.get('/', requireAuth, (req, res, next) => {
     if (!insights.length) {
       insights.push({ icon: 'Bolt', t: 'Keep momentum', d: `${totalWeek.toFixed(1)}h logged toward your ${goalH}h weekly target.`, cta: 'Start session', route: 'tutor' });
     }
+    const activePlan = studyPlans.getPlan(userId);
+    const learningMap = learningMaps.buildLearningMap(userId);
+    const nextFocus = (activePlan && activePlan.plan && activePlan.plan.dailyPlan && activePlan.plan.dailyPlan[0] && activePlan.plan.dailyPlan[0].focusTopic)
+      || (weakTopics[0] && weakTopics[0].name)
+      || learningMap.startHere;
+    const nextRecommendedAction = activePlan
+      ? { title: `Continue ${nextFocus}`, route: 'study-plan', reason: 'Your active plan is ready for today.' }
+      : { title: `Start with ${nextFocus}`, route: 'study-plan', reason: 'Build a plan from your weak topics and available time.' };
 
     res.json({
       greeting: { name: (u && u.name) || 'there' },
@@ -155,6 +165,9 @@ router.get('/', requireAuth, (req, res, next) => {
         chip: m.progress >= 100 ? 'Done' : 'In progress',
       })),
       concept_map: concepts,
+      learning_map: learningMap,
+      active_study_plan: activePlan,
+      next_recommended_action: nextRecommendedAction,
       upcoming,
       summary: {
         ...counts,

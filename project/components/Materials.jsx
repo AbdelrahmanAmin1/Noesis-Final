@@ -178,6 +178,7 @@ const MaterialDetail = ({ onNav }) => {
   const [genStatus, setGenStatus] = React.useState('');
   const [activeAction, setActiveAction] = React.useState('');
   const [video, setVideo] = React.useState(null);
+  const [learningMap, setLearningMap] = React.useState(null);
   const id = parseInt(sessionStorage.getItem('noesis.materialId') || '0', 10);
 
   React.useEffect(() => {
@@ -201,6 +202,13 @@ const MaterialDetail = ({ onNav }) => {
     const chId = chapterIds[active];
     window.NoesisAPI.materials.chunks(id, chId).then(d => setChunks(d.chunks || [])).catch(() => setChunks([]));
   }, [id, active, chapterIds]);
+
+  React.useEffect(() => {
+    if (!id) return;
+    window.NoesisAPI.study.learningMap(id)
+      .then(d => setLearningMap(d.learning_map || null))
+      .catch(() => setLearningMap(null));
+  }, [id]);
 
   const generate = async (kind) => {
     if (!id || busy) return false;
@@ -228,15 +236,15 @@ const MaterialDetail = ({ onNav }) => {
   const generateVideo = async () => {
     if (!id || !material) return;
     setActiveAction('video');
-    setBusy(true); setGenStatus('Generating tutor video...');
+    setBusy(true); setGenStatus('Generating storyboard for review...');
     try {
       const concept = chapters[active] || null;
-      const r = await window.NoesisAPI.videos.generate({ material_id: id, concept });
-      setVideo({ id: r.video_id, status: 'queued' });
-      await window.NoesisAPI.pollJob(r.job_id, { intervalMs: 3000, onProgress: (j) => setGenStatus(j.stage || `Rendering video ${j.progress || 0}%...`) });
-      const file = await window.NoesisAPI.videos.fileBlobUrl(r.video_id);
-      setVideo({ id: r.video_id, status: 'ready', file });
-      setGenStatus('Tutor video ready with narration.');
+      const r = await window.NoesisAPI.videos.createStoryboard({ material_id: id, concept });
+      const storyboardId = r.storyboard_id || (r.storyboard && r.storyboard.id);
+      if (!storyboardId) throw new Error('storyboard_not_created');
+      sessionStorage.setItem('noesis.storyboardId', String(storyboardId));
+      setGenStatus('Storyboard ready. Review scenes before rendering.');
+      onNav && onNav('storyboard');
     } catch (e) { setGenStatus('Video failed: ' + (e.message || 'error')); }
     finally { setBusy(false); setActiveAction(''); }
   };
@@ -315,6 +323,17 @@ const MaterialDetail = ({ onNav }) => {
         {/* Right rail */}
         <aside style={mds.rail}>
           <div style={mds.railBlock}>
+            <div style={mds.railHead}>Start here</div>
+            {window.LearningMap && learningMap ? (
+              <window.LearningMap map={learningMap} compact />
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--fg-3)', padding: '4px 0' }}>
+                Generate notes or a quiz to sharpen the learning map.
+              </div>
+            )}
+          </div>
+
+          <div style={mds.railBlock}>
             <div style={mds.railHead}>Key concepts</div>
             {material && material.concepts && material.concepts.length ? (
               material.concepts.map(c => (
@@ -356,8 +375,8 @@ const MaterialDetail = ({ onNav }) => {
             <button style={mds.gen} disabled={busy} onClick={generateVideo}>
               <Icon.Play size={13} style={{ color: 'var(--accent)' }}/>
               <div style={{ flex: 1, textAlign: 'left' }}>
-                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>{activeAction === 'video' ? 'Generating video...' : 'Video explanation'}</div>
-                <div style={{ fontSize: 11, color: 'var(--fg-3)' }}>{video && video.status === 'ready' ? 'Ready — play below' : (video ? 'Processing…' : 'Generate narrated video')}</div>
+                <div style={{ fontSize: 12.5, color: 'var(--fg-0)' }}>{activeAction === 'video' ? 'Creating storyboard...' : 'Tutor video storyboard'}</div>
+                <div style={{ fontSize: 11, color: 'var(--fg-3)' }}>Review scenes before MP4 rendering</div>
               </div>
             </button>
             {genStatus && <div style={{ fontSize: 11, color: 'var(--fg-3)', padding: '4px 4px 0' }}>{genStatus}</div>}

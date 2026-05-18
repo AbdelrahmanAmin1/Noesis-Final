@@ -1,0 +1,39 @@
+{
+  "topic": "Big-O",
+  "aliases": ["Big O", "time complexity", "space complexity", "asymptotic analysis"],
+  "definition": "Big-O describes how an algorithm's resource use grows as the input size grows, focusing on the dominant growth rate.",
+  "deepExplanation": "Big-O is not a timer. It is a way to compare growth. O(1) means the work does not grow with input size, O(log n) means each step cuts the problem down, O(n) means one pass over the input, and O(n^2) usually means nested work over pairs. Constants and small details matter in real performance, but Big-O helps predict scaling.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "Common growth patterns",
+      "code": "int first(int[] a) { return a[0]; }          // O(1)\n\nboolean contains(int[] a, int x) {             // O(n)\n  for (int value : a) if (value == x) return true;\n  return false;\n}\n\nvoid printPairs(int[] a) {                     // O(n^2)\n  for (int left : a)\n    for (int right : a)\n      System.out.println(left + \",\" + right);\n}"
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "big_o_chart",
+      "nodes": ["O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)"],
+      "edges": [],
+      "operations": ["compare growth curves", "identify dominant term"],
+      "caption": "As n grows, the dominant term explains the shape of the cost curve."
+    }
+  ],
+  "commonMistakes": [
+    "Treating Big-O as exact runtime instead of growth rate.",
+    "Keeping constants and lower-order terms in the final Big-O answer.",
+    "Ignoring worst-case input shape for data structures such as unbalanced BSTs."
+  ],
+  "complexity": {
+    "constant": "O(1)",
+    "logarithmic": "O(log n)",
+    "linear": "O(n)",
+    "linearithmic": "O(n log n)",
+    "quadratic": "O(n^2)"
+  },
+  "practiceQuestions": [
+    "What is the Big-O of one loop over n items?",
+    "Why do nested loops over the same array often produce O(n^2)?"
+  ],
+  "visualTemplates": ["big_o_chart", "complexity_table", "comparison"]
+}

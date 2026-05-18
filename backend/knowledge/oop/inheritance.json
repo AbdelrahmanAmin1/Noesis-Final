@@ -1,0 +1,35 @@
+{
+  "topic": "Inheritance",
+  "aliases": ["Inheritance in OOP", "extends", "Superclass", "Subclass", "Parent class", "Child class"],
+  "definition": "Inheritance is an object-oriented mechanism where a subclass receives fields and methods from a superclass and may add or override behavior.",
+  "deepExplanation": "Use inheritance when the child class truly is a specialized kind of the parent. The parent should hold the shared contract or shared behavior, while each child class supplies details that are specific to that child. In Java, extends declares the relationship, and @Override marks a child implementation of an inherited method.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "Shape hierarchy",
+      "code": "abstract class Shape {\n  abstract double area();\n}\n\nclass Circle extends Shape {\n  private final double radius;\n  Circle(double radius) { this.radius = radius; }\n  @Override double area() { return Math.PI * radius * radius; }\n}\n\nclass Rectangle extends Shape {\n  private final double width, height;\n  Rectangle(double width, double height) { this.width = width; this.height = height; }\n  @Override double area() { return width * height; }\n}"
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "uml_class",
+      "nodes": [
+        { "id": "Shape", "label": "Shape", "methods": ["area()"] },
+        { "id": "Circle", "label": "Circle", "fields": ["radius"], "methods": ["area()"] },
+        { "id": "Rectangle", "label": "Rectangle", "fields": ["width", "height"], "methods": ["area()"] }
+      ],
+      "edges": [["Circle", "Shape", "extends"], ["Rectangle", "Shape", "extends"]],
+      "caption": "Circle and Rectangle are specialized Shapes."
+    }
+  ],
+  "commonMistakes": [
+    "Using inheritance only to avoid duplicated code instead of modeling a true is-a relationship.",
+    "Confusing inheritance with composition: a Car is a Vehicle, but a Car has an Engine.",
+    "Forgetting @Override and accidentally creating a different method signature."
+  ],
+  "complexity": {},
+  "practiceQuestions": [
+    "Which relationship should use inheritance: Dog is an Animal, or Dog has a Collar?"
+  ],
+  "visualTemplates": ["uml_class", "inheritance_tree", "comparison"]
+}

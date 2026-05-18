@@ -1,11 +1,48 @@
-# Noesis Training Placeholder
+# Noesis Fine-Tuning Roadmap
 
-No trained Noesis model exists yet.
+No trained Noesis model exists yet. Fine-tuning is intentionally postponed until the lesson pipeline, curated corpus, and evaluation rubrics are stable.
 
-This folder is reserved for future fine-tuning scripts if and when real training data is collected, reviewed, and prepared. The current system uses prompt templates, retrieval over uploaded materials, and the seeded DS/OOP corpus.
+The demo path is:
 
-`data/` is reserved for future training datasets.
+```text
+local embeddings + uploaded-source RAG + curated OOP/DS corpus + Groq for notes/video
+```
 
-`scripts/` is reserved for future training or evaluation scripts.
+## Future Folder Shape
 
-Do not place synthetic claims of model training here.
+```text
+training/
+  raw/
+  cleaned/
+  generated/
+  eval/
+  scripts/
+  README.md
+```
+
+This backend folder currently keeps the placeholder `data/` and `scripts/` directories for future conversion/evaluation code.
+
+## Training Record Shape
+
+```json
+{
+  "instruction": "Explain linked lists to a beginner with a diagram and code example.",
+  "input": "Course context and approved source snippets...",
+  "output": {
+    "topic": "Linked List",
+    "audienceLevel": "beginner",
+    "lessonType": "data_structure",
+    "sections": []
+  }
+}
+```
+
+## Practical Roadmap
+
+1. Build 200-500 hand-reviewed gold examples for OOP/DS correctness and prompt calibration.
+2. Generate 1,000-3,000 candidate examples only from approved OER or user-owned material.
+3. Review examples for concept correctness, runnable code, valid diagrams, and misconception handling.
+4. Train a LoRA/QLoRA adapter on a small open-weights instruct/code model only after evaluation passes.
+5. Export/merge to GGUF and create an Ollama Modelfile for local deployment.
+
+Do not fine-tune before the demo. RAG + Groq + curated corpus is lower risk and more demo-ready.

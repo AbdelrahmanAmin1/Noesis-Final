@@ -46,11 +46,26 @@ app.get('/api/health', async (req, res) => {
     const tts = require('./services/tts.service');
     const aiHealth = await ai.healthCheck();
     const ttsStatus = typeof tts.detectTTS === 'function' ? tts.detectTTS() : { engine: env.TTS_ENGINE };
-    _healthCache = { at: now, data: { ai: aiHealth, tts: ttsStatus } };
+    const renderer = require('./services/renderer.service').status();
+    const demo = {
+      enabled: env.NOESIS_DEMO_MODE,
+      renderer: env.VIDEO_RENDERER,
+      storyboardReviewRequired: env.NOESIS_DEMO_MODE || env.STORYBOARD_REVIEW_REQUIRED,
+      strictQualityGates: env.NOESIS_DEMO_MODE || env.STRICT_QUALITY_GATES,
+      groqReady: !!env.GROQ_API_KEY && env.NOTES_PROVIDER === 'groq' && env.VIDEO_SCRIPT_PROVIDER === 'groq',
+      piperReady: ttsStatus && ttsStatus.configured_engine === 'piper' && ttsStatus.active_engine === 'piper',
+      rendererReady: renderer.ok,
+      tutorProvider: env.TUTOR_PROVIDER,
+      tutorGroqReady: env.TUTOR_PROVIDER !== 'groq' || !!env.GROQ_API_KEY,
+      tutorStrictQuality: env.TUTOR_STRICT_QUALITY,
+      tutorAsyncStart: env.TUTOR_ASYNC_START,
+    };
+    demo.ok = !demo.enabled || (demo.groqReady && demo.piperReady && demo.rendererReady && demo.storyboardReviewRequired && demo.tutorGroqReady);
+    _healthCache = { at: now, data: { ai: aiHealth, tts: ttsStatus, renderer, demo } };
   }
   const hc = _healthCache.data || {};
   const aiOk = hc.ai && hc.ai.generation && hc.ai.generation.ok;
-  res.json({ ok: aiOk, provider: env.AI_PROVIDER, ai: hc.ai, tts: hc.tts, env: env.NODE_ENV });
+  res.json({ ok: aiOk && (!hc.demo || hc.demo.ok !== false), provider: env.AI_PROVIDER, ai: hc.ai, tts: hc.tts, renderer: hc.renderer, demo: hc.demo, env: env.NODE_ENV });
 });
 
 app.use('/api/auth', require('./routes/auth.routes'));
@@ -62,6 +77,7 @@ app.use('/api/flashcards', require('./routes/flashcard.routes'));
 app.use('/api/quizzes', require('./routes/quiz.routes'));
 app.use('/api/tutor', require('./routes/tutor.routes'));
 app.use('/api/dashboard', require('./routes/dashboard.routes'));
+app.use('/api/study', require('./routes/study.routes'));
 app.use('/api/videos', require('./routes/video.routes'));
 app.use('/api/jobs', require('./routes/jobs.routes'));
 

@@ -127,6 +127,13 @@ const Onboarding = ({ onComplete }) => {
   const [courses, setCourses] = React.useState(['oop', 'ds']);
   const [goal, setGoal] = React.useState('exams');
   const [time, setTime] = React.useState(45);
+  const [level, setLevel] = React.useState('beginner');
+  const [deadline, setDeadline] = React.useState('');
+  const [daysPerWeek, setDaysPerWeek] = React.useState(5);
+  const [learningStyle, setLearningStyle] = React.useState('mixed');
+  const [preferredLanguage, setPreferredLanguage] = React.useState('java');
+  const [confidence, setConfidence] = React.useState(3);
+  const [weakTopics, setWeakTopics] = React.useState('');
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState('');
 
@@ -135,11 +142,12 @@ const Onboarding = ({ onComplete }) => {
     { title: 'Which tracks do you want active?', sub: 'These seed your dashboard and tutor context.' },
     { title: 'What is the goal?', sub: 'This shapes pacing and dashboard recommendations.' },
     { title: 'How much time per day?', sub: 'The weekly target is calculated from this.' },
+    { title: 'Tune your study plan', sub: 'Optional details help Noesis choose the next best topic.' },
   ];
 
   const next = async () => {
     setError('');
-    if (step < 3) { setStep(step + 1); return; }
+    if (step < steps.length - 1) { setStep(step + 1); return; }
     setBusy(true);
     try {
       const courseCatalog = {
@@ -147,7 +155,20 @@ const Onboarding = ({ onComplete }) => {
         ds: { code: 'CS-DS', title: 'Data Structures & Algorithms', professor: '' },
       };
       const courseObjs = courses.map(id => courseCatalog[id]).filter(Boolean);
-      await window.NoesisAPI.auth.onboarding({ subject, goal, daily_minutes: time, courses: courseObjs });
+      await window.NoesisAPI.auth.onboarding({
+        subject,
+        goal,
+        daily_minutes: time,
+        courses: courseObjs,
+        currentLevel: level,
+        deadline,
+        daysPerWeek,
+        minutesPerSession: time,
+        learningStyle,
+        preferredLanguage,
+        confidence,
+        weakTopics: weakTopics.split(',').map(t => t.trim()).filter(Boolean),
+      });
       onComplete();
     } catch (e) {
       setError(e.message || 'onboarding_failed');
@@ -161,11 +182,11 @@ const Onboarding = ({ onComplete }) => {
       <header style={os.header}>
         <window.Logo size={18} />
         <div style={os.progress}>
-          {[0,1,2,3].map(i => (
+          {steps.map((_, i) => (
             <div key={i} style={{ height: 3, flex: 1, borderRadius: 2, background: i <= step ? 'var(--accent)' : 'var(--line)', transition: 'background 400ms var(--ease-out)' }} />
           ))}
         </div>
-        <span className="mono" style={{ fontSize: 11, color: 'var(--fg-3)' }}>{step + 1} / 4</span>
+        <span className="mono" style={{ fontSize: 11, color: 'var(--fg-3)' }}>{step + 1} / {steps.length}</span>
       </header>
 
       <main style={os.main}>
@@ -258,6 +279,54 @@ const Onboarding = ({ onComplete }) => {
                 </div>
               </div>
             )}
+
+            {step === 4 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <label style={os.formField}>
+                  <span style={os.formLabel}>Current level</span>
+                  <select className="input" value={level} onChange={e => setLevel(e.target.value)}>
+                    <option value="beginner">Beginner</option>
+                    <option value="intermediate">Intermediate</option>
+                    <option value="advanced">Advanced</option>
+                  </select>
+                </label>
+                <label style={os.formField}>
+                  <span style={os.formLabel}>Exam or deadline</span>
+                  <input className="input" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
+                </label>
+                <label style={os.formField}>
+                  <span style={os.formLabel}>Days per week</span>
+                  <input className="input" type="number" min="1" max="7" value={daysPerWeek} onChange={e => setDaysPerWeek(+e.target.value || 5)} />
+                </label>
+                <label style={os.formField}>
+                  <span style={os.formLabel}>Preferred language</span>
+                  <select className="input" value={preferredLanguage} onChange={e => setPreferredLanguage(e.target.value)}>
+                    <option value="java">Java</option>
+                    <option value="python">Python</option>
+                    <option value="javascript">JavaScript</option>
+                    <option value="cpp">C++</option>
+                  </select>
+                </label>
+                <label style={os.formField}>
+                  <span style={os.formLabel}>Learning style</span>
+                  <select className="input" value={learningStyle} onChange={e => setLearningStyle(e.target.value)}>
+                    <option value="mixed">Mixed</option>
+                    <option value="video">Video first</option>
+                    <option value="notes">Notes first</option>
+                    <option value="quizzes">Quiz first</option>
+                    <option value="flashcards">Flashcards</option>
+                  </select>
+                </label>
+                <label style={os.formField}>
+                  <span style={os.formLabel}>Confidence: {confidence}/5</span>
+                  <input type="range" min="1" max="5" value={confidence} onChange={e => setConfidence(+e.target.value)} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+                </label>
+                <label style={{ ...os.formField, gridColumn: '1 / -1' }}>
+                  <span style={os.formLabel}>Weak topics you already know</span>
+                  <input className="input" value={weakTopics} onChange={e => setWeakTopics(e.target.value)} placeholder="e.g. polymorphism, linked list pointers, Big-O" />
+                </label>
+              </div>
+            )}
           </div>
 
           {error && <div style={{ marginTop: 16, color: 'var(--err)', fontSize: 12 }}>{error}</div>}
@@ -266,7 +335,7 @@ const Onboarding = ({ onComplete }) => {
               <Icon.ArrowLeft size={13} /> Back
             </button>
             <button className="btn btn-accent" onClick={next} disabled={busy || (step === 1 && courses.length === 0)}>
-              {busy ? 'Saving...' : (step === 3 ? 'Enter Noesis' : 'Continue')} <Icon.ArrowRight size={13} />
+              {busy ? 'Saving...' : (step === steps.length - 1 ? 'Enter Noesis' : 'Continue')} <Icon.ArrowRight size={13} />
             </button>
           </div>
         </div>
@@ -305,6 +374,8 @@ const os = {
     transition: 'all 160ms var(--ease-out)',
   },
   courseActive: { borderColor: 'var(--accent-soft)', background: 'var(--bg-2)' },
+  formField: { display: 'flex', flexDirection: 'column', gap: 6 },
+  formLabel: { fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.04em', textTransform: 'uppercase' },
   check: {
     width: 18, height: 18, borderRadius: 5, border: '1.5px solid',
     display: 'flex', alignItems: 'center', justifyContent: 'center',

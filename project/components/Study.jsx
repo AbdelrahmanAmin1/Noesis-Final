@@ -21,10 +21,17 @@ const Notes = ({ onNav }) => {
     t: n.title,
     updated: n.updated_at ? new Date(n.updated_at).toLocaleString() : '',
     preview: (n.body_md || '').slice(0, 120),
+    lesson_json: n.lesson_json,
+    source_map_json: n.source_map_json,
     body_md: n.body_md,
     tag: n.folder,
     tags_json: n.tags_json,
     active: i === active,
+  })).map(n => ({
+    ...n,
+    preview: window.LessonRenderer && window.LessonRenderer.preview
+      ? window.LessonRenderer.preview(n.lesson_json, n.body_md)
+      : n.preview,
   }));
   const current = notes[active] || null;
 
@@ -183,7 +190,9 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
             {mode === 'edit' ? (
               <textarea className="input" value={body} onChange={e => setBody(e.target.value)} style={ns.bodyInput} placeholder="Write your note..." />
             ) : (
-              <div className="md-rendered" style={ns.mdBody} dangerouslySetInnerHTML={{ __html: window.DOMPurify ? window.DOMPurify.sanitize(window.marked ? window.marked.parse(body || '') : body) : (body || '') }} />
+              window.LessonRenderer
+                ? <window.LessonRenderer lesson={current.lesson_json} markdown={body} />
+                : <div className="md-rendered" style={ns.mdBody} dangerouslySetInnerHTML={{ __html: window.DOMPurify ? window.DOMPurify.sanitize(window.marked ? window.marked.parse(body || '') : body) : (body || '') }} />
             )}
             <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
               {mode === 'edit' && <button className="btn btn-accent" disabled={busy || !title.trim()} onClick={save}>{status === 'Saving...' ? 'Saving...' : 'Save'}</button>}

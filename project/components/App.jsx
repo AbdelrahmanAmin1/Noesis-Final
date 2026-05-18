@@ -2,7 +2,7 @@
 const { useState, useEffect } = React;
 
 const App = () => {
-  const APP_ROUTES = ['dashboard','materials','material','tutor','notes','flashcards','quiz','progress','settings'];
+  const APP_ROUTES = ['dashboard','materials','material','storyboard','study-plan','tutor','notes','flashcards','quiz','progress','settings'];
   const [route, setRoute] = useState(localStorage.getItem('noesis.route') || 'landing');
   const [prevRoute, setPrevRoute] = useState(null);
   const [authMode, setAuthMode] = useState('signin');
@@ -107,6 +107,8 @@ const App = () => {
     dashboard: <window.Dashboard onNav={goto}/>,
     materials: <window.Materials onNav={(r) => goto(r === 'material' ? 'material' : r)}/>,
     material: <window.MaterialDetail onNav={goto}/>,
+    storyboard: <window.StoryboardReview onNav={goto}/>,
+    'study-plan': <window.StudyPlan onNav={goto}/>,
     tutor: <window.Tutor onNav={goto}/>,
     notes: <window.Notes onNav={goto}/>,
     flashcards: <window.Flashcards onNav={goto}/>,
@@ -196,7 +198,7 @@ const TweaksPanel = ({ theme, setTheme, route, setRoute, onClose }) => {
           {['auth','onboarding'].map(r => <option key={r} value={r}>{r}</option>)}
         </optgroup>
         <optgroup label="App">
-          {['dashboard','materials','material','tutor','notes','flashcards','quiz','progress','settings'].map(r => <option key={r} value={r}>{r}</option>)}
+          {['dashboard','materials','material','storyboard','study-plan','tutor','notes','flashcards','quiz','progress','settings'].map(r => <option key={r} value={r}>{r}</option>)}
         </optgroup>
       </select>
 

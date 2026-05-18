@@ -24,6 +24,7 @@ const Dashboard = ({ onNav }) => {
   const insightItems = (data && data.insights) || [];
   const summary = (data && data.summary) || {};
   const recentActivity = (data && data.recent_activity) || [];
+  const nextAction = data && data.next_recommended_action;
 
   return (
     <div style={{ background: 'var(--bg-0)', minHeight: '100vh', position: 'relative' }}>
@@ -61,8 +62,11 @@ const Dashboard = ({ onNav }) => {
             </p>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
-              <button className="btn btn-accent" onClick={() => onNav('tutor')}>
-                <Icon.Play size={12} /> Start today's session
+              <button className="btn btn-accent" onClick={() => onNav(nextAction && nextAction.route || 'tutor')}>
+                <Icon.Play size={12} /> {nextAction ? (nextAction.label || nextAction.title) : "Start today's session"}
+              </button>
+              <button className="btn btn-ghost" onClick={() => onNav('study-plan')}>
+                <Icon.Calendar size={13}/> Study plan
               </button>
               <button className="btn btn-ghost" onClick={() => onNav('flashcards')}>
                 <Icon.Cards size={13}/> {dueCount} cards due

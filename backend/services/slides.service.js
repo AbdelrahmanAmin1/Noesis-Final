@@ -45,14 +45,15 @@ function escapeXml(s) {
 function cleanList(value, fallback = []) {
   const source = Array.isArray(value) && value.length ? value : fallback;
   return source
-    .map(v => String(v || '').replace(/\s+/g, ' ').trim())
+    .map(v => String(v || '').replace(/[‐‑‒–—]/g, '-').replace(/\s+/g, ' ').trim())
     .filter(Boolean);
 }
 
 function compactText(text, max = 72) {
-  const value = String(text || '').replace(/\s+/g, ' ').trim();
+  const value = String(text || '').replace(/[‐‑‒–—]/g, '-').replace(/\s+/g, ' ').trim();
   if (value.length <= max) return value;
-  return `${value.slice(0, Math.max(0, max - 3)).trimEnd()}...`;
+  const slice = value.slice(0, max).replace(/\s+\S*$/, '').trim();
+  return (slice || value.slice(0, max).trim()).replace(/[,;:\-.]+$/g, '');
 }
 
 function inset(region, pad) {
@@ -101,11 +102,10 @@ function wrapText(ctx, text, maxWidth, maxLines = 3) {
 function ellipsizeToWidth(ctx, text, maxWidth) {
   let value = String(text || '').trim();
   if (ctx.measureText(value).width <= maxWidth) return value;
-  const suffix = '...';
-  while (value.length > 1 && ctx.measureText(value + suffix).width > maxWidth) {
+  while (value.length > 1 && ctx.measureText(value).width > maxWidth) {
     value = value.slice(0, -1);
   }
-  return `${value.trimEnd()}${suffix}`;
+  return value.trimEnd();
 }
 
 function fitFontSize(ctx, text, maxWidth, maxLines, startPx, minPx, weight = '500', family = 'Arial') {
@@ -246,70 +246,56 @@ function inferVisualType(slide) {
 }
 
 function computeLayout(slide, width = W, height = H) {
-  const visualType = inferVisualType(slide);
-  const diagramFirst = ['code', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart'].includes(visualType);
   const header = { x: 64, y: 18, w: width - 128, h: 72 };
-  if (diagramFirst) {
-    return {
-      mode: 'diagram',
-      header,
-      visual: { x: 64, y: 124, w: width - 128, h: 340 },
-      bullets: { x: 64, y: 486, w: 612, h: 172 },
-      callouts: { x: 704, y: 486, w: width - 768, h: 172 },
-    };
-  }
   return {
-    mode: 'default',
+    mode: 'tutor_board',
     header,
-    bullets: { x: 64, y: 134, w: 408, h: 386 },
-    visual: { x: 506, y: 134, w: 710, h: 386 },
-    callouts: { x: 64, y: 548, w: width - 128, h: 94 },
+    visual: { x: 64, y: 118, w: width - 128, h: 444 },
+    bullets: { x: 64, y: 584, w: width - 128, h: 82 },
   };
 }
 
 function slideVisualData(slide, bullets) {
   const visual = slide.visual || {};
   const nodes = cleanList(slide.visual_nodes && slide.visual_nodes.length ? slide.visual_nodes : visual.nodes, [slide.title, ...bullets])
-    .map(n => compactText(n, 64))
     .slice(0, 10);
   const edges = (Array.isArray(slide.visual_edges) && slide.visual_edges.length ? slide.visual_edges : visual.edges || [])
     .filter(e => Array.isArray(e) && e.length >= 2)
     .map(e => [String(e[0] || '').trim(), String(e[1] || '').trim()])
     .filter(e => e[0] && e[1])
     .slice(0, 12);
-  return { type: inferVisualType(slide), nodes, edges };
+  return {
+    type: inferVisualType(slide),
+    nodes,
+    edges,
+    details: slide.visual_node_details || visual.node_details || {},
+    operations: cleanList(slide.operations && slide.operations.length ? slide.operations : visual.operations, []),
+    caption: slide.caption || visual.caption || '',
+  };
 }
 
 function drawBullets(ctx, bullets, region) {
-  drawCard(ctx, region, 'Key Points');
+  drawCard(ctx, region, 'Focus');
   const content = inset(region, 18);
   content.y += 32;
   content.h -= 32;
-  const safeBullets = bullets.slice(0, MAX_BULLETS);
-  let fontSize = 22;
-  let layouts = [];
-  for (; fontSize >= 16; fontSize--) {
-    setFont(ctx, fontSize, '500');
-    const lineHeight = Math.ceil(fontSize * 1.18);
-    const gap = 8;
-    layouts = safeBullets.map(b => wrapText(ctx, `- ${b}`, content.w, 2));
-    const total = layouts.reduce((sum, lines) => sum + lines.length * lineHeight + gap, -gap);
-    if (total <= content.h) break;
-  }
-  setFont(ctx, fontSize, '500');
-  ctx.fillStyle = '#1e293b';
-  ctx.textBaseline = 'top';
-  const lineHeight = Math.ceil(fontSize * 1.18);
-  let y = content.y;
-  for (const lines of layouts) {
-    if (y + lineHeight > content.y + content.h) break;
-    for (const line of lines) {
-      if (y + lineHeight > content.y + content.h) break;
-      ctx.fillText(line, content.x, y);
-      y += lineHeight;
-    }
-    y += 8;
-  }
+  const safeBullets = bullets.slice(0, 2);
+  let x = content.x;
+  const y = content.y + 2;
+  safeBullets.forEach((item, i) => {
+    const label = compactText(item, 34);
+    setFont(ctx, 18, '700');
+    const w = Math.min(360, Math.max(132, ctx.measureText(label).width + 42));
+    fillRoundRect(ctx, x, y, w, 38, 19, i === 0 ? '#dbeafe' : '#dcfce7', i === 0 ? BLUE : '#16a34a', 2);
+    drawTextBox(ctx, label, { x: x + 18, y: y + 8, w: w - 36, h: 22 }, {
+      startPx: 17,
+      minPx: 12,
+      weight: '700',
+      maxLines: 1,
+      align: 'center',
+    });
+    x += w + 16;
+  });
 }
 
 function drawCallouts(ctx, callouts, region) {
@@ -385,30 +371,127 @@ function drawComparison(ctx, visual, bullets, region) {
   });
 }
 
+function parseHighlightLines(focus) {
+  if (!focus) return [];
+  if (Array.isArray(focus.highlightLines) && focus.highlightLines.length) {
+    return focus.highlightLines.map(Number).filter(Number.isFinite);
+  }
+  const match = String(focus.lineRange || '').match(/(\d+)\s*(?:-\s*(\d+))?/);
+  if (!match) return [];
+  const start = Number(match[1]);
+  const end = Number(match[2] || match[1]);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return [];
+  const lines = [];
+  for (let n = Math.min(start, end); n <= Math.max(start, end); n++) lines.push(n);
+  return lines;
+}
+
 function drawCode(ctx, slide, bullets, region) {
-  const codeLines = String(slide.example_code || bullets.join('\n'))
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(Boolean);
+  const focus = slide.code_focus || slide.codeFocus || null;
+  const rawLines = String(slide.example_code || (focus && focus.content) || bullets.join('\n'))
+    .split(/\r?\n/);
+  const codeLines = rawLines.map((line, i) => ({ number: i + 1, text: line.replace(/\t/g, '  ') })).filter(line => line.text.trim());
   const r = inset(region, 42);
   fillRoundRect(ctx, r.x, r.y, r.w, r.h, 14, '#111827', '#38bdf8', 2);
   const content = inset(r, 24);
-  const maxLines = Math.max(4, Math.floor(content.h / 30));
-  let fontSize = 21;
+  const explanationH = focus && focus.explanation ? 56 : 0;
+  const codeArea = { x: content.x, y: content.y, w: content.w, h: content.h - explanationH };
+  const highlights = parseHighlightLines(focus);
+  const maxLines = Math.max(5, Math.floor(codeArea.h / 28));
+  let visible = codeLines;
+  if (highlights.length && codeLines.length > maxLines) {
+    const first = Math.max(1, Math.min(...highlights) - 2);
+    const startIdx = Math.max(0, Math.min(first - 1, codeLines.length - maxLines));
+    visible = codeLines.slice(startIdx, startIdx + maxLines);
+  } else {
+    visible = codeLines.slice(0, maxLines);
+  }
+  let fontSize = 19;
   for (; fontSize >= 15; fontSize--) {
     setFont(ctx, fontSize, '500', 'Consolas, monospace');
-    if (codeLines.slice(0, maxLines).every(line => ctx.measureText(compactText(line, 90)).width <= content.w)) break;
+    if (visible.every(line => ctx.measureText(`${String(line.number).padStart(2, ' ')}  ${line.text}`).width <= codeArea.w)) break;
   }
   setFont(ctx, fontSize, '500', 'Consolas, monospace');
-  ctx.fillStyle = '#e0f2fe';
   ctx.textBaseline = 'top';
-  const lineHeight = Math.ceil(fontSize * 1.5);
-  codeLines.slice(0, maxLines).forEach((line, i) => {
-    ctx.fillText(ellipsizeToWidth(ctx, line, content.w), content.x, content.y + i * lineHeight);
+  const lineHeight = Math.ceil(fontSize * 1.45);
+  visible.forEach((line, i) => {
+    const y = codeArea.y + i * lineHeight;
+    const active = highlights.includes(line.number);
+    if (active) fillRoundRect(ctx, codeArea.x - 8, y - 4, codeArea.w + 16, lineHeight, 8, '#1e3a8a', '#38bdf8', 1);
+    ctx.fillStyle = active ? '#ffffff' : '#93c5fd';
+    ctx.fillText(String(line.number).padStart(2, ' '), codeArea.x, y);
+    ctx.fillStyle = active ? '#e0f2fe' : '#cbd5e1';
+    ctx.fillText(ellipsizeToWidth(ctx, line.text, codeArea.w - 48), codeArea.x + 44, y);
+  });
+  if (focus && focus.explanation) {
+    drawTextBox(ctx, focus.explanation, { x: content.x, y: content.y + content.h - explanationH + 6, w: content.w, h: explanationH - 8 }, {
+      color: '#dbeafe',
+      startPx: 18,
+      minPx: 13,
+      weight: '600',
+      maxLines: 2,
+    });
+  }
+}
+
+function drawUmlClassBox(ctx, name, detail, box, fill, stroke) {
+  fillRoundRect(ctx, box.x, box.y, box.w, box.h, 10, fill, stroke, 2);
+  const titleH = 36;
+  const fieldH = Math.max(30, Math.floor((box.h - titleH) * 0.46));
+  drawTextBox(ctx, name, { x: box.x + 10, y: box.y + 9, w: box.w - 20, h: 24 }, {
+    startPx: 18,
+    minPx: 13,
+    weight: '700',
+    align: 'center',
+    maxLines: 1,
+  });
+  drawLine(ctx, box.x, box.y + titleH, box.x + box.w, box.y + titleH, stroke, 2);
+  drawLine(ctx, box.x, box.y + titleH + fieldH, box.x + box.w, box.y + titleH + fieldH, stroke, 2);
+  const fields = (detail && detail.fields || []).slice(0, 2);
+  const methods = (detail && detail.methods || []).slice(0, 2);
+  setFont(ctx, 13, '500', 'Consolas, monospace');
+  ctx.fillStyle = INK;
+  ctx.textBaseline = 'top';
+  const fieldLines = fields.length ? fields : ['state'];
+  const methodLines = methods.length ? methods : ['behavior()'];
+  fieldLines.forEach((line, i) => {
+    ctx.fillText(ellipsizeToWidth(ctx, `- ${line}`, box.w - 22), box.x + 12, box.y + titleH + 9 + i * 18);
+  });
+  methodLines.forEach((line, i) => {
+    ctx.fillText(ellipsizeToWidth(ctx, `+ ${line}`, box.w - 22), box.x + 12, box.y + titleH + fieldH + 9 + i * 18);
   });
 }
 
 function drawClassDiagram(ctx, slide, visual, bullets, region) {
+  if (visual.edges && visual.edges.length && visual.nodes && visual.nodes.length >= 2) {
+    const r = inset(region, 24);
+    const nodeNames = visual.nodes.slice(0, 5);
+    const parentCandidates = visual.edges.map(e => e[1]);
+    const parent = parentCandidates.find(name => nodeNames.includes(name)) || nodeNames[0];
+    const children = nodeNames.filter(n => n !== parent).slice(0, 3);
+    const details = visual.details || {};
+    const parentBox = { x: r.x + r.w / 2 - 150, y: r.y + 8, w: 300, h: 118 };
+    drawUmlClassBox(ctx, parent, details[parent], parentBox, '#dbeafe', BLUE);
+    const childY = r.y + Math.min(234, r.h - 132);
+    const gap = 26;
+    const childW = Math.min(240, Math.floor((r.w - gap * Math.max(0, children.length - 1)) / Math.max(1, children.length)));
+    children.forEach((child, i) => {
+      const totalW = children.length * childW + (children.length - 1) * gap;
+      const x = r.x + r.w / 2 - totalW / 2 + i * (childW + gap);
+      const box = { x, y: childY, w: childW, h: 118 };
+      drawArrow(ctx, box.x + box.w / 2, box.y - 2, parentBox.x + parentBox.w / 2, parentBox.y + parentBox.h + 4, '#334155', 3);
+      drawUmlClassBox(ctx, child, details[child], box, '#dcfce7', '#16a34a');
+    });
+    const caption = visual.caption || 'extends means each child is a specialized kind of the parent';
+    drawTextBox(ctx, caption, { x: r.x, y: r.y + r.h - 34, w: r.w, h: 26 }, {
+      color: MUTED,
+      startPx: 18,
+      minPx: 13,
+      align: 'center',
+      maxLines: 1,
+    });
+    return;
+  }
   const r = inset(region, 18);
   const className = visual.nodes[0] || slide.title || 'ClassName';
   const fields = bullets.filter(b => /field|property|private|data|state|attribute/i.test(b)).slice(0, 3);
@@ -480,7 +563,10 @@ function drawTree(ctx, visual, region) {
 function drawStackQueue(ctx, slide, visual, region) {
   const text = getSlideText(slide);
   const isQueue = text.includes('queue') || text.includes('fifo');
-  const items = (visual.nodes.length ? visual.nodes : ['A', 'B', 'C', 'D']).slice(0, 6);
+  const rawItems = (visual.nodes.length ? visual.nodes : ['A', 'B', 'C', 'D'])
+    .filter(n => !/^(top|front|rear)$/i.test(String(n || '').trim()));
+  const items = rawItems.length ? rawItems.slice(0, 6) : ['A', 'B', 'C', 'D'];
+  const ops = cleanList(visual.operations, []);
   const r = inset(region, 52);
   if (!isQueue) {
     const boxW = Math.min(360, r.w * 0.45);
@@ -493,7 +579,7 @@ function drawStackQueue(ctx, slide, visual, region) {
     });
     drawArrow(ctx, x - 96, baseY - (items.length - 1) * (boxH + 6) + boxH / 2, x - 8, baseY - (items.length - 1) * (boxH + 6) + boxH / 2, '#ef4444', 3);
     drawTextBox(ctx, 'TOP', { x: x - 150, y: baseY - (items.length - 1) * (boxH + 6) + 8, w: 52, h: 24 }, { color: '#ef4444', startPx: 18, minPx: 14, weight: '700' });
-    drawTextBox(ctx, 'push / pop', { x, y: r.y + r.h - 24, w: boxW, h: 24 }, { color: MUTED, startPx: 18, minPx: 14, align: 'center', maxLines: 1 });
+    drawTextBox(ctx, ops.length ? ops.join(' / ') : 'push / pop / peek', { x, y: r.y + r.h - 24, w: boxW, h: 24 }, { color: MUTED, startPx: 18, minPx: 14, align: 'center', maxLines: 1 });
     return;
   }
   const gap = 12;
@@ -506,12 +592,14 @@ function drawStackQueue(ctx, slide, visual, region) {
     drawBox(ctx, item, { x, y, w: boxW, h: boxH }, ['#dbeafe', '#dcfce7', '#fef3c7'][i % 3], '#94a3b8', { align: 'center', maxLines: 1 });
     if (i < items.length - 1) drawArrow(ctx, x + boxW + 2, y + boxH / 2, x + boxW + gap - 4, y + boxH / 2);
   });
-  drawTextBox(ctx, 'dequeue', { x: startX, y: y - 42, w: 120, h: 24 }, { color: '#ef4444', startPx: 18, minPx: 13, weight: '700', maxLines: 1 });
-  drawTextBox(ctx, 'enqueue', { x: startX + (items.length - 1) * (boxW + gap) - 20, y: y + boxH + 18, w: 140, h: 24 }, { color: BLUE, startPx: 18, minPx: 13, weight: '700', maxLines: 1 });
+  drawTextBox(ctx, ops.find(o => /dequeue/i.test(o)) || 'dequeue', { x: startX, y: y - 42, w: 120, h: 24 }, { color: '#ef4444', startPx: 18, minPx: 13, weight: '700', maxLines: 1 });
+  drawTextBox(ctx, ops.find(o => /enqueue/i.test(o)) || 'enqueue', { x: startX + (items.length - 1) * (boxW + gap) - 20, y: y + boxH + 18, w: 140, h: 24 }, { color: BLUE, startPx: 18, minPx: 13, weight: '700', maxLines: 1 });
 }
 
 function drawLinkedList(ctx, visual, region) {
-  const nodes = (visual.nodes.length ? visual.nodes : ['data', 'data', 'data']).slice(0, 5);
+  const rawNodes = (visual.nodes.length ? visual.nodes : ['10', '20', '30'])
+    .filter(n => !/^(head|null)$/i.test(String(n || '').trim()));
+  const nodes = (rawNodes.length ? rawNodes : ['10', '20', '30']).slice(0, 5);
   const r = inset(region, 42);
   const gap = 28;
   const nodeW = Math.min(150, Math.floor((r.w - gap * (nodes.length + 1) - 84) / nodes.length));
@@ -530,6 +618,15 @@ function drawLinkedList(ctx, visual, region) {
     if (i < nodes.length - 1) drawArrow(ctx, x + nodeW + 2, y + nodeH / 2, x + nodeW + gap - 6, y + nodeH / 2);
     else drawTextBox(ctx, 'NULL', { x: x + nodeW + 16, y: y + 22, w: 64, h: 24 }, { color: '#ef4444', startPx: 18, minPx: 13, weight: '700', maxLines: 1 });
   });
+  if (visual.operations && visual.operations.length) {
+    drawTextBox(ctx, visual.operations.join(' -> '), { x: r.x, y: r.y + r.h - 28, w: r.w, h: 24 }, {
+      color: MUTED,
+      startPx: 17,
+      minPx: 12,
+      align: 'center',
+      maxLines: 1,
+    });
+  }
 }
 
 function drawBigOChart(ctx, slide, region) {
@@ -648,9 +745,8 @@ function svgBox(text, x, y, w, h, fill = '#dbeafe', stroke = '#94a3b8') {
 function renderSvg(slide) {
   const visualType = inferVisualType(slide);
   const layout = computeLayout(slide, W, H);
-  const bullets = cleanList(slide.bullets, ['Source-grounded concept', 'Tutor explanation']).map(b => compactText(b, 120)).slice(0, MAX_BULLETS);
+  const bullets = cleanList(slide.bullets, ['Source-grounded concept', 'Tutor explanation']).slice(0, 2);
   const visual = slideVisualData(slide, bullets);
-  const callouts = cleanList(slide.callouts, []).map(c => compactText(c, 120)).slice(0, 3);
   const bulletLines = bullets.map((b, i) => svgText(`- ${b}`, layout.bullets.x + 24, layout.bullets.y + 74 + i * 54, 19, '#1e293b', Math.floor((layout.bullets.w - 48) / 12), 2)).join('\n');
   const nodeBoxes = visual.nodes.slice(0, 8).map((node, i) => {
     const cols = layout.mode === 'diagram' ? 4 : 3;
@@ -660,10 +756,6 @@ function renderSvg(slide) {
     const y = layout.visual.y + 74 + Math.floor(i / cols) * 88;
     return svgBox(node, x, y, bw, bh, ['#dbeafe', '#dcfce7', '#fef3c7', '#fce7f3'][i % 4]);
   }).join('\n');
-  const calloutBoxes = callouts.map((c, i) => {
-    const w = Math.floor((layout.callouts.w - 44 - Math.max(0, callouts.length - 1) * 12) / Math.max(1, callouts.length));
-    return svgBox(c, layout.callouts.x + 22 + i * (w + 12), layout.callouts.y + 42, w, 42, '#fef9c3', '#f59e0b');
-  }).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
   <rect width="100%" height="100%" fill="#f8fafc"/>
@@ -672,16 +764,125 @@ function renderSvg(slide) {
   ${svgText(slide.title || 'Tutor explanation', 64, 82, 29, '#ffffff', 48, 1, '700')}
   <rect x="${layout.bullets.x}" y="${layout.bullets.y}" width="${layout.bullets.w}" height="${layout.bullets.h}" rx="14" fill="${CARD}" stroke="${LINE}" stroke-width="2"/>
   <rect x="${layout.visual.x}" y="${layout.visual.y}" width="${layout.visual.w}" height="${layout.visual.h}" rx="14" fill="${CARD}" stroke="${LINE}" stroke-width="2"/>
-  <rect x="${layout.callouts.x}" y="${layout.callouts.y}" width="${layout.callouts.w}" height="${layout.callouts.h}" rx="14" fill="${CARD}" stroke="${LINE}" stroke-width="2"/>
-  <text x="${layout.bullets.x + 22}" y="${layout.bullets.y + 24}" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" fill="${BLUE}">KEY POINTS</text>
+  <text x="${layout.bullets.x + 22}" y="${layout.bullets.y + 24}" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" fill="${BLUE}">FOCUS</text>
   <text x="${layout.visual.x + 22}" y="${layout.visual.y + 24}" font-family="Inter, Arial, sans-serif" font-size="16" font-weight="700" fill="${BLUE}">${escapeXml(visualType.replace(/_/g, ' ').toUpperCase())}</text>
   ${bulletLines}
   ${nodeBoxes}
-  ${calloutBoxes}
 </svg>`;
 }
 
-async function renderWithCanvas(slide, outPath) {
+function drawPointer(ctx, from, to, label, progress = 1) {
+  const eased = 0.5 - Math.cos(Math.max(0, Math.min(1, progress)) * Math.PI) / 2;
+  const tip = {
+    x: from.x + (to.x - from.x) * eased,
+    y: from.y + (to.y - from.y) * eased,
+  };
+  drawArrow(ctx, from.x, from.y, tip.x, tip.y, '#ef4444', 5);
+  ctx.beginPath();
+  ctx.arc(tip.x, tip.y, 14 + Math.sin(progress * Math.PI * 2) * 3, 0, Math.PI * 2);
+  ctx.strokeStyle = '#ef4444';
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  if (label) {
+    fillRoundRect(ctx, from.x - 8, from.y - 42, Math.min(220, Math.max(88, label.length * 9 + 28)), 32, 16, '#fee2e2', '#ef4444', 2);
+    drawTextBox(ctx, label, { x: from.x + 8, y: from.y - 35, w: 190, h: 24 }, {
+      color: '#991b1b',
+      startPx: 15,
+      minPx: 11,
+      weight: '700',
+      maxLines: 1,
+    });
+  }
+}
+
+function drawFocusRing(ctx, region, color = '#ef4444', progress = 1) {
+  const pulse = Math.sin(progress * Math.PI * 2);
+  const pad = 8 + pulse * 3;
+  roundRect(ctx, region.x - pad, region.y - pad, region.w + pad * 2, region.h + pad * 2, 16);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4;
+  ctx.stroke();
+}
+
+function drawMovingBadge(ctx, text, x, y, color = '#ef4444') {
+  const label = compactText(text, 28);
+  setFont(ctx, 16, '700');
+  const w = Math.min(220, Math.max(86, ctx.measureText(label).width + 28));
+  fillRoundRect(ctx, x, y, w, 34, 17, '#ffffff', color, 3);
+  drawTextBox(ctx, label, { x: x + 12, y: y + 8, w: w - 24, h: 18 }, {
+    color,
+    startPx: 15,
+    minPx: 11,
+    weight: '700',
+    maxLines: 1,
+    align: 'center',
+  });
+}
+
+function drawAnimationOverlay(ctx, slide, layout, visual, progress = 1) {
+  const type = visual.type;
+  const label = slide.pointerLabel || slide.focusTarget || slide.title || '';
+  const phase = Math.max(0, Math.min(1, progress));
+  const pulse = 0.5 - Math.cos(phase * Math.PI * 2) / 2;
+  if (type === 'code') {
+    const r = layout.visual;
+    const focus = slide.code_focus || slide.codeFocus || {};
+    const line = Array.isArray(focus.highlightLines) && focus.highlightLines.length ? Math.min(...focus.highlightLines) : 1;
+    const y = r.y + 118 + Math.min(7, Math.max(0, line - 1)) * 31;
+    drawPointer(ctx, { x: r.x + r.w - 116, y: r.y + 76 }, { x: r.x + 188, y }, slide.pointerLabel || 'active line', phase);
+    return drawFocusRing(ctx, { x: r.x + 132, y: y - 14, w: r.w - 260, h: 36 }, '#38bdf8', phase);
+  }
+  if (type === 'class_diagram') {
+    const r = layout.visual;
+    const lower = getSlideText(slide);
+    const isPoly = lower.includes('polymorphism') || lower.includes('dispatch') || lower.includes('runtime');
+    const parent = { x: r.x + r.w / 2 - 150, y: r.y + 74, w: 300, h: 118 };
+    const leftChild = { x: r.x + r.w / 2 - 280, y: r.y + 300, w: 240, h: 118 };
+    const rightChild = { x: r.x + r.w / 2 + 40, y: r.y + 300, w: 240, h: 118 };
+    if (phase < 0.34) {
+      drawFocusRing(ctx, parent, '#2563eb', phase);
+      return drawMovingBadge(ctx, isPoly ? 'Shape ref' : 'Parent class', parent.x + parent.w + 18, parent.y + 8, '#2563eb');
+    }
+    if (phase < 0.67) {
+      drawPointer(ctx, { x: parent.x + parent.w / 2, y: parent.y + parent.h + 4 }, { x: leftChild.x + leftChild.w / 2, y: leftChild.y - 4 }, isPoly ? 'Circle.area()' : 'extends', pulse);
+      return drawFocusRing(ctx, leftChild, '#16a34a', phase);
+    }
+    drawPointer(ctx, { x: parent.x + parent.w / 2, y: parent.y + parent.h + 4 }, { x: rightChild.x + rightChild.w / 2, y: rightChild.y - 4 }, isPoly ? 'Rectangle.area()' : 'extends', pulse);
+    return drawFocusRing(ctx, rightChild, '#16a34a', phase);
+  }
+  if (type === 'linkedlist') {
+    const r = layout.visual;
+    const steps = [
+      { label: 'head', x: r.x + 150 },
+      { label: 'node', x: r.x + 340 },
+      { label: 'next', x: r.x + 540 },
+      { label: 'null', x: r.x + Math.min(r.w - 110, 820) },
+    ];
+    const idx = Math.min(steps.length - 1, Math.floor(phase * steps.length));
+    const current = steps[idx];
+    const next = steps[Math.min(steps.length - 1, idx + 1)];
+    const y = r.y + r.h / 2 + 18;
+    drawPointer(ctx, { x: current.x, y: r.y + 72 }, { x: current.x + (next.x - current.x) * pulse, y }, current.label, phase);
+    return drawMovingBadge(ctx, current.label, current.x - 40, y + 42, '#16a34a');
+  }
+  if (type === 'stack_queue') {
+    const r = layout.visual;
+    const isQueue = getSlideText(slide).includes('queue') || getSlideText(slide).includes('fifo');
+    if (isQueue) {
+      const x = r.x + r.w - 250 - pulse * 180;
+      drawBox(ctx, 'new', { x, y: r.y + r.h / 2 - 42, w: 86, h: 54 }, '#fee2e2', '#ef4444', { align: 'center', maxLines: 1 });
+      return drawPointer(ctx, { x: r.x + r.w - 94, y: r.y + r.h - 38 }, { x, y: r.y + r.h / 2 - 14 }, 'enqueue', phase);
+    }
+    const x = r.x + r.w / 2 - 44;
+    const y = r.y + 72 + pulse * 92;
+    drawBox(ctx, 'item', { x, y, w: 88, h: 50 }, '#fee2e2', '#ef4444', { align: 'center', maxLines: 1 });
+    return drawPointer(ctx, { x: r.x + 150, y: r.y + 82 }, { x, y: y + 24 }, slide.pointerLabel || 'push/pop', phase);
+  }
+  const r = layout.visual;
+  return drawPointer(ctx, { x: r.x + r.w - 90, y: r.y + 82 }, { x: r.x + r.w / 2, y: r.y + r.h / 2 }, label, pulse);
+}
+
+async function renderWithCanvas(slide, outPath, options = {}) {
   const c = loadCanvas();
   if (!c) return false;
   const { createCanvas } = c;
@@ -689,8 +890,7 @@ async function renderWithCanvas(slide, outPath) {
   const ctx = canvas.getContext('2d');
   const visualType = inferVisualType(slide);
   const layout = computeLayout(slide, W, H);
-  const bullets = cleanList(slide.bullets, ['Source-grounded concept', 'Tutor explanation']).map(b => compactText(b, 140)).slice(0, MAX_BULLETS);
-  const callouts = cleanList(slide.callouts, []).map(c => compactText(c, 120)).slice(0, 3);
+  const bullets = cleanList(slide.bullets, ['Tutor focus']).slice(0, 2);
   const visual = slideVisualData({ ...slide, visual_type: visualType }, bullets);
 
   ctx.fillStyle = '#f8fafc';
@@ -698,7 +898,9 @@ async function renderWithCanvas(slide, outPath) {
   drawHeader(ctx, slide, layout);
   drawBullets(ctx, bullets, layout.bullets);
   drawVisual(ctx, slide, visual, bullets, layout.visual);
-  drawCallouts(ctx, callouts, layout.callouts);
+  if (options.animationProgress != null) {
+    drawAnimationOverlay(ctx, slide, layout, visual, options.animationProgress);
+  }
 
   fs.writeFileSync(outPath, canvas.toBuffer('image/png'));
   return true;
@@ -713,8 +915,24 @@ async function renderSlide(slide, outPath) {
   return svgPath;
 }
 
+async function renderAnimatedFrames(slide, outDir, frameCount = 24, prefix = 'frame', options = {}) {
+  fs.mkdirSync(outDir, { recursive: true });
+  const frames = [];
+  const count = Math.max(2, Math.min(240, Number(frameCount) || 24));
+  const loopFrames = Math.max(6, Math.min(48, Number(options.loopFrames) || 18));
+  for (let i = 0; i < count; i++) {
+    const outPath = path.join(outDir, `${prefix}_${String(i).padStart(4, '0')}.png`);
+    const progress = (i % loopFrames) / Math.max(1, loopFrames - 1);
+    const ok = await renderWithCanvas(slide, outPath, { animationProgress: progress });
+    if (!ok) return [];
+    frames.push(outPath);
+  }
+  return frames;
+}
+
 module.exports = {
   renderSlide,
+  renderAnimatedFrames,
   computeLayout,
   W,
   H,
@@ -724,5 +942,7 @@ module.exports = {
     fitFontSize,
     drawTextBox,
     compactText,
+    loadCanvas,
+    drawAnimationOverlay,
   },
 };

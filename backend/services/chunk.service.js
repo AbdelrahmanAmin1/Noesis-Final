@@ -72,6 +72,40 @@ function detectHeading(text) {
   return '';
 }
 
+function slideMeta(text, chapterTitle = '') {
+  const source = `${chapterTitle || ''}\n${text || ''}`;
+  const m = source.match(/\bSlide\s+(\d+)\b/i);
+  const slide_number = m ? parseInt(m[1], 10) : null;
+  let slide_title = '';
+  const lines = String(source || '').split('\n').map(l => l.trim()).filter(Boolean);
+  for (let i = 0; i < lines.length; i++) {
+    if (/^Slide\s+\d+\b/i.test(lines[i])) {
+      const stripped = lines[i].replace(/^Slide\s+\d+\s*[:.-]?\s*/i, '').trim();
+      if (stripped && stripped.length < 100) {
+        slide_title = stripped;
+        break;
+      }
+      const next = lines.slice(i + 1).find(l => l.length > 0 && l.length < 100);
+      if (next) slide_title = next;
+      break;
+    }
+  }
+  return { slide_number, slide_title };
+}
+
+function keywords(text, max = 12) {
+  const stop = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'from', 'into', 'are', 'you', 'your', 'class', 'void', 'public']);
+  const counts = new Map();
+  for (const token of String(text || '').toLowerCase().match(/[a-z][a-z0-9+-]{2,}/g) || []) {
+    if (stop.has(token)) continue;
+    counts.set(token, (counts.get(token) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, max)
+    .map(([k]) => k);
+}
+
 function hasCode(text) {
   if (/```[\s\S]*?```/.test(text)) return true;
   const codePatterns = /\b(?:class\s+\w+|void\s+\w+|public\s+(?:static|class|void|int|String)|private\s+|def\s+\w+|function\s+\w+|import\s+\w+|#include|return\s+\w+)\b/;
@@ -84,16 +118,23 @@ function chunkByChapter(text, chapters) {
     const slice = text.slice(ch.char_start, ch.char_end);
     const cs = chunkText(slice);
     for (const c of cs) {
+      const heading = detectHeading(c.text);
+      const meta = slideMeta(c.text, ch.title || '');
       all.push({
         ...c,
         chapter_idx: ch.idx,
         chapter_title: ch.title || '',
-        heading: detectHeading(c.text),
+        heading,
+        section_title: heading || ch.title || '',
+        slide_number: meta.slide_number,
+        slide_title: meta.slide_title,
         has_code: hasCode(c.text),
+        keywords: keywords(c.text),
+        keywords_json: JSON.stringify(keywords(c.text)),
       });
     }
   }
   return all.map((c, i) => ({ ...c, idx: i }));
 }
 
-module.exports = { chunkText, chunkByChapter, estimateTokens, detectHeading, hasCode };
+module.exports = { chunkText, chunkByChapter, estimateTokens, detectHeading, hasCode, slideMeta, keywords };

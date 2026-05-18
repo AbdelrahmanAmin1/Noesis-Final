@@ -1,0 +1,31 @@
+{
+  "topic": "Polymorphism",
+  "aliases": ["Dynamic dispatch", "Runtime binding", "Method overriding"],
+  "definition": "Polymorphism means one interface or superclass reference can refer to different subclass objects, and the method implementation runs according to the runtime object.",
+  "deepExplanation": "The reference type controls which methods are legal to call. The actual object type controls which overridden method body runs. This lets client code depend on a stable general type while new subclasses provide new behavior.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "Same call, different behavior",
+      "code": "Shape shape = new Circle(2);\nSystem.out.println(shape.area());\n\nshape = new Rectangle(3, 4);\nSystem.out.println(shape.area());"
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "flow",
+      "nodes": ["Shape reference", "Circle object", "shape.area()", "Circle.area()", "Rectangle object", "Rectangle.area()"],
+      "edges": [["Shape reference", "Circle object"], ["shape.area()", "Circle.area()"], ["Shape reference", "Rectangle object"], ["shape.area()", "Rectangle.area()"]],
+      "caption": "The call expression is the same, but the runtime object selects the method body."
+    }
+  ],
+  "commonMistakes": [
+    "Confusing overriding with overloading.",
+    "Expecting static methods to dispatch dynamically.",
+    "Trying to override final methods."
+  ],
+  "complexity": {},
+  "practiceQuestions": [
+    "If Shape s = new Rectangle(3, 4), which area method runs?"
+  ],
+  "visualTemplates": ["flow", "comparison", "uml_class"]
+}

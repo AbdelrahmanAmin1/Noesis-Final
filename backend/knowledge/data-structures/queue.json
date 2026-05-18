@@ -1,0 +1,39 @@
+{
+  "topic": "Queue",
+  "aliases": ["FIFO", "enqueue", "dequeue", "front", "rear"],
+  "definition": "A queue is a First-In, First-Out data structure where items are added at the rear and removed from the front.",
+  "deepExplanation": "A queue models waiting order. The first item that enters should be the first item that leaves, so enqueue changes the rear pointer and dequeue changes the front pointer. In an array-based queue, circular indexing prevents wasted space. In a linked queue, front and rear references keep both operations constant time.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "Linked queue",
+      "code": "class Queue {\n  private static class Node {\n    int value;\n    Node next;\n    Node(int value) { this.value = value; }\n  }\n\n  private Node front, rear;\n\n  void enqueue(int value) {\n    Node node = new Node(value);\n    if (rear != null) rear.next = node;\n    rear = node;\n    if (front == null) front = rear;\n  }\n\n  int dequeue() {\n    if (front == null) throw new IllegalStateException(\"underflow\");\n    int value = front.value;\n    front = front.next;\n    if (front == null) rear = null;\n    return value;\n  }\n}"
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "queue",
+      "nodes": ["front", "A", "B", "C", "rear"],
+      "edges": [["front", "A"], ["A", "B"], ["B", "C"], ["C", "rear"]],
+      "operations": ["enqueue at rear", "dequeue from front", "peek front"],
+      "caption": "The oldest item leaves first; new items join at the rear."
+    }
+  ],
+  "commonMistakes": [
+    "Confusing FIFO queues with LIFO stacks.",
+    "Forgetting to update rear when the last item is dequeued.",
+    "Using an array queue without circular indexing and wasting unused slots."
+  ],
+  "complexity": {
+    "enqueue": "O(1)",
+    "dequeue": "O(1)",
+    "peek": "O(1)",
+    "search": "O(n)",
+    "space": "O(n)"
+  },
+  "practiceQuestions": [
+    "Enqueue A, then B, then C. What does the first dequeue return?",
+    "Why does a linked queue usually keep both front and rear references?"
+  ],
+  "visualTemplates": ["queue", "operation_sequence", "complexity_table"]
+}

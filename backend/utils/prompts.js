@@ -53,6 +53,38 @@ Rules:
 - Do not include raw chunk IDs in the output — they are for your reference only.
 - Output ONLY the markdown body. No preamble.`;
 
+const LESSON_GENERATE_FALLBACK = `{{SYSTEM_BASE}}
+
+Task: Generate one structured EducationalLesson JSON object for "{{TOPIC}}".
+
+Audience: beginner CS student.
+Lesson type: {{LESSON_TYPE}}
+Grounding: {{GROUNDING_STATUS}}
+
+Use source excerpts for course-specific facts. Use curated local knowledge for deep explanation, code, diagrams, mistakes, and complexity. Do not merely summarize the source.
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Curated local knowledge:
+{{CURATED_KNOWLEDGE}}
+
+Return ONLY valid JSON:
+{"topic":"{{TOPIC}}","audienceLevel":"beginner","lessonType":"oop|data_structure|algorithm|general","sourceMaterial":{"title":"{{TITLE}}","grounding":"{{GROUNDING_STATUS}}","selectedChunkIds":[]},"learningObjectives":["..."],"prerequisites":["..."],"sections":[{"type":"hook|definition|deep_explanation|analogy|code_example|code_walkthrough|diagram|mindmap|common_mistakes|complexity|checkpoint|recap|next_steps","title":"...","content":"...","cards":[{"title":"...","text":"..."}],"code":{"language":"java","content":"...","explanation":[{"lineRange":"1-3","text":"..."}]},"diagram":{"type":"uml_class|inheritance_tree|linked_list|stack|queue|tree|big_o_chart|mindmap|flow","nodes":[],"edges":[],"operations":[],"caption":""},"callouts":[{"type":"remember|exam_tip|warning|source","text":"...","sourceChunkIds":[]}],"quiz":[{"question":"...","options":["..."],"answer":"...","explanation":"..."}]}],"relatedTopics":["..."]}
+
+Required:
+- Include hook, definition, deep_explanation, diagram, code_example, code_walkthrough, common_mistakes, checkpoint, recap, and next_steps sections.
+- Include real runnable code for OOP/Data Structures/Algorithms.
+- Include line-by-line code explanation.
+- Include semantic diagram nodes and edges.
+- Do not output raw markdown notes. JSON only.
+- Do not show [chunk:ID] in visible content; put ids in sourceChunkIds.
+- Never use placeholder phrases such as "Trace an example", "Define the idea", "Apply main rule", "Code sketch", or "Avoid mistakes".
+- Inheritance must include Shape, Circle, Rectangle, extends, overriding, UML inheritance arrow, and composition warning.
+- Polymorphism must include superclass reference, subclass object, dynamic dispatch, overriding vs overloading, and static/final warning.
+- Linked List must include node, head, next, traversal, insertion, deletion, memory-style diagram, and complexity.
+- Stack must include LIFO, push, pop, peek, vertical stack diagram, underflow, and use cases.`;
+
 const FLASHCARDS_FALLBACK = `{{SYSTEM_BASE}}
 
 Task: Generate {{COUNT}} high-quality flashcards from the source excerpts. Prefer atomic facts, definitions, and contrasts. Avoid trivia.
@@ -79,14 +111,13 @@ const TUTOR_PLAN_FALLBACK = `{{SYSTEM_BASE}}
 
 Build a 5-step Socratic-style learning plan for the concept: "{{CONCEPT}}". Mode: {{MODE}}. The 5 steps should follow: (1) Warm-up, (2) Intuition, (3) The trick / core idea, (4) Formalize, (5) Apply.
 
-For each step, provide a short title (1-3 words) and a concise probing question OR explanation (depending on mode). Ground each question and explanation in the source excerpts, and cite relevant chunk ids inside explanations as [chunk:ID].
+For each step, provide real teaching content. Ground each step in the source excerpts, but do not put raw chunk ids in learner-facing text. No placeholders, ellipses, or generic chapter/document wording.
 
 Source excerpts:
 {{SOURCE_EXCERPTS}}
 
 Output STRICT JSON only:
-{"steps":[{"t":"Warm-up","q":"...","options":["A","B","C","D"],"correct_idx":1,"explanation":"..."}]}
-Each step MUST include 4 options and a correct_idx with explanation.`;
+{"steps":[{"id":"warmup","label":"Warm-up","title":"Same call, different object","content":"A clear 2-4 sentence explanation.","question":"One Socratic check question.","hint":"One helpful hint.","example":"A concrete example.","visual":{"type":"mindmap","nodes":[],"edges":[]},"code":null,"sourceRefs":[]}]}`;
 
 const TUTOR_FEEDBACK_FALLBACK = `{{SYSTEM_BASE}}
 
@@ -294,6 +325,19 @@ const NOTES_SUMMARY = (chunks, title, opts = {}) => {
   });
 };
 
+const LESSON_GENERATE = (chunks, title, opts = {}) => {
+  const tier = opts.groundingTier || 'moderate';
+  return renderTemplate('lesson-generate.txt', LESSON_GENERATE_FALLBACK, {
+    SYSTEM_BASE,
+    TITLE: title,
+    TOPIC: opts.topic || title,
+    LESSON_TYPE: opts.lessonType || 'general',
+    GROUNDING_STATUS: tier,
+    SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 950, maxTotalChars: 6200 }),
+    CURATED_KNOWLEDGE: opts.curatedKnowledge || '(No curated local knowledge provided.)',
+  });
+};
+
 const FLASHCARDS = (chunks, count) => renderTemplate('flashcards.txt', FLASHCARDS_FALLBACK, {
   SYSTEM_BASE,
   COUNT: count,
@@ -374,6 +418,7 @@ OUTPUT:`;
 module.exports = {
   SYSTEM_BASE,
   NOTES_SUMMARY,
+  LESSON_GENERATE,
   FLASHCARDS,
   QUIZ_MCQ,
   TUTOR_PLAN,

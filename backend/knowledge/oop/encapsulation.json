@@ -1,0 +1,34 @@
+{
+  "topic": "Encapsulation",
+  "aliases": ["data hiding", "private fields", "getters", "setters", "class invariant"],
+  "definition": "Encapsulation bundles data with the methods that protect and operate on it, usually by keeping fields private and exposing controlled public behavior.",
+  "deepExplanation": "Encapsulation is about control, not secrecy for its own sake. A class owns its state and decides which operations are safe. Private fields prevent outside code from putting the object into an invalid state. Public methods become the small doorway where validation, invariants, and meaningful behavior live.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "Bank account invariant",
+      "code": "class BankAccount {\n  private double balance;\n\n  BankAccount(double openingBalance) {\n    if (openingBalance < 0) throw new IllegalArgumentException();\n    balance = openingBalance;\n  }\n\n  void deposit(double amount) {\n    if (amount <= 0) throw new IllegalArgumentException();\n    balance += amount;\n  }\n\n  double getBalance() { return balance; }\n}"
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "uml_class",
+      "nodes": [
+        { "id": "BankAccount", "label": "BankAccount", "fields": ["balance: double"], "methods": ["deposit(amount)", "getBalance()"] }
+      ],
+      "edges": [],
+      "caption": "Private state stays inside; public methods guard valid changes."
+    }
+  ],
+  "commonMistakes": [
+    "Making every field public and losing control over valid state.",
+    "Writing setters that blindly assign values without validation.",
+    "Thinking encapsulation means adding getters and setters for everything."
+  ],
+  "complexity": {},
+  "practiceQuestions": [
+    "Why should balance be private in a BankAccount class?",
+    "What invariant should deposit protect?"
+  ],
+  "visualTemplates": ["uml_class", "comparison", "invariant_card"]
+}

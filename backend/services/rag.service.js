@@ -52,7 +52,7 @@ function keywordScore(rows, query) {
 }
 
 function titleBoost(row, queryTerms) {
-  const title = (row.chapter_title || '').toLowerCase();
+  const title = `${row.chapter_title || ''} ${row.slide_title || ''} ${row.section_title || ''}`.toLowerCase();
   const heading = (row.heading || '').toLowerCase();
   if (!title && !heading) return 0;
   let boost = 0;
@@ -62,6 +62,38 @@ function titleBoost(row, queryTerms) {
     if (heading.includes(term)) boost += 0.08;
   }
   return Math.min(boost, 0.20);
+}
+
+function siblingPenalty(row, query) {
+  const lowerQuery = String(query || '').toLowerCase();
+  const text = `${row.chapter_title || ''} ${row.heading || ''} ${row.slide_title || ''} ${row.text || ''}`.toLowerCase();
+  const siblings = {
+    inheritance: ['polymorphism', 'dynamic dispatch', 'overloading'],
+    polymorphism: ['encapsulation', 'composition'],
+    encapsulation: ['inheritance', 'polymorphism'],
+    'linked list': ['stack', 'queue', 'tree'],
+    stack: ['queue', 'linked list'],
+    queue: ['stack', 'linked list'],
+  };
+  for (const [topic, negatives] of Object.entries(siblings)) {
+    if (!lowerQuery.includes(topic)) continue;
+    let penalty = 0;
+    for (const term of negatives) if (text.includes(term)) penalty += 0.08;
+    return Math.min(penalty, 0.24);
+  }
+  return 0;
+}
+
+function exactTopicBoost(row, query) {
+  const q = String(query || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!q) return 0;
+  const hay = `${row.chapter_title || ''} ${row.heading || ''} ${row.slide_title || ''} ${row.section_title || ''} ${row.keywords_json || ''}`.toLowerCase();
+  let boost = 0;
+  if (hay.includes(q)) boost += 0.20;
+  for (const part of q.split(/\W+/).filter(t => t.length > 2)) {
+    if (hay.includes(part)) boost += 0.03;
+  }
+  return Math.min(boost, 0.30);
 }
 
 const FEATURE_K = {
@@ -88,12 +120,14 @@ async function retrieveWithMeta(materialId, query, kOrOpts = 6, minScore = 0.05)
   let rows;
   if (materialId === 'system') {
     rows = db.prepare(`SELECT c.id, c.idx, c.text, c.embedding, c.chapter_id,
-                              c.source_page, c.chapter_title, c.heading
+                              c.source_page, c.chapter_title, c.heading,
+                              c.slide_number, c.slide_title, c.section_title, c.has_code, c.keywords_json
                        FROM chunks c JOIN materials m ON m.id = c.material_id
                        WHERE m.user_id = 0`).all();
   } else {
     rows = db.prepare(`SELECT id, idx, text, embedding, chapter_id,
-                              source_page, chapter_title, heading
+                              source_page, chapter_title, heading,
+                              slide_number, slide_title, section_title, has_code, keywords_json
                        FROM chunks WHERE material_id=?`).all(materialId);
   }
   if (rows.length === 0) return { chunks: [], maxScore: 0, meanScore: 0 };
@@ -109,8 +143,8 @@ async function retrieveWithMeta(materialId, query, kOrOpts = 6, minScore = 0.05)
   if (qv && hasEmbeddings) {
     scored = rows.map(r => {
       const base = cosine(qv, bufToFloat32(r.embedding));
-      const boost = titleBoost(r, queryTerms);
-      return { ...r, score: base + boost };
+      const boost = titleBoost(r, queryTerms) + exactTopicBoost(r, query);
+      return { ...r, score: base + boost - siblingPenalty(r, query) };
     });
     const embeddingMinScore = minScore;
     if (!scored.some(s => s.score >= embeddingMinScore)) {
@@ -133,6 +167,29 @@ async function retrieveWithMeta(materialId, query, kOrOpts = 6, minScore = 0.05)
   return { chunks, maxScore, meanScore };
 }
 
+async function retrieveLessonContext(materialId, query, opts = {}) {
+  const k = opts.k || FEATURE_K[opts.feature || 'notes'] || FEATURE_K.notes;
+  const source = await retrieveWithMeta(materialId, query, { ...opts, k, minScore: opts.minScore ?? 0.08 });
+  let system = { chunks: [], maxScore: 0, meanScore: 0 };
+  try {
+    system = await retrieveWithMeta('system', query, { ...opts, k: Math.max(3, Math.ceil(k / 2)), minScore: 0.03 });
+  } catch (_) {}
+  const merged = [
+    ...(source.chunks || []).map(c => ({ ...c, corpus: 'uploaded' })),
+    ...(system.chunks || []).map(c => ({ ...c, corpus: 'system' })),
+  ]
+    .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+    .slice(0, opts.maxMerged || (k + 4));
+  const scores = merged.map(c => Number(c.score) || 0);
+  return {
+    chunks: merged,
+    uploaded: source,
+    system,
+    maxScore: scores.length ? Math.max(...scores) : 0,
+    meanScore: scores.length ? scores.reduce((s, n) => s + n, 0) / scores.length : 0,
+  };
+}
+
 function groundingTier(result) {
   const { chunks, maxScore } = result;
   const count = (chunks || []).length;
@@ -146,4 +203,4 @@ async function retrieve(materialId, query, kOrOpts = 6, minScore = 0.05) {
   return result.chunks;
 }
 
-module.exports = { embedAndStore, retrieve, retrieveWithMeta, groundingTier, cosine, float32ToBuf, bufToFloat32, FEATURE_K };
+module.exports = { embedAndStore, retrieve, retrieveWithMeta, retrieveLessonContext, groundingTier, cosine, float32ToBuf, bufToFloat32, FEATURE_K };

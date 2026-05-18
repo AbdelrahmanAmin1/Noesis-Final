@@ -1,0 +1,36 @@
+{
+  "topic": "Abstraction",
+  "aliases": ["abstract class", "interface", "essential behavior", "implementation hiding"],
+  "definition": "Abstraction focuses on what an object can do while hiding unnecessary implementation details.",
+  "deepExplanation": "Abstraction lets code depend on a promise instead of a concrete implementation. An interface says which behavior exists, while each class decides how to perform it. This reduces coupling because the caller can use the operation without knowing the internal fields or algorithm.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "Payment abstraction",
+      "code": "interface PaymentMethod {\n  boolean pay(double amount);\n}\n\nclass CreditCardPayment implements PaymentMethod {\n  public boolean pay(double amount) {\n    return amount > 0;\n  }\n}\n\nclass Checkout {\n  void complete(PaymentMethod method, double total) {\n    if (!method.pay(total)) throw new IllegalStateException(\"payment failed\");\n  }\n}"
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "uml_class",
+      "nodes": [
+        { "id": "PaymentMethod", "label": "PaymentMethod", "kind": "interface", "fields": [], "methods": ["pay(amount)"] },
+        { "id": "CreditCardPayment", "label": "CreditCardPayment", "fields": [], "methods": ["pay(amount)"] },
+        { "id": "Checkout", "label": "Checkout", "fields": [], "methods": ["complete(method,total)"] }
+      ],
+      "edges": [["CreditCardPayment", "PaymentMethod", "implements"], ["Checkout", "PaymentMethod", "uses"]],
+      "caption": "Checkout depends on the PaymentMethod abstraction instead of a specific payment class."
+    }
+  ],
+  "commonMistakes": [
+    "Confusing abstraction with inheritance; abstraction is about the public promise.",
+    "Exposing implementation details through the interface.",
+    "Creating abstractions before there is a real variation to hide."
+  ],
+  "complexity": {},
+  "practiceQuestions": [
+    "Why should Checkout accept PaymentMethod instead of CreditCardPayment?",
+    "What detail does the PaymentMethod interface hide?"
+  ],
+  "visualTemplates": ["uml_class", "interface_comparison", "dependency_diagram"]
+}

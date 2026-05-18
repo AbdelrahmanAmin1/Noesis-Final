@@ -1,0 +1,37 @@
+{
+  "topic": "Stack",
+  "aliases": ["LIFO", "push", "pop", "peek", "call stack"],
+  "definition": "A stack is a Last-In, First-Out data structure where insertion and removal happen at the top.",
+  "deepExplanation": "A stack models nested or reversible work. push adds a new top item, pop removes the current top item, and peek reads the current top without removing it. Empty-stack operations must be handled to avoid underflow.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "Integer stack",
+      "code": "class IntStack {\n  private final java.util.ArrayList<Integer> data = new java.util.ArrayList<>();\n  void push(int value) { data.add(value); }\n  int peek() { return data.get(data.size() - 1); }\n  int pop() {\n    if (data.isEmpty()) throw new IllegalStateException(\"underflow\");\n    return data.remove(data.size() - 1);\n  }\n}"
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "stack",
+      "nodes": ["top: C", "B", "A", "bottom"],
+      "edges": [["push(D)", "top"], ["pop()", "C"]],
+      "caption": "After pushing A, B, C, the next pop returns C."
+    }
+  ],
+  "commonMistakes": [
+    "Confusing LIFO with FIFO.",
+    "Popping from an empty stack without handling underflow.",
+    "Removing from the bottom instead of the top."
+  ],
+  "complexity": {
+    "push": "O(1)",
+    "pop": "O(1)",
+    "peek": "O(1)",
+    "search": "O(n)",
+    "space": "O(n)"
+  },
+  "practiceQuestions": [
+    "Push A, then B, then C. What does pop return?"
+  ],
+  "visualTemplates": ["stack", "operation_sequence", "complexity_table"]
+}

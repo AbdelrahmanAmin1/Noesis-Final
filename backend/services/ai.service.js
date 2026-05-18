@@ -21,6 +21,8 @@ function getProvider(name) {
 function getProviderFor(feature) {
   if (feature === 'video_script') return env.VIDEO_SCRIPT_PROVIDER || 'ollama';
   if (feature === 'notes') return env.NOTES_PROVIDER || env.AI_PROVIDER;
+  if (feature === 'summary') return env.SUMMARY_PROVIDER || env.NOTES_PROVIDER || env.AI_PROVIDER;
+  if (feature === 'tutor') return env.TUTOR_PROVIDER || env.AI_PROVIDER;
   return env.AI_PROVIDER;
 }
 
@@ -59,7 +61,7 @@ async function assertModelsAvailable(opts = {}) {
   const needsEmbedding = opts.embedding === true;
 
   if (needsGeneration) {
-    const gen = getGenerationProvider();
+    const gen = getGenerationProvider({ feature: opts.feature });
     const hc = await gen.healthCheck();
     if (!hc.ok) {
       const d = hc.details || {};
@@ -105,18 +107,22 @@ async function healthCheck() {
     generation: genHealth,
     embedding: {
       ok: ollamaHealth.ok !== false,
-      provider: 'ollama',
+      provider: env.EMBEDDING_PROVIDER || 'ollama',
       model: env.OLLAMA_EMBED_MODEL,
     },
     embeddings: {
       ok: ollamaHealth.ok !== false,
-      provider: 'ollama',
+      provider: env.EMBEDDING_PROVIDER || 'ollama',
       model: env.OLLAMA_EMBED_MODEL,
     },
     notes: {
       provider: env.NOTES_PROVIDER,
       groqConfigured: !!env.GROQ_API_KEY,
       maxOutputTokens: env.NOTES_PROVIDER === 'groq' ? env.GROQ_NOTES_MAX_OUTPUT_TOKENS : undefined,
+    },
+    summary: {
+      provider: env.SUMMARY_PROVIDER,
+      groqConfigured: !!env.GROQ_API_KEY,
     },
     videoScript: {
       provider: env.VIDEO_SCRIPT_PROVIDER,
@@ -130,6 +136,13 @@ async function healthCheck() {
           ? 'local-first-with-optional-groq-fallback'
           : 'fully-local'),
       useLocalIfGroqFails: env.VIDEO_SCRIPT_USE_LOCAL_IF_GROQ_FAILS,
+    },
+    tutor: {
+      provider: env.TUTOR_PROVIDER,
+      groqConfigured: !!env.GROQ_API_KEY,
+      strictQuality: env.TUTOR_STRICT_QUALITY,
+      asyncStart: env.TUTOR_ASYNC_START,
+      cacheTtlMs: env.TUTOR_CACHE_TTL_MS,
     },
   };
 }
