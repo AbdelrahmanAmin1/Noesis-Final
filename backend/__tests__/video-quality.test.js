@@ -1,6 +1,7 @@
 'use strict';
 
 const { scoreVideoScript } = require('../services/video-quality.service');
+const lessons = require('../services/lesson.service');
 
 function makeSlide(type, narrationLen = 200, bulletCount = 3) {
   return {
@@ -15,7 +16,7 @@ function makeSlide(type, narrationLen = 200, bulletCount = 3) {
 }
 
 function makeFullScript() {
-  return {
+  const script = {
     topic: 'Encapsulation',
     learningObjectives: ['Understand encapsulation', 'Apply access modifiers', 'Identify violations'],
     slides: [
@@ -31,6 +32,15 @@ function makeFullScript() {
       makeSlide('quiz', 80),
     ],
   };
+  script.slides[4].visual.nodes = ['BankAccount', 'private balance field', 'public deposit method', 'getBalance getter', 'validation guard'];
+  script.slides[4].narration = 'A BankAccount class keeps balance as a private field. Public methods such as deposit and getBalance form the API, and validation guards protect the object from invalid state.';
+  script.slides[5].example_code = 'class BankAccount {\n  private int balance;\n  public int getBalance() { return balance; }\n  public void deposit(int amount) { if (amount > 0) balance += amount; }\n}';
+  script.slides[5].narration = 'The code uses a private balance field, a public getBalance getter, and a public deposit method with validation. Client code cannot directly overwrite balance.';
+  script.slides[5].visual.nodes = ['private balance', 'public getter', 'public deposit', 'validation'];
+  script.slides[6].visual.type = 'flow';
+  script.slides[6].visual.nodes = ['client call', 'public method', 'validation', 'private balance'];
+  script.slides[6].narration = 'The step-by-step flow starts with client code calling a public method, then validation checks the request before the private balance changes inside the object.';
+  return script;
 }
 
 describe('scoreVideoScript', () => {
@@ -76,6 +86,21 @@ describe('scoreVideoScript', () => {
     const result = scoreVideoScript(script, { concept: 'Encapsulation' });
     expect(result.criteria.find(c => c.name === 'short_focus_labels').passed).toBe(false);
     expect(result.passed).toBe(false);
+  });
+
+  it('does not apply data-structure gates to class/object OOP scripts', () => {
+    const script = makeFullScript();
+    script.topic = 'Classes and Objects in Java';
+    script.slides[2].narration = 'Classes and objects in Java define a blueprint and an instance. A class groups fields and methods, while each object owns state and behavior even when implementation complexity is hidden.';
+    script.slides[2].bullets = ['Class blueprint', 'Object state'];
+    script.slides[4].visual.nodes = ['Person class', 'name field', 'greet method', 'alice object'];
+    script.slides[5].example_code = 'class Person {\n  private String name;\n  public void greet() { System.out.println(name); }\n}\nPerson alice = new Person();';
+
+    const result = scoreVideoScript(script, { concept: 'Classes and Objects in Java' });
+
+    expect(result.criteria.find(c => c.name === 'ds_operation_visual').passed).toBe(true);
+    expect(result.criteria.find(c => c.name === 'ds_complexity').passed).toBe(true);
+    expect(result.reasons.join(' ')).not.toMatch(/Data-structure videos need/i);
   });
 
   it('passes when no bullets are truncated', () => {
@@ -126,5 +151,12 @@ describe('scoreVideoScript', () => {
     const result = scoreVideoScript(script, { concept: 'Inheritance' });
     expect(result.criteria.find(c => c.name === 'code_walkthrough_line_ranges').passed).toBe(false);
     expect(result.passed).toBe(false);
+  });
+
+  it('requires concrete hash-table visuals and collision/load-factor coverage', () => {
+    const script = lessons.lessonToVideoScript(lessons.fallbackLesson('Hash Table'));
+    const result = scoreVideoScript(script, { concept: 'Hash Table' });
+    expect(result.criteria.find(c => c.name === 'hash_table_specifics').passed).toBe(true);
+    expect(result.passed).toBe(true);
   });
 });

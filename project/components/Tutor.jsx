@@ -17,6 +17,8 @@ const Tutor = ({ onNav }) => {
   const [noteText, setNoteText] = React.useState('');
   const [answerText, setAnswerText] = React.useState('');
   const [feedback, setFeedback] = React.useState('');
+  const [lastTurn, setLastTurn] = React.useState(null);
+  const [composerFocused, setComposerFocused] = React.useState(false);
   const [paused, setPaused] = React.useState(false);
   const [pauseStartedAt, setPauseStartedAt] = React.useState(null);
   const [pausedMs, setPausedMs] = React.useState(0);
@@ -27,6 +29,16 @@ const Tutor = ({ onNav }) => {
   const currentStep = steps[step] || null;
   const sources = session && (session.sources || session.source_chunks || []) || [];
   const trace = session && session.trace || {};
+  const persistedFeedback = currentStep && (currentStep.feedback || currentStep.feedback_md) || '';
+  const professorState = paused
+    ? 'paused'
+    : (action === 'continue' || tutorState === 'continuing')
+      ? 'thinking'
+      : composerFocused || answerText.trim()
+        ? 'listening'
+        : (feedback || persistedFeedback)
+          ? 'explaining'
+          : 'listening';
 
   const isGenericLabel = (value) => {
     const s = String(value || '').trim().toLowerCase();
@@ -41,9 +53,12 @@ const Tutor = ({ onNav }) => {
     const next = data && data.session ? data.session : data;
     setSession(next);
     setMode(next.mode || mode);
-    setStep(next.currentStepIndex || next.current_step || 0);
+    const nextIndex = next.currentStepIndex || next.current_step || 0;
+    setStep(nextIndex);
     setNotebook(next.notes || []);
-    setFeedback('');
+    const nextStep = next.steps && next.steps[nextIndex];
+    setFeedback((nextStep && (nextStep.feedback || nextStep.feedback_md)) || '');
+    setLastTurn(null);
     setAnswerText('');
     setTutorState('session_ready');
     setProgress(100);
@@ -86,6 +101,7 @@ const Tutor = ({ onNav }) => {
     setStatus('Starting tutor session...');
     setSession(null);
     setFeedback('');
+    setLastTurn(null);
     setAnswerText('');
     try {
       if (materialId) {
@@ -190,23 +206,29 @@ const Tutor = ({ onNav }) => {
     }
   };
 
-  const continueTutor = async (choice = null) => {
+  const continueTutor = async (choice = null, intent = 'check') => {
     if (!session || busy || paused) return;
+    const submitted = choice == null ? answerText.trim() : '';
+    const turnLabel = choice != null
+      ? `Choice ${String.fromCharCode(65 + choice)}`
+      : (submitted || (intent === 'confused' ? "I'm confused" : intent === 'example' ? 'Give an example' : 'Check my answer'));
     setTutorState('continuing');
     setAction('continue');
     setError('');
-    setStatus('Checking your answer and preparing the next step...');
+    setStatus(intent === 'confused' ? 'Listening for the confusing part...' : intent === 'example' ? 'Preparing a concrete example...' : 'Checking your answer and preparing the next step...');
     try {
       const res = await window.NoesisAPI.tutor.continue(session.sessionId || session.session_id, {
-        answer: choice == null ? answerText : '',
+        answer: submitted,
         choice,
+        intent,
       });
       setFeedback(res.feedback || '');
+      setLastTurn({ answer: turnLabel, feedback: res.feedback || '', cue: res.professorCue || '', followUpQuestion: res.followUpQuestion || '' });
       setSession({ ...session, steps: res.steps || session.steps, currentStepIndex: res.currentStepIndex, current_step: res.currentStepIndex, trace: res.trace || session.trace });
       setStep(res.currentStepIndex);
       setAnswerText('');
       setTutorState('session_ready');
-      setStatus(res.currentStepIndex === step ? 'Try strengthening your answer with the hint.' : 'Next tutor step ready.');
+      setStatus(res.stay || res.currentStepIndex === step ? 'The professor is staying with this step.' : 'Next tutor step ready.');
     } catch (e) {
       setTutorState('session_ready');
       setError(e.message || 'Continue failed.');
@@ -269,6 +291,13 @@ const Tutor = ({ onNav }) => {
 
   const isLastStep = step >= Math.max(0, steps.length - 1);
   const topTitle = session ? (session.topic || session.concept || 'AI Tutor') : 'AI Tutor';
+  const professorCopy = {
+    listening: { label: 'Listening', text: 'The professor is watching your reasoning and waiting for your next move.', icon: 'Brain' },
+    thinking: { label: 'Thinking', text: 'The professor is checking your response and preparing feedback.', icon: 'Sparkle' },
+    explaining: { label: 'Explaining', text: 'The professor is clarifying the current idea before moving on.', icon: 'Lightbulb' },
+    paused: { label: 'Paused', text: 'The session is paused. Resume when you are ready.', icon: 'Pause' },
+  }[professorState] || { label: 'Listening', text: 'The professor is listening.', icon: 'Brain' };
+  const ProfessorIcon = Icon[professorCopy.icon] || Icon.Brain;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -408,6 +437,20 @@ const Tutor = ({ onNav }) => {
                   {currentStep.title || currentStep.question}
                 </h1>
                 <div style={tu.lessonCard}>
+                  <div style={tu.professorPanel}>
+                    <div style={tu.professorAvatar}>
+                      <ProfessorIcon size={18} style={{ color: 'var(--accent)' }}/>
+                      <span style={{ ...tu.professorPulse, opacity: professorState === 'listening' ? 1 : 0.35 }}/>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <b style={{ color: 'var(--fg-0)', fontSize: 13.5 }}>Professor Tutor</b>
+                        <span style={tu.statePill}>{professorCopy.label}</span>
+                      </div>
+                      <div style={{ marginTop: 4, color: 'var(--fg-2)', fontSize: 12.5, lineHeight: 1.5 }}>{professorCopy.text}</div>
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                     <div style={tu.tutorAvatar}><Icon.Sparkle size={13} style={{ color: 'var(--accent)' }}/></div>
                     <div style={{ flex: 1 }}>
@@ -452,15 +495,36 @@ const Tutor = ({ onNav }) => {
                   )}
 
                   {!currentStep.options && (
-                    <textarea className="input" value={answerText} onChange={e => setAnswerText(e.target.value)} disabled={busy || paused}
+                    <textarea className="input" value={answerText} onChange={e => setAnswerText(e.target.value)} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} disabled={busy || paused}
                               placeholder="Write a short answer, or continue when you're ready..."
                               style={{ width: '100%', minHeight: 82, marginTop: 16, fontSize: 13, resize: 'vertical' }}/>
                   )}
 
-                  {feedback && <div style={tu.feedback}><b>Feedback</b><div>{feedback}</div></div>}
+                  <div style={tu.quickActions}>
+                    <button className="btn btn-ghost" disabled={!session || paused || busy} onClick={() => continueTutor(null, 'confused')}>
+                      <Icon.Brain size={12}/> I'm confused
+                    </button>
+                    <button className="btn btn-ghost" disabled={!session || paused || busy} onClick={() => continueTutor(null, 'example')}>
+                      <Icon.Lightbulb size={12}/> Give an example
+                    </button>
+                    <button className="btn btn-ghost" disabled={!session || paused || busy || (!answerText.trim() && !currentStep.options)} onClick={() => continueTutor(null, 'check')}>
+                      <Icon.Check size={12}/> Check my answer
+                    </button>
+                  </div>
+
+                  {(lastTurn || feedback || persistedFeedback) && (
+                    <div style={tu.conversation}>
+                      {lastTurn && <div style={{ ...tu.bubble, ...tu.studentBubble }}><b>You</b><div>{lastTurn.answer}</div></div>}
+                      <div style={{ ...tu.bubble, ...tu.tutorBubble }}>
+                        <b>Professor Tutor</b>
+                        <div>{(lastTurn && lastTurn.feedback) || feedback || persistedFeedback}</div>
+                        {lastTurn && lastTurn.followUpQuestion && <div style={tu.followUp}>{lastTurn.followUpQuestion}</div>}
+                      </div>
+                    </div>
+                  )}
 
                   <div style={{ marginTop: 20, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <button className="btn btn-accent" disabled={!session || paused || busy} onClick={() => isLastStep ? finishTutor() : continueTutor()}>
+                    <button className="btn btn-accent" disabled={!session || paused || busy} onClick={() => isLastStep ? finishTutor() : continueTutor(null, answerText.trim() ? 'check' : 'advance')}>
                       {action === 'continue' ? <>Preparing... <Icon.Sparkle size={12}/></> : !isLastStep ? <>Continue <Icon.ArrowRight size={12}/></> : <>Finish <Icon.Check size={12}/></>}
                     </button>
                     <button className="btn btn-bare" disabled={!session || paused || busy} onClick={() => saveNote(`${currentStep.title}\n\n${currentStep.content}${currentStep.example ? `\n\nExample: ${currentStep.example}` : ''}`, 'explanation')}>
@@ -588,6 +652,28 @@ const tu = {
   emptyText: { maxWidth: 480, fontSize: 14, lineHeight: 1.7, color: 'var(--fg-2)', margin: 0 },
   skeletonStack: { display: 'grid', gap: 8, width: 360 },
   lessonCard: { marginTop: 22, padding: 18, border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' },
+  professorPanel: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    padding: 12, marginBottom: 16,
+    borderRadius: 8, border: '1px solid var(--accent-soft)',
+    background: 'var(--accent-glow)',
+  },
+  professorAvatar: {
+    width: 42, height: 42, borderRadius: 8,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    position: 'relative', flexShrink: 0,
+    background: 'var(--bg-0)', border: '1px solid var(--accent-soft)',
+  },
+  professorPulse: {
+    position: 'absolute', right: 5, bottom: 5,
+    width: 8, height: 8, borderRadius: 999,
+    background: 'var(--accent)', boxShadow: '0 0 0 4px var(--accent-glow)',
+  },
+  statePill: {
+    padding: '3px 7px', borderRadius: 999,
+    fontSize: 10.5, color: 'var(--accent)',
+    background: 'var(--bg-0)', border: '1px solid var(--accent-soft)',
+  },
   exampleBox: { marginTop: 12, padding: 12, borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-1)', fontSize: 13 },
   codeBlock: { marginTop: 16, padding: 16, borderRadius: 8, background: '#0f172a', color: '#dbeafe', overflow: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12.5, lineHeight: 1.6 },
   walkthrough: { display: 'grid', gap: 8, marginTop: 10 },
@@ -599,6 +685,12 @@ const tu = {
     border: '1px solid var(--line)', background: 'var(--bg-1)',
     textAlign: 'left',
   },
+  quickActions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 },
+  conversation: { display: 'grid', gap: 10, marginTop: 16 },
+  bubble: { padding: 12, borderRadius: 8, lineHeight: 1.6, fontSize: 13, border: '1px solid var(--line)' },
+  studentBubble: { justifySelf: 'end', maxWidth: '82%', background: 'var(--bg-2)', color: 'var(--fg-1)' },
+  tutorBubble: { justifySelf: 'start', maxWidth: '92%', background: 'var(--bg-0)', color: 'var(--fg-1)', borderColor: 'var(--accent-soft)' },
+  followUp: { marginTop: 8, color: 'var(--fg-2)', fontSize: 12.5 },
   feedback: { marginTop: 16, padding: 14, borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-1)', lineHeight: 1.6 },
   noteEntry: { marginBottom: 16 },
   sourceEntry: { marginBottom: 14, padding: 12, borderRadius: 'var(--r-sm)', background: 'var(--bg-1)', border: '1px solid var(--line)' },

@@ -6,6 +6,8 @@ Audience: beginner CS student.
 Lesson type: {{LESSON_TYPE}}
 Grounding: {{GROUNDING_STATUS}}
 
+{{ENRICHMENT_POLICY}}
+
 Use the uploaded source excerpts for course-specific wording and facts. Use the curated local knowledge for depth, code examples, diagrams, common mistakes, and complexity. Do not merely summarize the source. Teach like a real tutor.
 
 Uploaded source excerpts:

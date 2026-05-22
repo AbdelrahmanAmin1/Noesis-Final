@@ -41,4 +41,12 @@ const uploadLimiter = rateLimit({
   message: { error: 'rate_limited_upload' },
 });
 
-module.exports = { globalLimiter, aiLimiter, videoLimiter, authLimiter, uploadLimiter };
+const ttsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'rate_limited_tts' },
+});
+
+module.exports = { globalLimiter, aiLimiter, videoLimiter, authLimiter, uploadLimiter, ttsLimiter };

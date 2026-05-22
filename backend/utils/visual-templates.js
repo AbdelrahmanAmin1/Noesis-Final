@@ -64,9 +64,9 @@ const TEMPLATES = {
     edges: [['Index 0', 'Index 1'], ['Index 1', 'Index 2'], ['Index 2', 'Index n-1']],
   },
   'hash table': {
-    type: 'flow',
-    nodes: ['Key', 'Hash function', 'Bucket index', 'Value'],
-    edges: [['Key', 'Hash function'], ['Hash function', 'Bucket index'], ['Bucket index', 'Value']],
+    type: 'hash_table',
+    nodes: ['key "cat"', 'hash(key)', 'index = hash mod m', 'bucket 2', '(cat, 41)', 'collision chain'],
+    edges: [['key "cat"', 'hash(key)'], ['hash(key)', 'index = hash mod m'], ['index = hash mod m', 'bucket 2'], ['bucket 2', '(cat, 41)']],
   },
   'binary search tree': {
     type: 'tree',
@@ -160,6 +160,84 @@ const TEMPLATES = {
   },
 };
 
+const TOPIC_VISUAL_NODES = {
+  'encapsulation': {
+    definition: {
+      nodes: ['Encapsulation', 'Private data', 'Public methods', 'Controlled access', 'Validation', 'Bad public fields', 'Safe object state'],
+      edges: [['Encapsulation', 'Private data'], ['Encapsulation', 'Public methods'], ['Public methods', 'Controlled access'], ['Controlled access', 'Validation'], ['Bad public fields', 'Safe object state']],
+    },
+    diagram: {
+      nodes: ['BankAccount', '- balance: double', '+ deposit()', '+ withdraw()', '+ getBalance()', 'Validation guard'],
+      edges: [['BankAccount', '- balance: double'], ['BankAccount', '+ deposit()'], ['BankAccount', '+ withdraw()'], ['BankAccount', '+ getBalance()'], ['+ deposit()', 'Validation guard']],
+    },
+  },
+  'inheritance': {
+    definition: {
+      nodes: ['Inheritance', 'Superclass (parent)', 'Subclass (child)', 'extends keyword', 'Method reuse', 'Overriding', 'IS-A relationship'],
+      edges: [['Inheritance', 'Superclass (parent)'], ['Superclass (parent)', 'Subclass (child)'], ['Subclass (child)', 'extends keyword'], ['Subclass (child)', 'Overriding'], ['Inheritance', 'IS-A relationship']],
+    },
+  },
+  'polymorphism': {
+    definition: {
+      nodes: ['Polymorphism', 'Same method call', 'Different behavior', 'Dynamic dispatch', 'Runtime binding', 'Superclass reference', 'Subclass object'],
+      edges: [['Polymorphism', 'Same method call'], ['Same method call', 'Different behavior'], ['Different behavior', 'Dynamic dispatch'], ['Dynamic dispatch', 'Runtime binding']],
+    },
+  },
+  'abstraction': {
+    definition: {
+      nodes: ['Abstraction', 'Hide complexity', 'Public interface', 'Implementation hidden', 'Contract', 'Client code', 'Simplification'],
+      edges: [['Abstraction', 'Public interface'], ['Public interface', 'Contract'], ['Abstraction', 'Hide complexity'], ['Hide complexity', 'Implementation hidden']],
+    },
+  },
+  'linked list': {
+    definition: {
+      nodes: ['Linked List', 'Node', 'Data field', 'Next pointer', 'Head reference', 'Traversal', 'Dynamic size'],
+      edges: [['Linked List', 'Head reference'], ['Head reference', 'Node'], ['Node', 'Data field'], ['Node', 'Next pointer'], ['Next pointer', 'Traversal']],
+    },
+  },
+  'stack': {
+    definition: {
+      nodes: ['Stack', 'LIFO order', 'push()', 'pop()', 'peek()', 'Top pointer', 'Underflow check'],
+      edges: [['Stack', 'LIFO order'], ['Stack', 'push()'], ['Stack', 'pop()'], ['Stack', 'peek()'], ['push()', 'Top pointer']],
+    },
+  },
+  'queue': {
+    definition: {
+      nodes: ['Queue', 'FIFO order', 'enqueue()', 'dequeue()', 'Front pointer', 'Rear pointer', 'Wraparound'],
+      edges: [['Queue', 'FIFO order'], ['Queue', 'enqueue()'], ['Queue', 'dequeue()'], ['enqueue()', 'Rear pointer'], ['dequeue()', 'Front pointer']],
+    },
+  },
+  'hash table': {
+    definition: {
+      nodes: ['Hash Table', 'Hash function', 'Bucket array', 'Key-value pair', 'Collision handling', 'Load factor', 'O(1) average lookup'],
+      edges: [['Hash Table', 'Hash function'], ['Hash function', 'Bucket array'], ['Bucket array', 'Key-value pair'], ['Bucket array', 'Collision handling'], ['Hash Table', 'Load factor']],
+    },
+  },
+  'binary search tree': {
+    definition: {
+      nodes: ['BST', 'Root node', 'Left < parent', 'Right > parent', 'In-order traversal', 'Search O(log n)', 'Balanced vs skewed'],
+      edges: [['BST', 'Root node'], ['Root node', 'Left < parent'], ['Root node', 'Right > parent'], ['BST', 'In-order traversal'], ['BST', 'Search O(log n)']],
+    },
+  },
+  'recursion': {
+    definition: {
+      nodes: ['Recursion', 'Base case', 'Recursive case', 'Call stack', 'Subproblem', 'Stack overflow risk', 'Unwinding'],
+      edges: [['Recursion', 'Base case'], ['Recursion', 'Recursive case'], ['Recursive case', 'Call stack'], ['Recursive case', 'Subproblem']],
+    },
+  },
+};
+
+function findTopicNodes(topic, sceneType) {
+  const key = String(topic || '').toLowerCase().trim();
+  const type = sceneType || 'definition';
+  for (const [k, v] of Object.entries(TOPIC_VISUAL_NODES)) {
+    if (key.includes(k) || k.includes(key)) {
+      return v[type] || v.definition || null;
+    }
+  }
+  return null;
+}
+
 function findTemplate(concept) {
   const key = String(concept || '').toLowerCase().trim();
   if (TEMPLATES[key]) return TEMPLATES[key];
@@ -169,4 +247,4 @@ function findTemplate(concept) {
   return null;
 }
 
-module.exports = { TEMPLATES, findTemplate };
+module.exports = { TEMPLATES, TOPIC_VISUAL_NODES, findTemplate, findTopicNodes };

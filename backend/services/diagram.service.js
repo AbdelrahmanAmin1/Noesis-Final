@@ -4,6 +4,7 @@ const TYPE_TO_VISUAL = {
   uml_class: 'class_diagram',
   inheritance_tree: 'class_diagram',
   linked_list: 'linkedlist',
+  hash_table: 'hash_table',
   stack: 'stack_queue',
   queue: 'stack_queue',
   tree: 'tree',

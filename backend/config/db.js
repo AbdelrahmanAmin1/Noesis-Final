@@ -134,6 +134,31 @@ function migrate() {
       FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_learning_maps_user ON learning_maps(user_id, material_id, updated_at);
+    CREATE TABLE IF NOT EXISTS tutor_conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      material_id INTEGER,
+      title TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (material_id) REFERENCES materials(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_tutor_conversations_user ON tutor_conversations(user_id, updated_at);
+    CREATE TABLE IF NOT EXISTS tutor_chat_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      sources_json TEXT NOT NULL DEFAULT '[]',
+      suggestions_json TEXT NOT NULL DEFAULT '[]',
+      grounding_tier TEXT,
+      trace_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (conversation_id) REFERENCES tutor_conversations(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_chat_messages_conv ON tutor_chat_messages(conversation_id, created_at);
   `);
   return db;
 }
@@ -141,7 +166,11 @@ function migrate() {
 function ensureColumn(db, table, column, definition) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!cols.some(c => c.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    } catch (err) {
+      if (!/duplicate column name/i.test(err.message || '')) throw err;
+    }
   }
 }
 
@@ -149,7 +178,11 @@ function ensureColumnFromMigration(db, table, column, fileName) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!cols.some(c => c.name === column)) {
     const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', fileName), 'utf8');
-    db.exec(sql);
+    try {
+      db.exec(sql);
+    } catch (err) {
+      if (!/duplicate column name/i.test(err.message || '')) throw err;
+    }
   }
 }
 

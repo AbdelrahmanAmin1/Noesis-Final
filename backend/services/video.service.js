@@ -27,7 +27,7 @@ const {
   FFPROBE_PACKAGE,
 } = require('../utils/mediaBinaries');
 
-const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart'];
+const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'hash_table', 'bigo_chart'];
 const SLIDE_TYPES = ['title', 'objectives', 'concept', 'analogy', 'diagram', 'code', 'step_by_step', 'mistakes', 'recap', 'quiz'];
 
 const ScriptSchema = z.object({
@@ -174,15 +174,45 @@ function drawText(text, x, y, size, color = '0xfafaff') {
   return `drawtext=text='${escapeDrawText(text)}':fontcolor=${color}:fontsize=${size}:x=${x}:y=${y}`;
 }
 
+function normalizeVisibleText(value) {
+  return String(value || '')
+    .replace(/\[chunk:\s*\d+\]/gi, '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\u00e2\u20ac[\u0090\u0091\u0092\u0093\u0094\u201c\u201d]/g, '-')
+    .replace(/\u00e2\u20ac[\u0152\u009d]/g, '"')
+    .replace(/\u00e2\u20ac[\u02dc\u2122]/g, "'")
+    .replace(/\u00c2\u00b7/g, '-')
+    .replace(/\u00ce\u00b1/g, 'alpha')
+    .replace(/\u00e2\u2030\u02c6/g, '~=')
+    .replace(/\u00e2\u2030\u00a4/g, '<=')
+    .replace(/\u00e2\u2030\u00a5/g, '>=')
+    .replace(/\u00e2\u02c6\u2019/g, '-')
+    .replace(/\u00c3\u2014/g, 'x')
+    .replace(/\u00c2\u00b2/g, '^2')
+    .replace(/[–—−]/g, '-')
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/α/g, 'alpha')
+    .replace(/≈/g, '~=')
+    .replace(/≤/g, '<=')
+    .replace(/≥/g, '>=')
+    .replace(/×/g, 'x')
+    .replace(/²/g, '^2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function cleanTextList(value, fallback = []) {
   const source = Array.isArray(value) && value.length ? value : fallback;
   return source
-    .map(v => String(v || '').replace(/\s+/g, ' ').trim())
+    .map(v => normalizeVisibleText(v))
     .filter(Boolean);
 }
 
 function compactText(text, max = 64) {
-  const value = String(text || '').replace(/\s+/g, ' ').trim();
+  const value = normalizeVisibleText(text);
   if (value.length <= max) return value;
   const slice = value.slice(0, max).replace(/\s+\S*$/, '').trim();
   return (slice || value.slice(0, max).trim()).replace(/[,;:\-.]+$/g, '');
@@ -191,9 +221,18 @@ function compactText(text, max = 64) {
 const HANGING_WORD_RE = /\b(?:a|an|and|as|at|because|before|but|by|for|from|if|in|into|is|of|on|or|that|the|then|through|to|with|while)$/i;
 
 function semanticDisplayLabel(value) {
-  const text = stripChunkRefs(String(value || '').replace(/\s+/g, ' ').trim());
+  const text = normalizeVisibleText(stripChunkRefs(value));
   const lower = text.toLowerCase();
   if (/\bwhat you will be able\b|\blearning objectives?\b/.test(lower)) return 'Objectives';
+  if (/^explain how\b/.test(lower)) {
+    if (lower.includes('encapsulation')) return 'Encapsulation goal';
+    if (lower.includes('class') || lower.includes('object')) return 'Class/object goal';
+    if (lower.includes('inheritance')) return 'Inheritance goal';
+    if (lower.includes('polymorphism')) return 'Dispatch goal';
+    if (lower.includes('linked')) return 'Linked-list goal';
+    if (lower.includes('hash')) return 'Hash-table goal';
+    return 'Learning goal';
+  }
   if (/\brecap\b|\bnext step\b/.test(lower)) return 'Recap';
   if (/\bdefine\b|\bdefinition\b/.test(lower)) return 'Definition';
   if (/\btrace\b|\bworked example\b|\bconcrete example\b/.test(lower)) return 'Worked example';
@@ -217,6 +256,12 @@ function semanticDisplayLabel(value) {
   if (/\bhead\b/.test(lower)) return 'Head pointer';
   if (/\bnode\b/.test(lower) && /\bnext\b/.test(lower)) return 'Node.next';
   if (/\bnull\b/.test(lower)) return 'Null stop';
+  if (/\bhash function\b|\bhash\(key\)/.test(lower)) return 'Hash function';
+  if (/\bbucket index\b|\bindex\b.*\bmod\b/.test(lower)) return 'Bucket index';
+  if (/\bbucket\b/.test(lower)) return 'Bucket';
+  if (/\bcollision\b/.test(lower)) return 'Collision';
+  if (/\bload factor\b|\balpha\b/.test(lower)) return 'Load factor';
+  if (/\bresize\b|\brehash\b/.test(lower)) return 'Resize';
   if (/\binsert/.test(lower)) return 'Insertion step';
   if (/\bdelete|deletion/.test(lower)) return 'Deletion step';
   if (/\bpush\b/.test(lower)) return 'Push';
@@ -255,7 +300,7 @@ function semanticDisplayLabel(value) {
 }
 
 function focusDisplayLabel(value) {
-  const text = stripChunkRefs(String(value || '').replace(/\s+/g, ' ').trim()).replace(/[.!?]+$/g, '');
+  const text = normalizeVisibleText(stripChunkRefs(value)).replace(/[.!?]+$/g, '');
   if (!text) return '';
   const semantic = semanticDisplayLabel(text);
   if (semantic) return semantic;
@@ -269,19 +314,19 @@ function focusDisplayLabel(value) {
 }
 
 function displayTitle(value, fallback) {
-  const text = stripChunkRefs(String(value || '').replace(/\s+/g, ' ').trim()).replace(/[.!?]+$/g, '');
+  const text = normalizeVisibleText(stripChunkRefs(value)).replace(/[.!?]+$/g, '');
   if (text && text.length <= 64 && !HANGING_WORD_RE.test(text)) return text;
   return semanticDisplayLabel(text) || fallback || 'Tutor scene';
 }
 
 function safeCaption(value) {
-  const text = stripChunkRefs(String(value || '').replace(/\s+/g, ' ').trim());
+  const text = normalizeVisibleText(stripChunkRefs(value));
   if (!text || text.length > 140 || HANGING_WORD_RE.test(text)) return '';
   return text;
 }
 
 function stripChunkRefs(text) {
-  return String(text || '').replace(/\[chunk:\d+\]/g, '').replace(/\s{2,}/g, ' ').trim();
+  return normalizeVisibleText(String(text || '').replace(/\[chunk:\d+\]/g, '').replace(/\s{2,}/g, ' '));
 }
 
 const FILE_EXT_RE = /\.(pdf|docx?|pptx?|txt|md)$/i;
@@ -500,6 +545,38 @@ async function renderSlideFrameWithFfmpeg(slide, outPath, idx, total) {
     });
     filters.push(drawText('HEAD', rightX + 20, rightY + 268, 16, '0x16a34a'));
     if (listNodes.length > 1) filters.push(drawText('NULL', rightX + 20 + listNodes.length * 115 - 10, rightY + 220, 16, '0xef4444'));
+  } else if (visualType === 'hash_table') {
+    const raw = nodes.length ? nodes : ['key "cat"', 'hash(key)', 'index = hash mod m', 'bucket 2', '(cat, 41)', '(cot, 19)'];
+    const stepLabels = [
+      raw.find(n => /\bkey\b/i.test(n)) || raw[0] || 'key',
+      raw.find(n => /\bhash\b/i.test(n)) || 'hash(key)',
+      raw.find(n => /\bindex\b|\bmod\b/i.test(n)) || 'index = hash mod m',
+    ];
+    stepLabels.forEach((label, i) => {
+      const x = rightX + 28 + i * 202;
+      drawLabeledBox(filters, label, x, rightY + 52, 172, 62, ['0xdbeafe@1', '0xdcfce7@1', '0xfef3c7@1'][i], ['0x2563eb@1', '0x16a34a@1', '0xf59e0b@1'][i]);
+      if (i < stepLabels.length - 1) filters.push(drawText('->', x + 178, rightY + 74, 24, '0x334155'));
+    });
+    for (let i = 0; i < 5; i++) {
+      const y = rightY + 162 + i * 46;
+      const active = i === 2;
+      filters.push(`drawbox=x=${rightX + 48}:y=${y}:w=64:h=38:color=${active ? '0xdbeafe@1' : '0xf8fafc@1'}:t=fill`);
+      filters.push(`drawbox=x=${rightX + 48}:y=${y}:w=64:h=38:color=${active ? '0x2563eb@1' : '0x94a3b8@1'}:t=2`);
+      filters.push(drawText(String(i), rightX + 74, y + 9, 17, active ? '0x2563eb' : '0x64748b'));
+      filters.push(`drawbox=x=${rightX + 122}:y=${y}:w=166:h=38:color=${active ? '0xeff6ff@1' : '0xffffff@1'}:t=fill`);
+      filters.push(`drawbox=x=${rightX + 122}:y=${y}:w=166:h=38:color=${active ? '0x2563eb@1' : '0xcbd5e1@1'}:t=2`);
+      filters.push(drawText(active ? 'bucket 2' : 'empty', rightX + 142, y + 9, 16, active ? '0x0f172a' : '0x64748b'));
+    }
+    const chain = raw.filter(n => !/\bkey\b|\bhash\b|\bindex\b|\bmod\b|\bbucket\b|\btable\b/i.test(n)).slice(0, 3);
+    const entries = chain.length ? chain : ['(cat, 41)', '(cot, 19)'];
+    filters.push(drawText('->', rightX + 300, rightY + 256, 26, '0x2563eb'));
+    entries.forEach((entry, i) => {
+      const x = rightX + 344 + i * 122;
+      drawLabeledBox(filters, entry, x, rightY + 236, 106, 58, i === 0 ? '0xdcfce7@1' : '0xfee2e2@1', i === 0 ? '0x16a34a@1' : '0xef4444@1');
+      if (i < entries.length - 1) filters.push(drawText('->', x + 108, rightY + 256, 22, '0xef4444'));
+    });
+    drawLabeledBox(filters, 'expected O(1), worst O(n)', rightX + 330, rightY + 330, 300, 58, '0xf8fafc@1', '0x94a3b8@1');
+    drawText('load factor = size / buckets', rightX + 334, rightY + 416, 18, '0x64748b');
   } else if (visualType === 'bigo_chart') {
     filters.push('drawbox=x=560:y=180:w=600:h=380:color=0xffffff@1:t=fill');
     filters.push('drawbox=x=600:y=200:w=520:h=320:color=0xf1f5f9@1:t=fill');
@@ -707,6 +784,19 @@ function conceptProfile(concept) {
       answer: 'Rectangle.area() runs because dispatch follows the runtime object.',
     };
   }
+  if (lower.includes('hash table') || lower.includes('hashmap') || lower.includes('hash map') || lower.includes('hash function')) {
+    return {
+      definition: 'A hash table stores key-value pairs by hashing a key to choose a bucket index.',
+      why: 'With a good hash function and controlled load factor, lookup, insert, and delete are expected O(1).',
+      analogy: 'It is like a labeled cabinet: compute the drawer number, then check the few items in that drawer.',
+      diagramNodes: ['key "cat"', 'hash(key)', 'index = hash mod buckets', 'bucket 2', '(cat, 41)', '(cot, 19)', 'collision chain', 'resize'],
+      code: 'int index = (key.hashCode() & 0x7fffffff) % table.length;\nfor (Entry e = table[index]; e != null; e = e.next) {\n  if (e.key.equals(key)) return e.value;\n}\nreturn null;\n// Resize when load factor grows too high.',
+      steps: ['Hash the key', 'Convert hash to bucket index', 'Search the bucket chain', 'Resize when load factor is high'],
+      mistakes: ['Thinking O(1) is guaranteed', 'Ignoring collisions', 'Using mutable keys', 'Forgetting equals/hashCode consistency'],
+      quiz: 'Why can a hash table lookup become O(n) in the worst case?',
+      answer: 'Many keys can collide into one bucket, forcing a linear scan of that bucket.',
+    };
+  }
   if (lower.includes('linked list')) {
     return {
       definition: 'A linked list is a chain of nodes where each node stores data and a next reference.',
@@ -796,6 +886,7 @@ function sourceTakeaways(chunks) {
 function preferredDiagramVisualType(text) {
   const lower = String(text || '').toLowerCase();
   if (lower.includes('linked list') || lower.includes('linkedlist')) return 'linkedlist';
+  if (lower.includes('hash table') || lower.includes('hashmap') || lower.includes('hash map') || lower.includes('hash function') || lower.includes('collision') || lower.includes('load factor') || lower.includes('bucket')) return 'hash_table';
   if (lower.includes('big-o') || lower.includes('big o') || lower.includes('complexity') || /\bo\([^)]+\)/.test(lower)) return 'bigo_chart';
   if (lower.includes('stack') || lower.includes('queue') || lower.includes('fifo') || lower.includes('lifo')) return 'stack_queue';
   if (lower.includes('tree') || lower.includes('bst') || lower.includes('binary search')) return 'tree';
@@ -1106,7 +1197,7 @@ Source chunks:
 ${source || '(No source chunks available.)'}
 
 Return ONLY strict JSON with this shape:
-{"topic":"${concept}","audienceLevel":"beginner","learningObjectives":["..."],"slides":[{"slideType":"title|objectives|concept|analogy|diagram|code|step_by_step|mistakes|recap|quiz","title":"...","bullets":["..."],"narration":"...","visual":{"type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart","nodes":["..."],"edges":[["...","..."]]},"example_code":"","code_focus":{"lineRange":"1-3","highlightLines":[1,2,3],"explanation":"why these lines exist"}}]}
+{"topic":"${concept}","audienceLevel":"beginner","learningObjectives":["..."],"slides":[{"slideType":"title|objectives|concept|analogy|diagram|code|step_by_step|mistakes|recap|quiz","title":"...","bullets":["..."],"narration":"...","visual":{"type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|hash_table|bigo_chart","nodes":["..."],"edges":[["...","..."]]},"example_code":"","code_focus":{"lineRange":"1-3","highlightLines":[1,2,3],"explanation":"why these lines exist"}}]}
 
 Rules:
 - 8-12 slides covering: title, objectives, concept, analogy, diagram, code, step_by_step, mistakes, recap, quiz.
@@ -1117,6 +1208,7 @@ Rules:
 - Do not include callouts. Do not include raw chunk references in any visible text.
 - Code walkthrough slides must include code_focus.lineRange and explain why those exact lines exist.
 - Use diverse visual types appropriate to the concept.
+- Use hash_table for hash tables/maps; include key, hash function, bucket index, collision handling, load factor, resize, expected O(1), and worst O(n).
 - Avoid placeholders and generic text.`;
     if (prompt.length <= maxInputChars || maxChunkChars <= 350) break;
     maxChunkChars = Math.floor(maxChunkChars * 0.75);
@@ -1298,6 +1390,27 @@ async function generateVideo({ userId, materialId, concept }) {
   return { videoId, jobId: job.id };
 }
 
+function storyboardGateFailureMessage(quality) {
+  const warnings = quality && quality.storyboard && Array.isArray(quality.storyboard.warnings)
+    ? quality.storyboard.warnings
+    : [];
+  return `storyboard_quality_failed: ${warnings.slice(0, 5).join('; ') || 'storyboard gate did not pass'}`;
+}
+
+function isVisualValidationError(err) {
+  const message = String(err && err.message || err || '');
+  return !!(err && err.visualValidation)
+    || /^(unsupported_visual_type|generic_fallback_not_allowed|concept_map_nodes_not_source_backed)/.test(message)
+    || /unsupported_visual_type:|generic_fallback_not_allowed:|concept_map_nodes_not_source_backed/.test(message);
+}
+
+function storyboardFailureStatus(err) {
+  const message = String(err && err.message || err || '');
+  return message.startsWith('storyboard_quality_failed') || isVisualValidationError(err)
+    ? 'needs_review'
+    : 'failed';
+}
+
 async function generateVideoFromStoryboard({ userId, storyboardId }) {
   const prepared = storyboards.scriptForRender(userId, storyboardId);
   if (!prepared || !prepared.board) {
@@ -1316,6 +1429,12 @@ async function generateVideoFromStoryboard({ userId, storyboardId }) {
   }
   if (prepared.board.status !== 'approved') {
     throw new Error('storyboard_not_approved');
+  }
+  if (!prepared.quality || !prepared.quality.storyboard || prepared.quality.storyboard.passed !== true) {
+    const db = getDb();
+    db.prepare("UPDATE video_storyboards SET status='needs_review', quality_json=?, updated_at=? WHERE id=? AND user_id=?")
+      .run(JSON.stringify(prepared.quality || {}), nowIso(), storyboardId, userId);
+    throw new Error(storyboardGateFailureMessage(prepared.quality));
   }
   const db = getDb();
   const ins = db.prepare(`INSERT INTO videos (material_id, user_id, status, created_at, resolved_concept)
@@ -1539,6 +1658,9 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
     const prepared = storyboards.scriptForRender(userId, storyboardId);
     if (!prepared || !prepared.board) throw new Error('storyboard_not_found');
     if (prepared.board.status !== 'approved' && prepared.board.status !== 'rendering') throw new Error('storyboard_not_approved');
+    if (!prepared.quality || !prepared.quality.storyboard || prepared.quality.storyboard.passed !== true) {
+      throw new Error(storyboardGateFailureMessage(prepared.quality));
+    }
     const script = normalizeScript(prepared.script, prepared.board.topic, [], false);
     const quality = scoreVideoScript(script, {
       concept: prepared.board.topic,
@@ -1548,6 +1670,9 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
     });
     if (!quality.passed) {
       throw new Error(`storyboard_video_quality_failed: ${(quality.reasons || []).slice(0, 3).join('; ')}`);
+    }
+    if (!prepared.visibleTextClean) {
+      throw new Error(`storyboard_visible_text_leak: banned term "${prepared.visibleTextBanned}" found in learner-facing content`);
     }
     setStatus('processing', {
       script_md: JSON.stringify(script),
@@ -1562,18 +1687,23 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
     fs.mkdirSync(workDir, { recursive: true });
     const segPaths = [];
     const audioPaths = [];
-    const useRemotion = env.VIDEO_RENDERER === 'remotion';
+    const remotionReady = renderer.remotionStatus();
+    const forceRemotion = env.VIDEO_RENDERER_EXPLICIT && env.VIDEO_RENDERER === 'remotion';
+    const forceCanvas = env.VIDEO_RENDERER_EXPLICIT && env.VIDEO_RENDERER === 'canvas';
+    const useRemotion = forceRemotion || (!forceCanvas && remotionReady.ok);
     if (useRemotion) {
-      const remotion = renderer.remotionStatus();
-      if (!remotion.ok) throw new Error(`remotion_not_ready: missing ${remotion.missing.join(', ')}`);
+      if (!remotionReady.ok) throw new Error(`remotion_not_ready: missing ${remotionReady.missing.join(', ')}`);
       jobs.update(jobId, { progress: 19, stage: 'Using Remotion tutor-board renderer...' });
+    } else if (!forceCanvas && !remotionReady.ok) {
+      jobs.update(jobId, { progress: 19, stage: 'Remotion unavailable; using canvas renderer...' });
     }
 
     for (let i = 0; i < script.slides.length; i++) {
       const s = script.slides[i];
-      const storyboardScene = prepared.board.storyboard && prepared.board.storyboard.scenes
+      const rawScene = prepared.board.storyboard && prepared.board.storyboard.scenes
         ? prepared.board.storyboard.scenes[i]
         : null;
+      const storyboardScene = rawScene ? storyboards.sanitizeSceneForRender(rawScene) : null;
       const slideImg = path.join(workDir, `slide_${i}.png`);
       const audioFile = path.join(workDir, `audio_${i}.wav`);
       const segMp4 = path.join(workDir, `seg_${i}.mp4`);
@@ -1643,7 +1773,11 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
         }
       } catch (animErr) {
         log.warn(`storyboard_animation_slide_${i}`, animErr.message || animErr);
-        if (useRemotion) throw animErr;
+        if (isVisualValidationError(animErr)) throw animErr;
+        if (useRemotion && forceRemotion) throw animErr;
+        if (useRemotion) {
+          jobs.update(jobId, { stage: `Remotion scene ${i + 1} runtime failure; falling back to canvas after visual validation passed...` });
+        }
       }
       if (!usedAnimatedFrames) {
         const renderedPath = await slides.renderSlide(s, slideImg);
@@ -1700,7 +1834,7 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
   } catch (e) {
     log.error('storyboard_video_pipeline', e.message || e);
     setStatus('failed');
-    setBoardStatus('failed');
+    setBoardStatus(storyboardFailureStatus(e));
     jobs.update(jobId, { status: 'failed', error: String(e.message || e), stage: 'Storyboard render failed.' });
   }
 }
@@ -1724,4 +1858,6 @@ module.exports._internals = {
   generateVideoScriptWithFallback,
   scoreVideoScript,
   preferredDiagramVisualType,
+  isVisualValidationError,
+  storyboardFailureStatus,
 };

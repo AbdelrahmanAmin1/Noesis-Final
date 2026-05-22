@@ -21,7 +21,7 @@ function fileHash(filePath) {
 }
 
 describe('demo-quality video regression set', () => {
-  const cases = ['Inheritance', 'Polymorphism', 'Linked List', 'Stack', 'Queue', 'Binary Search Tree', 'Big-O', 'Encapsulation', 'Abstraction'];
+  const cases = ['Inheritance', 'Polymorphism', 'Linked List', 'Hash Table', 'Stack', 'Queue', 'Binary Search Tree', 'Big-O', 'Encapsulation', 'Abstraction'];
 
   it.each(cases)('%s lesson creates a callout-free, topic-specific storyboard', (topic) => {
     const lesson = lessons.fallbackLesson(topic);
@@ -44,6 +44,21 @@ describe('demo-quality video regression set', () => {
     const slide = script.slides.find(s => s.visual_type === 'class_diagram');
     const outPath = path.join(os.tmpdir(), `noesis_inheritance_regression_${Date.now()}.png`);
     try {
+      const rendered = await slides.renderSlide(slide, outPath);
+      expect(rendered.endsWith('.png')).toBe(true);
+      assertPngSize(rendered, 1280, 720);
+    } finally {
+      try { fs.unlinkSync(outPath); } catch (_) {}
+    }
+  });
+
+  it('renders a hash-table slide as a nonblank 1280x720 PNG', async () => {
+    const lesson = lessons.fallbackLesson('Hash Table');
+    const script = lessons.lessonToVideoScript(lesson);
+    const slide = script.slides.find(s => s.visual_type === 'hash_table');
+    const outPath = path.join(os.tmpdir(), `noesis_hash_table_regression_${Date.now()}.png`);
+    try {
+      expect(slide).toBeDefined();
       const rendered = await slides.renderSlide(slide, outPath);
       expect(rendered.endsWith('.png')).toBe(true);
       assertPngSize(rendered, 1280, 720);

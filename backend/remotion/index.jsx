@@ -15,6 +15,7 @@ export const RemotionRoot = () => (
         title: 'Polymorphism',
         teachingGoal: 'See how one reference can dispatch to different overridden methods.',
         visualTemplate: 'polymorphism_dispatch',
+        visualType: 'polymorphism_dispatch',
         visualData: { nodes: ['Shape reference', 'Circle object', 'Circle.area()'] },
       },
       slide: {

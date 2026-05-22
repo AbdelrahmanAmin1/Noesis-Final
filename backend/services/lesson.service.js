@@ -8,6 +8,7 @@ const ai = require('./ai.service');
 const prompts = require('../utils/prompts');
 const { extractJson, parseJsonSafe } = require('../utils/jsonSafe');
 const diagrams = require('./diagram.service');
+const { findTopicNodes } = require('../utils/visual-templates');
 
 const SECTION_TYPES = [
   'hook',
@@ -25,7 +26,7 @@ const SECTION_TYPES = [
   'next_steps',
 ];
 
-const DIAGRAM_TYPES = ['uml_class', 'inheritance_tree', 'linked_list', 'stack', 'queue', 'tree', 'big_o_chart', 'mindmap', 'flow'];
+const DIAGRAM_TYPES = ['uml_class', 'inheritance_tree', 'linked_list', 'hash_table', 'stack', 'queue', 'tree', 'big_o_chart', 'mindmap', 'flow'];
 const CALLOUT_TYPES = ['remember', 'exam_tip', 'warning', 'source'];
 
 const CodeExplanationSchema = z.union([
@@ -86,7 +87,7 @@ const VideoSceneSchema = z.object({
   narration: z.string().min(1),
   onScreenText: z.array(z.string()).optional().default([]),
   visual: z.object({
-    type: z.enum(['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart']).optional().default('mindmap'),
+    type: z.enum(['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'hash_table', 'bigo_chart']).optional().default('mindmap'),
     description: z.string().optional().default(''),
     nodes: z.array(z.any()).optional().default([]),
     edges: z.array(z.any()).optional().default([]),
@@ -220,6 +221,7 @@ function fallbackLesson(topic, opts = {}) {
   if (lower.includes('inheritance')) return inheritanceLesson(t, materialTitle, grounding, selectedChunkIds);
   if (lower.includes('polymorphism')) return polymorphismLesson(t, materialTitle, grounding, selectedChunkIds);
   if (lower.includes('linked list')) return linkedListLesson(t, materialTitle, grounding, selectedChunkIds);
+  if (lower.includes('hash table') || lower.includes('hashmap') || lower.includes('hash map') || lower.includes('hash function') || lower === 'hashing') return hashTableLesson(t, materialTitle, grounding, selectedChunkIds);
   if (lower.includes('stack')) return stackLesson(t, materialTitle, grounding, selectedChunkIds);
   const curated = loadCuratedKnowledge(t);
   if (curated) return curatedFallbackLesson(t, curated, materialTitle, grounding, selectedChunkIds);
@@ -412,6 +414,71 @@ function linkedListLesson(topic, materialTitle, grounding, selectedChunkIds) {
     section('next_steps', 'Next Steps', 'Practice deleting a node by value, then compare singly linked lists with doubly linked lists.'),
   ];
   lesson.relatedTopics = ['Doubly linked list', 'Stack', 'Queue'];
+  return normalizeLesson(lesson, { topic, skipEnsureFallback: true });
+}
+
+function hashTableLesson(topic, materialTitle, grounding, selectedChunkIds) {
+  const lesson = baseLesson('Hash Table', 'data_structure', materialTitle, grounding, selectedChunkIds);
+  lesson.learningObjectives = [
+    'Explain how a hash function maps a key to a bucket index.',
+    'Trace lookup and insertion through collisions, chaining, and load factor.',
+    'Compare expected O(1) behavior with worst-case O(n) collisions.',
+  ];
+  lesson.prerequisites = ['Arrays', 'Modulus operator', 'Key-value pairs', 'Basic object equality'];
+  lesson.sections = [
+    section('hook', 'Why Hash Tables Matter', 'Hash tables are the reason maps and dictionaries feel instant. Instead of scanning every pair, they compute where a key should live, then inspect only that bucket.'),
+    section('definition', 'Definition', 'A hash table stores key-value pairs in an array of buckets. A hash function turns the key into an integer, and the table converts that integer into a bucket index with modulo.'),
+    section('deep_explanation', 'Mental Model', 'Think in four moves: key, hash, index, bucket. The key is the thing you search for. The hash function creates a repeatable number from the key. Modulo maps that number into the bucket array. If multiple keys land in the same bucket, collision handling decides how they share the space.'),
+    section('diagram', 'Hash Table Diagram', 'The useful picture is key to hash to bucket index to slot. This model also makes collisions visible instead of mysterious.', {
+      diagram: {
+        type: 'hash_table',
+        nodes: ['key "cat"', 'hash(key)', 'index = hash mod buckets', 'bucket 2', '(cat, 41)', '(cot, 19)', 'collision chain', 'resize'],
+        edges: [['key "cat"', 'hash(key)'], ['hash(key)', 'index = hash mod buckets'], ['index = hash mod buckets', 'bucket 2'], ['bucket 2', '(cat, 41)'], ['bucket 2', '(cot, 19)']],
+        operations: ['hash', 'mod', 'insert/search', 'collision chain', 'resize'],
+        caption: 'A key is hashed, reduced to a bucket index, then compared inside that bucket.',
+      },
+    }),
+    section('code_example', 'Java Lookup Sketch', 'This code shows the lookup path for a separate-chaining hash table.', {
+      code: {
+        language: 'java',
+        content: 'int index = (key.hashCode() & 0x7fffffff) % table.length;\nEntry current = table[index];\nwhile (current != null) {\n  if (current.key.equals(key)) return current.value;\n  current = current.next;\n}\nreturn null;',
+        explanation: [
+          { lineRange: '1', text: 'The hash code becomes a non-negative bucket index.' },
+          { lineRange: '2', text: 'The table jumps directly to that bucket.' },
+          { lineRange: '3-5', text: 'A collision chain is scanned with equals to find the exact key.' },
+          { lineRange: '7', text: 'If the chain ends, the key is not present.' },
+        ],
+      },
+    }),
+    section('code_walkthrough', 'Line-by-Line Walkthrough', 'Line 1 computes the bucket index; it is not the final equality check. Line 2 jumps into the bucket array. Lines 3 through 5 handle collisions by walking the chain and comparing real keys. This is why hashing is fast on average but still needs collision logic.'),
+    section('complexity', 'Complexity and Load Factor', 'Lookup, insert, and delete are expected O(1) when the hash function spreads keys well and the load factor stays controlled. Worst case is O(n) if many keys collide into the same bucket. The load factor alpha is size divided by bucket count; resizing keeps alpha from growing too high.', {
+      cards: [
+        { title: 'Expected lookup', text: 'O(1)' },
+        { title: 'Worst-case lookup', text: 'O(n)' },
+        { title: 'Load factor', text: 'alpha = size / buckets' },
+        { title: 'Resize', text: 'Rehash into a larger bucket array' },
+      ],
+    }),
+    section('common_mistakes', 'Common Mistakes', '', {
+      cards: [
+        { title: 'Thinking O(1) is guaranteed', text: 'O(1) is expected, not magic. Bad collisions can force a bucket scan.' },
+        { title: 'Ignoring equals/hashCode consistency', text: 'Equal keys must produce equal hash codes, or lookup can fail.' },
+        { title: 'Using mutable keys', text: 'If a key changes after insertion, its hash bucket may no longer match.' },
+        { title: 'Letting load factor grow too high', text: 'Too many entries per bucket increases collision work.' },
+      ],
+    }),
+    section('checkpoint', 'Mini Checkpoint', 'Why does a hash table still compare keys with equals after computing the hash?', {
+      quiz: [{
+        question: 'Why compare keys after hashing?',
+        options: ['The hash is always unique', 'Different keys can collide', 'Modulo sorts the keys', 'Resize changes the value'],
+        answer: 'Different keys can collide',
+        explanation: 'A hash narrows the search to a bucket, but equality confirms the exact key.',
+      }],
+    }),
+    section('recap', 'Recap', 'A hash table uses a hash function to choose a bucket. Collisions are normal and must be handled. Load factor controls resizing. Expected operations are O(1), but collision-heavy worst cases can become O(n).'),
+    section('next_steps', 'Next Steps', 'Practice tracing insert, lookup, collision, and resize on a tiny table with five buckets. Then compare separate chaining with open addressing.'),
+  ];
+  lesson.relatedTopics = ['Hash functions', 'Separate chaining', 'Open addressing', 'Maps'];
   return normalizeLesson(lesson, { topic, skipEnsureFallback: true });
 }
 
@@ -736,6 +803,7 @@ async function generateEducationalLesson(opts = {}) {
       lessonType: opts.lessonType || detectLessonType(topic),
       curatedKnowledge: curatedAsPrompt(curated),
       groundingTier: opts.groundingTier || 'moderate',
+      enrichmentPolicyPrompt: opts.enrichmentPolicyPrompt || '',
     })
     : '';
 
@@ -1016,7 +1084,8 @@ function focusLabel(value, charMax = 38) {
     .split(/\s+/)
     .filter(word => !/^(the|a|an|to|with|through|because|that|this|these|those|your|you)$/i.test(word))
     .slice(0, 5)
-    .join(' ');
+    .join(' ')
+    .replace(/[,;:-]+$/g, '');
   if (!compact || compact.length > charMax || HANGING_WORD_RE.test(compact)) return '';
   return compact;
 }
@@ -1047,6 +1116,12 @@ function semanticLabel(value) {
   if (/\bnode\b/.test(lower) && /\bnext\b/.test(lower)) return 'Node.next';
   if (/\bhead\b/.test(lower)) return 'Head pointer';
   if (/\bnull\b/.test(lower)) return 'Null stop';
+  if (/\bhash function\b|\bhash\(key\)|\bhashcode\b/.test(lower)) return 'Hash function';
+  if (/\bbucket index\b|\bindex\b.*\bmod\b/.test(lower)) return 'Bucket index';
+  if (/\bbucket\b/.test(lower)) return 'Bucket';
+  if (/\bcollision\b|\bcollide\b/.test(lower)) return 'Collision';
+  if (/\bload factor\b|\balpha\b/.test(lower)) return 'Load factor';
+  if (/\bresize\b|\brehash\b/.test(lower)) return 'Resize';
   if (/\binsert/.test(lower)) return 'Insertion step';
   if (/\bdelete|deletion/.test(lower)) return 'Deletion step';
   if (/\bpush\b/.test(lower)) return 'Push';
@@ -1155,6 +1230,15 @@ function defaultVisualForLesson(lesson) {
   if (lower.includes('linked list')) {
     return { type: 'linkedlist', nodes: ['head', '10', '20', '30', 'null'], edges: [['head', '10'], ['10', '20'], ['20', '30'], ['30', 'null']], operations: ['insert', 'delete'], caption: 'Each node stores data and a next reference.' };
   }
+  if (lower.includes('hash table') || lower.includes('hashmap') || lower.includes('hash map') || lower.includes('hash function')) {
+    return {
+      type: 'hash_table',
+      nodes: ['key "cat"', 'hash(key)', 'index = hash mod buckets', 'bucket 2', '(cat, 41)', '(cot, 19)', 'collision chain', 'resize'],
+      edges: [['key "cat"', 'hash(key)'], ['hash(key)', 'index = hash mod buckets'], ['index = hash mod buckets', 'bucket 2'], ['bucket 2', '(cat, 41)'], ['bucket 2', '(cot, 19)']],
+      operations: ['hash', 'mod', 'lookup/insert', 'collision chain', 'resize'],
+      caption: 'Hash, bucket index, collision handling, and load factor control lookup cost.',
+    };
+  }
   if (lower.includes('stack')) {
     return { type: 'stack_queue', nodes: ['top', '42', '17', '8'], operations: ['push', 'pop', 'peek'], caption: 'Only the top item is accessible.' };
   }
@@ -1164,6 +1248,8 @@ function defaultVisualForLesson(lesson) {
   if (lower.includes('tree') || lower.includes('bst')) {
     return { type: 'tree', nodes: ['8', '3', '10', '1', '6', '14'], edges: [['8', '3'], ['8', '10'], ['3', '1'], ['3', '6'], ['10', '14']], caption: 'Left values are smaller; right values are larger.' };
   }
+  const topicNodes = findTopicNodes(lesson.topic, 'definition');
+  if (topicNodes) return { type: 'mindmap', nodes: topicNodes.nodes, edges: topicNodes.edges };
   return { type: 'mindmap', nodes: [lesson.topic, 'Definition', 'Example', 'Visual model', 'Mistakes'], edges: [[lesson.topic, 'Definition'], [lesson.topic, 'Example'], [lesson.topic, 'Visual model']] };
 }
 
@@ -1206,6 +1292,7 @@ function animationTypeForVisual(type) {
   if (type === 'code') return 'line_highlight';
   if (type === 'class_diagram') return 'uml_pointer';
   if (type === 'linkedlist') return 'linked_list_pointer';
+  if (type === 'hash_table') return 'hash_bucket_trace';
   if (type === 'stack_queue') return 'operation_arrow';
   if (type === 'tree') return 'tree_focus';
   return 'focus_pointer';
@@ -1308,12 +1395,13 @@ function lessonToVideoScenes(lessonInput) {
       def && def.content,
       'Name the relationship before memorizing syntax',
       'Check the rule against a concrete example',
-    ], {
-      topic: lesson.topic,
-      visual: { type: 'mindmap', nodes: [lesson.topic, 'Definition', 'Rule', 'Example', 'Boundary'], edges: [[lesson.topic, 'Definition'], ['Definition', 'Rule'], ['Rule', 'Example']] },
-      minChars: 260,
-      textMax: 96,
-    }),
+    ], (() => {
+      const topicNodes = findTopicNodes(lesson.topic, 'definition');
+      const visual = topicNodes
+        ? { type: 'mindmap', nodes: topicNodes.nodes, edges: topicNodes.edges }
+        : { type: 'mindmap', nodes: [lesson.topic, 'Definition', 'Rule', 'Example', 'Boundary'], edges: [[lesson.topic, 'Definition'], ['Definition', 'Rule'], ['Rule', 'Example']] };
+      return { topic: lesson.topic, visual, minChars: 260, textMax: 96 };
+    })()),
     scene('deep_explanation', analogy ? analogy.title : 'Mental Model', [analogy && analogy.content, deep && deep.content], [
       analogy && analogy.content || deep && deep.content,
       'Mental model first, syntax second',
@@ -1327,12 +1415,14 @@ function lessonToVideoScenes(lessonInput) {
       diagram && diagram.content,
       diagram && diagram.diagram && diagram.diagram.caption,
       'Point to each part and say its role',
-    ], {
-      topic: lesson.topic,
-      kind: 'diagram',
-      visual: diagramVisual,
-      minChars: 250,
-    }),
+    ], (() => {
+      let visual = diagramVisual;
+      if (visual.type === 'mindmap' || !visual.nodes || !visual.nodes.length) {
+        const topicDiagramNodes = findTopicNodes(lesson.topic, 'diagram');
+        if (topicDiagramNodes) visual = { ...visual, type: visual.type || 'mindmap', nodes: topicDiagramNodes.nodes, edges: topicDiagramNodes.edges };
+      }
+      return { topic: lesson.topic, kind: 'diagram', visual, minChars: 250 };
+    })()),
   ];
 
   if (code && code.code && code.code.content) {

@@ -109,7 +109,7 @@ const App = () => {
     material: <window.MaterialDetail onNav={goto}/>,
     storyboard: <window.StoryboardReview onNav={goto}/>,
     'study-plan': <window.StudyPlan onNav={goto}/>,
-    tutor: <window.Tutor onNav={goto}/>,
+    tutor: <window.TutorHome onNav={goto}/>,
     notes: <window.Notes onNav={goto}/>,
     flashcards: <window.Flashcards onNav={goto}/>,
     quiz: <window.Quiz onNav={goto}/>,

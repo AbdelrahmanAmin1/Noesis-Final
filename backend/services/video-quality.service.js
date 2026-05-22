@@ -2,9 +2,14 @@
 
 const REQUIRED_SLIDE_TYPES = ['title', 'objectives', 'concept', 'analogy', 'diagram', 'mistakes', 'recap', 'quiz'];
 const PLACEHOLDER_RE = /(this is a document|definition goes here|example here|lorem ipsum|topic explanation|placeholder|todo\b|trace an example|define the idea|apply (?:the )?main rule|code sketch|avoid mistakes|useconcept|name the parts|follow one operation|identify its rules)/i;
-const FORBIDDEN_VISIBLE_RE = /\b(callout|source note|trace an example|code sketch|define the idea)\b|\[chunk:\s*\d+\]/i;
+const GENERIC_ONLY_NODES = new Set(['definition', 'rule', 'example', 'boundary', 'visual model', 'mistakes', 'concept', 'start', 'practice']);
+const FORBIDDEN_VISIBLE_RE = /\b(callout|source note|trace an example|code sketch|define the idea|qualityWarnings|qualityChecks|sourceChunkIds|debugWarnings)\b|teaching\s*goal\s*:|\[chunk:\s*\d+\]/i;
 const OOP_TERMS = ['class', 'object', 'method', 'private', 'public', 'field', 'interface', 'inheritance', 'polymorphism', 'encapsulation', 'abstraction'];
-const DS_TERMS = ['node', 'pointer', 'stack', 'queue', 'tree', 'linked list', 'binary search', 'complexity', 'big-o', 'o(n)', 'push', 'pop'];
+const DS_TERMS = ['node', 'pointer', 'stack', 'queue', 'tree', 'linked list', 'binary search', 'complexity', 'big-o', 'o(n)', 'push', 'pop', 'hash table', 'hash', 'bucket', 'collision', 'load factor', 'resize', 'probe'];
+const DS_TOPIC_TERMS = ['linked list', 'node.next', 'stack', 'queue', 'tree', 'binary search tree', 'bst', 'heap', 'graph', 'hash table', 'hash map', 'hashmap', 'bucket', 'collision', 'load factor', 'resize', 'rehash', 'probe', 'chaining', 'push', 'pop', 'enqueue', 'dequeue'];
+const DS_OPERATION_VISUAL_TYPES = new Set(['linkedlist', 'linked_list_operation', 'hash_table', 'hash_table_operation', 'stack_queue', 'stack_operation', 'queue_operation', 'tree', 'tree_visual', 'bigo_chart', 'big_o_growth', 'flow', 'process_flow']);
+const DS_TOPIC_VISUAL_TYPES = new Set(['linkedlist', 'linked_list_operation', 'hash_table', 'hash_table_operation', 'stack_queue', 'stack_operation', 'queue_operation', 'tree', 'tree_visual']);
+const OOP_VISUAL_TYPES = new Set(['class_diagram', 'class_object', 'encapsulation_boundary', 'inheritance_uml', 'polymorphism_dispatch']);
 const HANGING_WORD_RE = /\b(?:a|an|and|as|at|because|before|but|by|for|from|if|in|into|is|of|on|or|that|the|then|through|to|with|while)$/i;
 
 function asList(value) {
@@ -75,16 +80,42 @@ function isCodeToken(value) {
   return /\b[A-Z][A-Za-z0-9_]*\.[A-Za-z0-9_]+\(\)$|^O\([^)]*\)$/.test(String(value || '').trim());
 }
 
+function stripInlineMarkup(value) {
+  return String(value || '')
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/__([^_]+)__/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .trim();
+}
+
 function wordCount(value) {
   return String(value || '').trim().split(/\s+/).filter(Boolean).length;
 }
 
 function isShortFocusLabel(value) {
-  const text = String(value || '').trim();
+  const text = stripInlineMarkup(value);
   if (!text || !isCompleteVisibleText(text)) return false;
   if (isCodeToken(text)) return true;
   if (/^(explain|trace|point|read|know|check|name|apply)\b/i.test(text)) return false;
   return text.length <= 42 && wordCount(text) >= 1 && wordCount(text) <= 5 && !/[.!?]$/.test(text);
+}
+
+function matchingTerms(text, terms) {
+  const lower = String(text || '').toLowerCase();
+  return terms.filter(term => {
+    const normalized = String(term || '').toLowerCase();
+    if (!normalized) return false;
+    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i').test(lower);
+  });
+}
+
+function likelyDataStructureTopic(concept, allText, visualTypes) {
+  const conceptLower = String(concept || '').toLowerCase();
+  if (matchingTerms(conceptLower, DS_TOPIC_TERMS).length > 0) return true;
+  if ((visualTypes || []).some(type => DS_TOPIC_VISUAL_TYPES.has(type))) return true;
+  const signals = new Set(matchingTerms(allText, DS_TOPIC_TERMS));
+  return signals.size >= 2;
 }
 
 function scoreVideoScript(script, opts = {}) {
@@ -103,7 +134,14 @@ function scoreVideoScript(script, opts = {}) {
   const conceptWords = concept.toLowerCase().split(/\W+/).filter(w => w.length > 2);
   const conceptCovered = !conceptWords.length || conceptWords.every(w => allText.includes(w));
   const likelyOop = containsAny(concept, OOP_TERMS) || containsAny(allText, ['encapsulation', 'inheritance', 'polymorphism', 'abstraction']);
-  const likelyDs = containsAny(concept, DS_TERMS) || containsAny(allText, ['linked list', 'stack', 'queue', 'tree', 'big-o']);
+  const likelyDs = likelyDataStructureTopic(concept, allText, visualTypes);
+  const allVisualNodes = slides.flatMap(s => [
+    ...asList(s && s.visual_nodes),
+    ...(s && s.visual ? asList(s.visual.nodes) : []),
+  ]).map(n => String(typeof n === 'string' ? n : n && (n.label || n.id) || '').toLowerCase().trim()).filter(Boolean);
+  const conceptLower = concept.toLowerCase();
+  const topicSpecificNodes = allVisualNodes.filter(n => !GENERIC_ONLY_NODES.has(n) && n !== conceptLower);
+  const hasTopicSpecificNodes = topicSpecificNodes.length >= 5;
   const hasCodeOrExample = slides.some(s => String(s.example_code || '').trim().length > 20)
     || /example|for\s*\(|class\s+\w+|push|pop|insert|search/i.test(allText);
   const placeholders = PLACEHOLDER_RE.test(allText);
@@ -117,10 +155,10 @@ function scoreVideoScript(script, opts = {}) {
   const shortFocusLabels = bulletLists.length > 0 && bulletLists.every(list => list.length >= 1 && list.length <= 2 && list.every(isShortFocusLabel));
   const walkthroughSlides = slides.filter(s => (s && s.sceneType === 'code_walkthrough') || (slideType(s) === 'step_by_step' && (s.example_code || s.code_focus)));
   const walkthroughLineRanges = !walkthroughSlides.length || walkthroughSlides.every(s => s.code_focus && String(s.code_focus.lineRange || '').trim() && asList(s.code_focus.highlightLines).length);
-  const hasOopVisual = !likelyOop || visualTypes.includes('class_diagram');
-  const hasDsOperationVisual = !likelyDs || visualTypes.some(t => ['linkedlist', 'stack_queue', 'tree', 'bigo_chart'].includes(t));
+  const hasOopVisual = !likelyOop || visualTypes.some(t => OOP_VISUAL_TYPES.has(t));
+  const hasDsOperationVisual = !likelyDs || visualTypes.some(t => DS_OPERATION_VISUAL_TYPES.has(t));
   const hasDsComplexity = !likelyDs || /o\(\s*1\s*\)|o\(\s*n\s*\)|o\(\s*log\s*n\s*\)|complexity|constant time|linear time/i.test(visibleText);
-  const lowerConcept = concept.toLowerCase();
+  const lowerConcept = conceptLower;
 
   addCriterion(criteria, 'valid_shape', slides.length > 0 && slides.every(s => s && s.title && s.narration), 'Script has slides with title and narration.', 1.2);
   addCriterion(criteria, 'slide_count_8_to_12', slides.length >= 8 && slides.length <= 12, `Slide count is ${slides.length}; expected 8-12.`, 1);
@@ -156,7 +194,7 @@ function scoreVideoScript(script, opts = {}) {
   if (lowerConcept.includes('stack')) {
     addCriterion(criteria, 'stack_specifics',
       containsAny(visibleLower, ['lifo']) && containsAny(visibleLower, ['push']) && containsAny(visibleLower, ['pop']) &&
-      containsAny(visibleLower, ['peek']) && containsAny(visibleLower, ['underflow']) && visualTypes.includes('stack_queue'),
+      containsAny(visibleLower, ['peek']) && containsAny(visibleLower, ['underflow']) && visualTypes.some(t => t === 'stack_queue' || t === 'stack_operation'),
       'Stack scripts must include LIFO, push/pop/peek, underflow, and a vertical stack visual.',
       1.4);
   }
@@ -175,6 +213,31 @@ function scoreVideoScript(script, opts = {}) {
       'Linked-list scripts must include node/head/next, insertion/deletion, and complexity.',
       1.4);
   }
+  if (lowerConcept.includes('hash')) {
+    addCriterion(criteria, 'hash_table_specifics',
+      containsAny(allText, ['hash function', 'hash(key)', 'hashcode']) &&
+      containsAny(allText, ['bucket', 'bucket index']) &&
+      containsAny(allText, ['collision', 'separate chaining', 'open addressing']) &&
+      containsAny(allText, ['load factor', 'resize', 'rehash']) &&
+      /o\(\s*1\s*\)/i.test(allText) &&
+      /o\(\s*n\s*\)|worst/i.test(allText) &&
+      visualTypes.some(t => t === 'hash_table' || t === 'hash_table_operation'),
+      'Hash-table scripts must include hashing, bucket index, collisions, load factor/resize, expected O(1), worst O(n), and a hash_table visual.',
+      1.4);
+  }
+  if (conceptLower.includes('encapsulation')) {
+    addCriterion(criteria, 'encapsulation_specifics',
+      containsAny(allText, ['private']) && containsAny(allText, ['public']) &&
+      containsAny(allText, ['getter', 'getbalance', 'get_balance', 'accessor']) &&
+      containsAny(allText, ['validation', 'guard', 'protect']) &&
+      containsAny(allText, ['balance', 'bankaccount', 'bank_account', 'account']),
+      'Encapsulation scripts must include private/public fields, getters, validation, and a concrete example like BankAccount.',
+      1.4);
+  }
+  addCriterion(criteria, 'topic_specific_visual_nodes',
+    !likelyOop && !likelyDs ? true : hasTopicSpecificNodes,
+    `Visual nodes must include topic-specific terms, not only generic placeholders. Found ${topicSpecificNodes.length} specific nodes.`,
+    1.1);
   addCriterion(criteria, 'no_placeholders', !placeholders, 'No placeholder/generic phrases.', 1);
 
   const totalWeight = criteria.reduce((sum, c) => sum + c.weight, 0);
@@ -197,10 +260,13 @@ function scoreVideoScript(script, opts = {}) {
     'inheritance_specifics',
     'polymorphism_specifics',
     'linked_list_specifics',
+    'hash_table_specifics',
     'stack_specifics',
     'oop_class_visual',
     'ds_operation_visual',
     'ds_complexity',
+    'encapsulation_specifics',
+    'topic_specific_visual_nodes',
   ]);
   const hardGatesPassed = criteria.every(c => !hardGateNames.has(c.name) || c.passed);
   return {

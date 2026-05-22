@@ -4,6 +4,7 @@ const StudyPlan = ({ onNav }) => {
   const [map, setMap] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
   const [status, setStatus] = React.useState('');
+  const [highlightNode, setHighlightNode] = React.useState('');
 
   const load = React.useCallback(async () => {
     setStatus('');
@@ -66,6 +67,7 @@ const StudyPlan = ({ onNav }) => {
   const days = planJson && Array.isArray(planJson.dailyPlan) ? planJson.dailyPlan : [];
   const taskRows = plan && Array.isArray(plan.tasks) ? plan.tasks : [];
   const today = days[0] || null;
+  const weakTopics = (planJson && planJson.weakTopics) || [];
   const taskByDay = taskRows.reduce((acc, row) => {
     if (!acc[row.day]) acc[row.day] = [];
     acc[row.day].push(row);
@@ -122,7 +124,7 @@ const StudyPlan = ({ onNav }) => {
               <button className="btn btn-bare" onClick={load} style={{ fontSize: 11.5 }}>Refresh <Icon.ArrowRight size={11}/></button>
             </div>
             {window.LearningMap
-              ? <window.LearningMap map={map || (planJson && planJson.learningMap)} compact={false} />
+              ? <window.LearningMap map={map || (planJson && planJson.learningMap)} compact={false} highlightNode={highlightNode} />
               : <div style={sp.empty}>Learning map renderer is not loaded.</div>}
           </div>
 
@@ -132,11 +134,17 @@ const StudyPlan = ({ onNav }) => {
               <Icon.Target size={14} style={{ color: 'var(--accent)' }}/>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
-              {((planJson && planJson.weakTopics) || []).length ? planJson.weakTopics.slice(0, 7).map(t => (
-                <div key={t} style={sp.topicRow}>
+              {weakTopics.length ? weakTopics.slice(0, 7).map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setHighlightNode(t)}
+                  style={{ ...sp.topicRow, ...(highlightNode === t ? sp.topicRowActive : {}) }}
+                  aria-pressed={highlightNode === t}
+                >
                   <span>{t}</span>
                   <span className="chip">priority</span>
-                </div>
+                </button>
               )) : (
                 <div style={sp.empty}>No weak topics yet. Take a quiz to calibrate the map.</div>
               )}
@@ -213,9 +221,11 @@ const sp = {
   empty: { padding: 18, color: 'var(--fg-3)', fontSize: 12.5, textAlign: 'center' },
   topicRow: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    gap: 8, padding: '9px 10px', borderRadius: 'var(--r-sm)',
+    gap: 8, width: '100%', padding: '9px 10px', borderRadius: 'var(--r-sm)',
     background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-1)', fontSize: 12.5,
+    cursor: 'pointer', textAlign: 'left',
   },
+  topicRowActive: { borderColor: 'var(--accent)', boxShadow: '0 0 0 2px var(--accent-soft)', color: 'var(--fg-0)' },
   days: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12, marginTop: 14 },
   dayCard: { padding: 16, borderRadius: 'var(--r-md)', background: 'var(--bg-2)', border: '1px solid var(--line)' },
   dayTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },

@@ -124,6 +124,17 @@
       answer: (id, idx, b) => req('POST', '/tutor/sessions/' + id + '/step/' + idx + '/answer', b),
       addNote: (id, b) => req('POST', '/tutor/sessions/' + id + '/notes', b),
       finish: (id) => req('POST', '/tutor/sessions/' + id + '/finish'),
+      tts: (text) => req('POST', '/tutor/tts', { text }, { raw: true }),
+      chat: (b) => req('POST', '/tutor/chat', b),
+      chatConversations: () => req('GET', '/tutor/chat/conversations'),
+      chatMessages: (id, opts) => {
+        const params = new URLSearchParams();
+        if (opts && opts.limit) params.set('limit', opts.limit);
+        if (opts && opts.offset) params.set('offset', opts.offset);
+        const q = params.toString() ? '?' + params.toString() : '';
+        return req('GET', '/tutor/chat/' + id + '/messages' + q);
+      },
+      chatDelete: (id) => req('DELETE', '/tutor/chat/' + id),
     },
 
     dashboard: {

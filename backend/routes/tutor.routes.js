@@ -1,15 +1,88 @@
 'use strict';
 
 const express = require('express');
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { requireAuth } = require('../middleware/auth');
-const { aiLimiter } = require('../middleware/rateLimit');
+const { aiLimiter, ttsLimiter } = require('../middleware/rateLimit');
 const { getDb } = require('../config/db');
 const env = require('../config/env');
 const { HttpError } = require('../middleware/error');
 const tutor = require('../services/tutor.service');
+const tutorChat = require('../services/tutor-chat.service');
+const tts = require('../services/tts.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
+
+router.post('/tts', requireAuth, ttsLimiter, async (req, res, next) => {
+  let outPath = '';
+  let cleanupDone = false;
+  const cleanup = () => {
+    if (cleanupDone || !outPath) return;
+    cleanupDone = true;
+    fs.unlink(outPath, () => {});
+  };
+
+  try {
+    const text = String((req.body && req.body.text) || '').replace(/\s+/g, ' ').trim();
+    if (!text) throw new HttpError(400, 'missing_text');
+    if (text.length > 4000) throw new HttpError(400, 'tts_text_too_long');
+
+    const audioDir = path.join(env.UPLOAD_DIR, 'audio');
+    fs.mkdirSync(audioDir, { recursive: true });
+    outPath = path.join(audioDir, `tts-${req.user.id}-${Date.now()}-${crypto.randomBytes(4).toString('hex')}.wav`);
+
+    await tts.synthesize(text, outPath);
+
+    res.setHeader('Content-Type', 'audio/wav');
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Disposition', 'inline; filename="noesis-tutor.wav"');
+
+    res.on('finish', cleanup);
+    res.on('close', cleanup);
+
+    fs.createReadStream(outPath)
+      .on('error', (err) => {
+        cleanup();
+        next(err);
+      })
+      .pipe(res);
+  } catch (e) {
+    cleanup();
+    next(e);
+  }
+});
+
+router.post('/chat', requireAuth, aiLimiter, async (req, res, next) => {
+  try {
+    res.json(await tutorChat.sendMessage(req.user.id, req.body || {}));
+  } catch (e) { next(e); }
+});
+
+router.get('/chat/conversations', requireAuth, (req, res, next) => {
+  try {
+    res.json({ conversations: tutorChat.getConversations(req.user.id) });
+  } catch (e) { next(e); }
+});
+
+router.get('/chat/:id/messages', requireAuth, (req, res, next) => {
+  try {
+    res.json(tutorChat.getMessages(
+      req.user.id,
+      parseInt(req.params.id, 10),
+      req.query.limit,
+      req.query.offset
+    ));
+  } catch (e) { next(e); }
+});
+
+router.delete('/chat/:id', requireAuth, (req, res, next) => {
+  try {
+    res.json(tutorChat.deleteConversation(req.user.id, parseInt(req.params.id, 10)));
+  } catch (e) { next(e); }
+});
 
 router.get('/sessions', requireAuth, (req, res, next) => {
   try {
@@ -81,15 +154,15 @@ router.patch('/sessions/:id/mode', requireAuth, (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post('/sessions/:id/continue', requireAuth, aiLimiter, (req, res, next) => {
+router.post('/sessions/:id/continue', requireAuth, aiLimiter, async (req, res, next) => {
   try {
-    res.json(tutor.continueSession(req.user.id, parseInt(req.params.id, 10), req.body || {}));
+    res.json(await tutor.continueSession(req.user.id, parseInt(req.params.id, 10), req.body || {}));
   } catch (e) { next(e); }
 });
 
-router.post('/sessions/:id/step/:idx/answer', requireAuth, aiLimiter, (req, res, next) => {
+router.post('/sessions/:id/step/:idx/answer', requireAuth, aiLimiter, async (req, res, next) => {
   try {
-    const result = tutor.continueSession(req.user.id, parseInt(req.params.id, 10), req.body || {});
+    const result = await tutor.continueSession(req.user.id, parseInt(req.params.id, 10), req.body || {});
     res.json({
       correct: result.correct,
       correct_idx: null,

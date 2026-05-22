@@ -14,7 +14,7 @@ const ai = require('../services/ai.service');
 const prompts = require('../utils/prompts');
 const { extractJson } = require('../utils/jsonSafe');
 
-const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart'];
+const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'hash_table', 'bigo_chart'];
 
 const SlideSchema = z.object({
   slideType: z.string().optional(),

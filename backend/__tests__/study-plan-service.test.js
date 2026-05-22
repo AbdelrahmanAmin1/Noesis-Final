@@ -19,7 +19,7 @@ describe('study-plan.service', () => {
   });
 
   beforeEach(() => {
-    db.exec('DELETE FROM study_plan_tasks; DELETE FROM study_plans; DELETE FROM learning_maps; DELETE FROM concepts; DELETE FROM user_prefs; DELETE FROM users;');
+    db.exec('DELETE FROM study_plan_tasks; DELETE FROM study_plans; DELETE FROM learning_maps; DELETE FROM chunks; DELETE FROM chapters; DELETE FROM materials; DELETE FROM concepts; DELETE FROM user_prefs; DELETE FROM users;');
     userId = db.prepare('INSERT INTO users (email, password_hash, name, created_at) VALUES (?,?,?,?)')
       .run(`plan-${Date.now()}@test.com`, 'hash', 'Plan User', new Date().toISOString()).lastInsertRowid;
     db.prepare('INSERT INTO user_prefs (user_id, subject, goal, daily_minutes, study_profile_json) VALUES (?,?,?,?,?)')
@@ -40,6 +40,40 @@ describe('study-plan.service', () => {
     const map = learningMaps.buildLearningMap(userId);
     expect(map.startHere).toBe('Linked List');
     expect(map.nodes.find(n => n.label === 'Linked List').type).toBe('weak');
+  });
+
+  it('grounds and prunes a material-specific learning map from uploaded chunks', () => {
+    const materialId = db.prepare(`INSERT INTO materials
+      (user_id, course_id, title, type, file_path, mime, size_bytes, status, progress, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(userId, null, 'Encapsulation Lecture', 'pdf', '/tmp/encapsulation.pdf', 'application/pdf', 1200, 'ready', 100, new Date().toISOString())
+      .lastInsertRowid;
+    db.prepare(`INSERT INTO chunks
+      (material_id, chapter_id, idx, text, token_count, chapter_title, heading, has_code, keywords_json)
+      VALUES (?,?,?,?,?,?,?,?,?)`)
+      .run(
+        materialId,
+        null,
+        0,
+        'Encapsulation hides object state inside a class. Private fields should not be changed directly; public methods such as getters and setters control access to the object.',
+        34,
+        'Object-Oriented Programming',
+        'Encapsulation',
+        0,
+        JSON.stringify(['encapsulation', 'class', 'object', 'private fields', 'public methods'])
+      );
+
+    const map = learningMaps.buildLearningMap(userId, { materialId });
+    const branchLabels = (map.tree.children || []).map(n => n.label);
+
+    expect(map.rootTopic).toBe('Encapsulation Lecture');
+    expect(map.materialGrounding.used).toBe(true);
+    expect(map.materialGrounding.specificEnough).toBe(true);
+    expect(map.materialGrounding.groundedConcepts).toContain('Encapsulation');
+    expect(branchLabels).toContain('Encapsulation');
+    expect(branchLabels).not.toContain('Polymorphism');
+    expect(map.nodes.find(n => n.label === 'Encapsulation').grounded).toBe(true);
+    expect(map.recommendedPath).toContain('Encapsulation');
   });
 
   it('creates, approves, and completes a personalized plan', () => {

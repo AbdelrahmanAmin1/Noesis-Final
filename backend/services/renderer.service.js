@@ -5,6 +5,7 @@ const net = require('net');
 const path = require('path');
 const env = require('../config/env');
 const slides = require('./slides.service');
+const visualRegistry = require('../utils/visual-registry');
 
 let remotionBundleLocation = null;
 
@@ -77,11 +78,11 @@ function canvasStatus() {
 }
 
 function status() {
-  const selected = env.NOESIS_DEMO_MODE
-    ? (env.VIDEO_RENDERER === 'canvas' ? 'canvas' : env.VIDEO_RENDERER || 'remotion')
-    : env.VIDEO_RENDERER;
   const remotion = remotionStatus();
   const canvas = canvasStatus();
+  const selected = env.VIDEO_RENDERER_EXPLICIT
+    ? (env.VIDEO_RENDERER === 'remotion' ? 'remotion' : 'canvas')
+    : (remotion.ok ? 'remotion' : 'canvas');
   const selectedStatus = selected === 'remotion' ? remotion : canvas;
   return {
     selected,
@@ -94,6 +95,70 @@ function status() {
 
 function storyboardPreviewUrl(storyboardId, sceneId) {
   return `/api/videos/storyboard/${storyboardId}/scene/${encodeURIComponent(sceneId)}/preview`;
+}
+
+function visualTextFor(scene = {}, slide = {}) {
+  const data = scene.visualElements || scene.visualData || slide.visual || {};
+  const nodes = Array.isArray(data.nodes) ? data.nodes : slide.visual_nodes || [];
+  return [
+    scene.topic,
+    slide.topic,
+    scene.sceneTitle,
+    scene.title,
+    slide.title,
+    scene.learningPoint,
+    scene.narration,
+    slide.narration,
+    data.caption,
+    slide.caption,
+    ...nodes.map(node => typeof node === 'string' ? node : node && (node.label || node.id || node.name) || ''),
+  ].filter(Boolean).join(' ');
+}
+
+function sceneTypeOf(scene = {}, slide = {}) {
+  return String(scene.sceneType || scene.type || slide.slideType || slide.slide_type || '').toLowerCase();
+}
+
+function conceptMapAllowedForRender(scene = {}, slide = {}, canonicalType = '') {
+  const type = sceneTypeOf(scene, slide);
+  if (canonicalType === 'learning_objectives') return type === 'objectives';
+  if (canonicalType === 'summary_path') return type === 'recap' || type === 'checkpoint' || type === 'summary';
+  if (canonicalType === 'concept_map') return type === 'mindmap' || type === 'objectives' || type === 'recap' || type === 'summary';
+  return true;
+}
+
+function visualValidationError(code, message, details = {}) {
+  const err = new Error(message || code);
+  err.code = code;
+  err.visualValidation = true;
+  err.details = details;
+  return err;
+}
+
+function validateRemotionVisualInput({ scene = {}, slide = {} } = {}) {
+  const data = scene.visualElements || scene.visualData || slide.visual || {};
+  const rawType = scene.visualType || scene.visualTemplate || data.type || slide.visual_type || '';
+  const text = visualTextFor(scene, slide);
+  const resolution = visualRegistry.resolveVisualType(rawType, {
+    topic: scene.topic || slide.topic,
+    title: scene.sceneTitle || scene.title || slide.title,
+    text,
+  });
+  if (!resolution.supported) {
+    throw visualValidationError(
+      'unsupported_visual_type',
+      `unsupported_visual_type:${rawType || 'missing'}`,
+      { visualType: rawType || 'missing' }
+    );
+  }
+  if (resolution.config && resolution.config.conceptMap && !conceptMapAllowedForRender(scene, slide, resolution.canonical)) {
+    throw visualValidationError(
+      'generic_fallback_not_allowed',
+      `generic_fallback_not_allowed:${resolution.canonical}`,
+      { visualType: resolution.canonical, sceneType: sceneTypeOf(scene, slide) || 'missing' }
+    );
+  }
+  return resolution;
 }
 
 async function renderScenePreview(slide, outPath) {
@@ -116,6 +181,7 @@ async function ensureRemotionBundle() {
 }
 
 async function renderRemotionScene({ slide, scene, outPath, durationSec, fps = 30, onProgress }) {
+  validateRemotionVisualInput({ scene, slide });
   const serveUrl = await ensureRemotionBundle();
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const { renderMedia, selectComposition } = require('@remotion/renderer');
@@ -160,6 +226,9 @@ module.exports = {
   status,
   remotionStatus,
   canvasStatus,
+  supportedVisualTypes: visualRegistry.supportedVisualTypes,
+  resolveVisualType: visualRegistry.resolveVisualType,
+  validateRemotionVisualInput,
   detectBrowserExecutable,
   getAvailablePort,
   storyboardPreviewUrl,

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<base href="/"/>
+<title>Noesis - An intelligent learning workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles/tokens.css"/>
+<style>
+  .boot-screen {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: #06061a;
+    color: #f5f3ff;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .boot-card {
+    max-width: 560px;
+    padding: 24px;
+    line-height: 1.5;
+  }
+  .boot-title {
+    font-size: 20px;
+    margin-bottom: 8px;
+  }
+  .boot-sub {
+    color: rgba(245, 243, 255, 0.7);
+    font-size: 14px;
+  }
+</style>
+
+<template id="__bundler_thumbnail">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><radialGradient id="g" cx="50%" cy="50%"><stop offset="0%" stop-color="#a5b4fc"/><stop offset="100%" stop-color="#08081a"/></radialGradient></defs><rect width="120" height="120" fill="#08081a"/><circle cx="60" cy="60" r="34" fill="url(#g)"/><circle cx="60" cy="60" r="34" fill="none" stroke="#c99afc" stroke-width="1.2"/><circle cx="60" cy="60" r="6" fill="#eeecff"/></svg>
+</template>
+</head>
+<body>
+<div id="root">
+  <div class="boot-screen">
+    <div class="boot-card">
+      <div class="boot-title">Loading Noesis...</div>
+      <div class="boot-sub">If this stays here, the app will show the browser error below.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.addEventListener('error', function (event) {
+  var root = document.getElementById('root');
+  if (!root) return;
+  root.innerHTML = '<div class="boot-screen"><div class="boot-card"><div class="boot-title">Noesis failed to start</div><pre class="boot-sub" style="white-space:pre-wrap">' +
+    String(event.message || 'Unknown error') + '\\n' +
+    String(event.filename || '') + ':' + String(event.lineno || '') + ':' + String(event.colno || '') +
+    '</pre></div></div>';
+});
+window.addEventListener('unhandledrejection', function (event) {
+  var root = document.getElementById('root');
+  if (!root) return;
+  var reason = event.reason && (event.reason.stack || event.reason.message) || event.reason || 'Unknown promise rejection';
+  root.innerHTML = '<div class="boot-screen"><div class="boot-card"><div class="boot-title">Noesis async startup failed</div><pre class="boot-sub" style="white-space:pre-wrap">' +
+    String(reason) +
+    '</pre></div></div>';
+});
+</script>
+
+<script src="vendor/react.development.js"></script>
+<script src="vendor/react-dom.development.js"></script>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/marked.min.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script src="dist/app.bundle.js"></script>
+</body>
+</html>

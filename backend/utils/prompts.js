@@ -61,6 +61,8 @@ Audience: beginner CS student.
 Lesson type: {{LESSON_TYPE}}
 Grounding: {{GROUNDING_STATUS}}
 
+{{ENRICHMENT_POLICY}}
+
 Use source excerpts for course-specific facts. Use curated local knowledge for deep explanation, code, diagrams, mistakes, and complexity. Do not merely summarize the source.
 
 Source excerpts:
@@ -70,7 +72,7 @@ Curated local knowledge:
 {{CURATED_KNOWLEDGE}}
 
 Return ONLY valid JSON:
-{"topic":"{{TOPIC}}","audienceLevel":"beginner","lessonType":"oop|data_structure|algorithm|general","sourceMaterial":{"title":"{{TITLE}}","grounding":"{{GROUNDING_STATUS}}","selectedChunkIds":[]},"learningObjectives":["..."],"prerequisites":["..."],"sections":[{"type":"hook|definition|deep_explanation|analogy|code_example|code_walkthrough|diagram|mindmap|common_mistakes|complexity|checkpoint|recap|next_steps","title":"...","content":"...","cards":[{"title":"...","text":"..."}],"code":{"language":"java","content":"...","explanation":[{"lineRange":"1-3","text":"..."}]},"diagram":{"type":"uml_class|inheritance_tree|linked_list|stack|queue|tree|big_o_chart|mindmap|flow","nodes":[],"edges":[],"operations":[],"caption":""},"callouts":[{"type":"remember|exam_tip|warning|source","text":"...","sourceChunkIds":[]}],"quiz":[{"question":"...","options":["..."],"answer":"...","explanation":"..."}]}],"relatedTopics":["..."]}
+{"topic":"{{TOPIC}}","audienceLevel":"beginner","lessonType":"oop|data_structure|algorithm|general","sourceMaterial":{"title":"{{TITLE}}","grounding":"{{GROUNDING_STATUS}}","selectedChunkIds":[]},"learningObjectives":["..."],"prerequisites":["..."],"sections":[{"type":"hook|definition|deep_explanation|analogy|code_example|code_walkthrough|diagram|mindmap|common_mistakes|complexity|checkpoint|recap|next_steps","title":"...","content":"...","cards":[{"title":"...","text":"..."}],"code":{"language":"java","content":"...","explanation":[{"lineRange":"1-3","text":"..."}]},"diagram":{"type":"uml_class|inheritance_tree|linked_list|hash_table|stack|queue|tree|big_o_chart|mindmap|flow","nodes":[],"edges":[],"operations":[],"caption":""},"callouts":[{"type":"remember|exam_tip|warning|source","text":"...","sourceChunkIds":[]}],"quiz":[{"question":"...","options":["..."],"answer":"...","explanation":"..."}]}],"relatedTopics":["..."]}
 
 Required:
 - Include hook, definition, deep_explanation, diagram, code_example, code_walkthrough, common_mistakes, checkpoint, recap, and next_steps sections.
@@ -144,6 +146,74 @@ Write one concise tutor step that teaches or demonstrates the concept. Use sourc
 
 Output: only markdown.`;
 
+const TUTOR_CHAT_FALLBACK = `{{SYSTEM_BASE}}
+
+You are Noesis in free-form chat mode. Answer the student's question using the uploaded material excerpts as the primary source of truth.
+
+Grounding tier: {{GROUNDING_TIER}}
+
+Conversation so far:
+{{CONVERSATION_HISTORY}}
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Student question:
+{{USER_MESSAGE}}
+
+Rules:
+- Give a clear, helpful answer in markdown.
+- Cite source details naturally using [Source 1], [Source 2], etc. only when that exact excerpt supports the claim.
+- Do not cite general CS knowledge or conversation memory as a source.
+- If Grounding tier is weak, begin with: "I could not find strong support for this in your uploaded material." Then clearly label any extra help as general CS explanation.
+- If there are no relevant excerpts, do not fabricate course-specific details. Offer a general explanation only if it is clearly marked as general help.
+- If the excerpts do not support the answer well, say that clearly before adding general CS knowledge.
+- Do not invent course-specific details that are not in the excerpts.
+- Keep the answer focused on the student's question.
+- End with exactly 2-3 follow-up suggestions inside this block:
+[SUGGESTIONS]
+- ...
+- ...
+[/SUGGESTIONS]
+
+Output only the answer and the suggestions block.`;
+
+const TUTOR_CHAT_ACTION_FALLBACK = `{{SYSTEM_BASE}}
+
+You are Noesis in free-form chat mode. The student clicked a study action chip.
+
+Action: {{ACTION_LABEL}}
+Grounding tier: {{GROUNDING_TIER}}
+
+Action instructions:
+{{ACTION_INSTRUCTIONS}}
+
+Conversation so far:
+{{CONVERSATION_HISTORY}}
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}
+
+Student request:
+{{USER_MESSAGE}}
+
+Rules:
+- Use the uploaded material excerpts as the primary source of truth.
+- Cite source details naturally using [Source 1], [Source 2], etc. only when that exact excerpt supports the claim.
+- Do not cite general CS knowledge or conversation memory as a source.
+- If Grounding tier is weak, begin with: "I could not find strong support for this in your uploaded material." Then clearly label any extra help as general CS explanation.
+- If there are no relevant excerpts, do not fabricate course-specific details. Offer a general study response only if it is clearly marked as general help.
+- If the excerpts do not support the answer well, say that clearly before adding general CS knowledge.
+- Keep the response useful for studying, not generic.
+- End with exactly 2-3 follow-up suggestions inside:
+[SUGGESTIONS]
+- ...
+- ...
+[/SUGGESTIONS]
+{{STRUCTURED_OUTPUT_INSTRUCTIONS}}
+
+Output only the answer, the suggestions block, and any requested structured block.`;
+
 const VIDEO_SCRIPT_FALLBACK = `{{SYSTEM_BASE}}
 
 Task: Write a deep educational tutor video script (8-12 slides) on: "{{CONCEPT}}". This must feel like an expert tutor at a whiteboard — teaching deeply with explanations, code, and visuals.
@@ -155,7 +225,7 @@ Educational slide sequence (skip only if truly irrelevant):
 4. CORE CONCEPT — Step-by-step explanation of the main idea with concrete examples.
 5. WORKED EXAMPLE — Walk through a specific example showing inputs, operations, outputs.
 6. CODE EXAMPLE — Complete working code (8-15 lines with comments) in example_code field. Narration explains each line.
-7. VISUAL DIAGRAM — Best visual_type: class_diagram (OOP), tree (BST/heap), stack_queue (stack/queue), linkedlist, bigo_chart (complexity), flow (algorithms).
+7. VISUAL DIAGRAM — Best visual_type: class_diagram (OOP), tree (BST/heap), stack_queue (stack/queue), linkedlist, hash_table, bigo_chart (complexity), flow (algorithms).
 8. COMMON MISTAKES — 2-3 mistakes with WHY they are wrong vs. the correct approach.
 9. COMPLEXITY — Time/space analysis with concrete comparisons.
 10. SUMMARY — Key takeaways as recap.
@@ -165,7 +235,7 @@ Source excerpts:
 {{SOURCE_EXCERPTS}}
 
 Output STRICT JSON only:
-{"slides":[{"title":"...","visual_type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart","bullets":["...","..."],"visual_nodes":["Node","LinkedList","head","next"],"visual_edges":[["head","Node"]],"callouts":["..."],"example_code":"...","narration":"..."}]}
+{"slides":[{"title":"...","visual_type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|hash_table|bigo_chart","bullets":["...","..."],"visual_nodes":["Node","LinkedList","head","next"],"visual_edges":[["head","Node"]],"callouts":["..."],"example_code":"...","narration":"..."}]}
 
 Rules:
 - Produce 8-12 slides. Every slide MUST have deep narration (4-8 sentences for teaching slides, 2-4 for title/quiz/recap).
@@ -230,7 +300,7 @@ Rules:
 - callouts are short tutor tips or warnings (1-2 per slide). Do not include raw chunk references.
 - For CODE slides: put complete, working code (8-15 lines with comments) in the example_code field. The narration should explain the code line by line.
 - For ANALOGY slides: fully develop the analogy. Map each part of the real-world scenario to the technical concept.
-- For DIAGRAM slides: use the best visual_type for the concept (class_diagram for OOP, tree for trees, linkedlist for linked lists, stack_queue for stacks/queues, bigo_chart for complexity, flow for algorithms).
+- For DIAGRAM slides: use the best visual_type for the concept (class_diagram for OOP, tree for trees, linkedlist for linked lists, hash_table for hash tables/maps, stack_queue for stacks/queues, bigo_chart for complexity, flow for algorithms).
 - If grounding is LOW, say so in slide 1 narration + callout, then teach from standard CS knowledge.
 - Do NOT use generic bullets like "What X means" or "Why it matters" — actually explain what it means and why it matters.
 - Vary sentence openings in narration. Use transitions: "Now let us look at...", "The key insight is...", "Notice how...".`;
@@ -333,6 +403,7 @@ const LESSON_GENERATE = (chunks, title, opts = {}) => {
     TOPIC: opts.topic || title,
     LESSON_TYPE: opts.lessonType || 'general',
     GROUNDING_STATUS: tier,
+    ENRICHMENT_POLICY: opts.enrichmentPolicyPrompt || 'Enrichment policy: Use the uploaded source as the primary source of truth. Add examples only to simplify the same detected topic.',
     SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 950, maxTotalChars: 6200 }),
     CURATED_KNOWLEDGE: opts.curatedKnowledge || '(No curated local knowledge provided.)',
   });
@@ -373,6 +444,25 @@ const TUTOR_STEP_EXPLAIN = (concept, mode, chunks) => renderTemplate('tutor-step
   CONCEPT: concept,
   MODE: mode,
   SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 800, maxTotalChars: 3600 }),
+});
+
+const TUTOR_CHAT = (chunks, message, opts = {}) => renderTemplate('tutor-chat.txt', TUTOR_CHAT_FALLBACK, {
+  SYSTEM_BASE,
+  USER_MESSAGE: message,
+  GROUNDING_TIER: opts.groundingTier || 'moderate',
+  CONVERSATION_HISTORY: opts.conversationHistory || '(No previous chat turns.)',
+  SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 800, maxTotalChars: 5200 }),
+});
+
+const TUTOR_CHAT_ACTION = (chunks, message, opts = {}) => renderTemplate('tutor-chat-action.txt', TUTOR_CHAT_ACTION_FALLBACK, {
+  SYSTEM_BASE,
+  USER_MESSAGE: message,
+  ACTION_LABEL: opts.actionLabel || 'Study action',
+  ACTION_INSTRUCTIONS: opts.actionInstructions || 'Help the student study the current concept.',
+  STRUCTURED_OUTPUT_INSTRUCTIONS: opts.structuredOutputInstructions || '',
+  GROUNDING_TIER: opts.groundingTier || 'moderate',
+  CONVERSATION_HISTORY: opts.conversationHistory || '(No previous chat turns.)',
+  SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 800, maxTotalChars: 5200 }),
 });
 
 const VIDEO_SCRIPT = (concept, chunks, opts = {}) => {
@@ -424,6 +514,8 @@ module.exports = {
   TUTOR_PLAN,
   TUTOR_FEEDBACK,
   TUTOR_STEP_EXPLAIN,
+  TUTOR_CHAT,
+  TUTOR_CHAT_ACTION,
   VIDEO_SCRIPT,
   VIDEO_CONCEPT_EXTRACT,
   CONCEPT_EXTRACT,

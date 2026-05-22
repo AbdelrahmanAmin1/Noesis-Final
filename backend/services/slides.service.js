@@ -22,6 +22,7 @@ const VISUAL_TYPES = [
   'tree',
   'stack_queue',
   'linkedlist',
+  'hash_table',
   'bigo_chart',
 ];
 
@@ -42,18 +43,45 @@ function escapeXml(s) {
     .replace(/'/g, '&apos;');
 }
 
+function normalizeVisibleText(value) {
+  return String(value || '')
+    .replace(/\[chunk:\s*\d+\]/gi, '')
+    .replace(/\u00e2\u20ac[\u0090\u0091\u0092\u0093\u0094\u201c\u201d]/g, '-')
+    .replace(/\u00e2\u20ac[\u0152\u009d]/g, '"')
+    .replace(/\u00e2\u20ac[\u02dc\u2122]/g, "'")
+    .replace(/\u00c2\u00b7/g, '-')
+    .replace(/\u00ce\u00b1/g, 'alpha')
+    .replace(/\u00e2\u2030\u02c6/g, '~=')
+    .replace(/\u00e2\u2030\u00a4/g, '<=')
+    .replace(/\u00e2\u2030\u00a5/g, '>=')
+    .replace(/\u00e2\u02c6\u2019/g, '-')
+    .replace(/\u00c3\u2014/g, 'x')
+    .replace(/\u00c2\u00b2/g, '^2')
+    .replace(/[\u2013\u2014\u2212]/g, '-')
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\u03b1/g, 'alpha')
+    .replace(/\u2248/g, '~=')
+    .replace(/\u2264/g, '<=')
+    .replace(/\u2265/g, '>=')
+    .replace(/\u00d7/g, 'x')
+    .replace(/\u00b2/g, '^2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function cleanList(value, fallback = []) {
   const source = Array.isArray(value) && value.length ? value : fallback;
   return source
-    .map(v => String(v || '').replace(/[‐‑‒–—]/g, '-').replace(/\s+/g, ' ').trim())
+    .map(v => normalizeVisibleText(v))
     .filter(Boolean);
 }
 
 function compactText(text, max = 72) {
-  const value = String(text || '').replace(/[‐‑‒–—]/g, '-').replace(/\s+/g, ' ').trim();
-  if (value.length <= max) return value;
-  const slice = value.slice(0, max).replace(/\s+\S*$/, '').trim();
-  return (slice || value.slice(0, max).trim()).replace(/[,;:\-.]+$/g, '');
+  const normalized = normalizeVisibleText(text);
+  if (normalized.length <= max) return normalized;
+  const normalizedSlice = normalized.slice(0, max).replace(/\s+\S*$/, '').trim();
+  return (normalizedSlice || normalized.slice(0, max).trim()).replace(/[,;:\-.]+$/g, '');
 }
 
 function inset(region, pad) {
@@ -234,6 +262,7 @@ function inferVisualType(slide) {
   if (VISUAL_TYPES.includes(explicit)) return explicit;
   const text = getSlideText(slide);
   if (text.includes('linked list') || text.includes('linkedlist')) return 'linkedlist';
+  if (text.includes('hash table') || text.includes('hashmap') || text.includes('hash map') || text.includes('hash function') || text.includes('collision') || text.includes('load factor') || text.includes('bucket')) return 'hash_table';
   if (text.includes('big-o') || text.includes('big o') || text.includes('complexity') || /o\([^)]+\)/.test(text)) return 'bigo_chart';
   if (text.includes('stack') || text.includes('queue') || text.includes('fifo') || text.includes('lifo')) return 'stack_queue';
   if (text.includes('tree') || text.includes('bst') || text.includes('binary search')) return 'tree';
@@ -629,6 +658,87 @@ function drawLinkedList(ctx, visual, region) {
   }
 }
 
+function drawHashTable(ctx, slide, visual, region) {
+  const r = inset(region, 40);
+  const text = getSlideText(slide);
+  const nodes = visual.nodes.length ? visual.nodes : ['key "cat"', 'hash(key)', 'index = hash mod m', 'bucket 2', '(cat, 41)', '(cot, 19)'];
+  const ops = visual.operations.length ? visual.operations : ['hash', 'mod', 'lookup/insert', 'collision chain'];
+  const keyLabel = nodes.find(n => /\bkey\b/i.test(n)) || nodes[0] || 'key';
+  const hashLabel = nodes.find(n => /\bhash\b/i.test(n)) || 'hash(key)';
+  const indexLabel = nodes.find(n => /\bindex\b|\bmod\b|\bbucket index\b/i.test(n)) || 'index = hash mod m';
+  const bucketLabel = nodes.find(n => /\bbucket\b/i.test(n)) || 'bucket 2';
+  const values = nodes
+    .filter(n => !/\bkey\b|\bhash\b|\bindex\b|\bmod\b|\bbucket\b|\btable\b/i.test(n))
+    .slice(0, 4);
+  const chain = values.length ? values : ['(cat, 41)', '(cot, 19)'];
+
+  const topY = r.y + 18;
+  const stepW = Math.min(215, (r.w - 96) / 3);
+  const stepH = 68;
+  const stepX = [r.x + 20, r.x + 20 + stepW + 48, r.x + 20 + (stepW + 48) * 2];
+  const stepLabels = [keyLabel, hashLabel, indexLabel];
+  stepLabels.forEach((label, i) => {
+    drawBox(ctx, label, { x: stepX[i], y: topY, w: stepW, h: stepH }, ['#dbeafe', '#dcfce7', '#fef3c7'][i], ['#2563eb', '#16a34a', '#f59e0b'][i], {
+      align: 'center',
+      maxLines: 2,
+      maxChars: 34,
+      startPx: 18,
+    });
+    if (i < stepLabels.length - 1) {
+      drawArrow(ctx, stepX[i] + stepW + 8, topY + stepH / 2, stepX[i + 1] - 10, topY + stepH / 2, '#334155', 3);
+    }
+  });
+
+  const tableX = r.x + 44;
+  const tableY = r.y + 136;
+  const rowH = 46;
+  const bucketW = 248;
+  const slotW = 64;
+  const bucketCount = 5;
+  drawTextBox(ctx, 'bucket array', { x: tableX, y: tableY - 30, w: bucketW, h: 24 }, { color: MUTED, startPx: 16, minPx: 12, weight: '700', maxLines: 1 });
+  for (let i = 0; i < bucketCount; i++) {
+    const y = tableY + i * rowH;
+    const active = i === 2 || /bucket\s*2|index\s*2/.test(text);
+    fillRoundRect(ctx, tableX, y, slotW, rowH - 6, 8, active ? '#dbeafe' : '#f8fafc', active ? BLUE : '#94a3b8', active ? 3 : 2);
+    drawTextBox(ctx, String(i), { x: tableX, y: y + 9, w: slotW, h: 24 }, { align: 'center', color: active ? BLUE : MUTED, startPx: 17, minPx: 12, weight: '700', maxLines: 1 });
+    fillRoundRect(ctx, tableX + slotW + 10, y, bucketW - slotW - 10, rowH - 6, 8, active ? '#eff6ff' : '#ffffff', active ? BLUE : LINE, active ? 3 : 2);
+    drawTextBox(ctx, active ? compactText(bucketLabel, 28) : 'empty', { x: tableX + slotW + 24, y: y + 9, w: bucketW - slotW - 38, h: 24 }, { color: active ? INK : MUTED, startPx: 16, minPx: 11, maxLines: 1 });
+  }
+
+  const chainX = tableX + bucketW + 86;
+  const chainY = tableY + 2 * rowH - 2;
+  drawArrow(ctx, tableX + bucketW + 10, chainY + 20, chainX - 14, chainY + 20, '#2563eb', 4);
+  chain.forEach((item, i) => {
+    const x = chainX + i * 152;
+    const w = 124;
+    drawBox(ctx, item, { x, y: chainY - 8, w, h: 58 }, i === 0 ? '#dcfce7' : '#fee2e2', i === 0 ? '#16a34a' : '#ef4444', {
+      align: 'center',
+      maxLines: 2,
+      maxChars: 28,
+      startPx: 16,
+    });
+    if (i < chain.length - 1) drawArrow(ctx, x + w + 4, chainY + 20, x + 146, chainY + 20, '#ef4444', 3);
+  });
+  drawTextBox(ctx, chain.length > 1 ? 'collision: chain same bucket' : 'slot holds matching entry', { x: chainX, y: chainY + 66, w: Math.min(460, r.x + r.w - chainX), h: 28 }, {
+    color: chain.length > 1 ? '#b91c1c' : '#166534',
+    startPx: 17,
+    minPx: 12,
+    weight: '700',
+    maxLines: 1,
+  });
+
+  const bottom = { x: r.x + 332, y: r.y + r.h - 74, w: r.w - 372, h: 54 };
+  const alpha = text.includes('load') || text.includes('resize') ? 'load factor alpha = size / buckets; resize when alpha is high' : 'expected O(1), worst-case O(n) if collisions cluster';
+  drawBox(ctx, alpha, bottom, '#f8fafc', '#94a3b8', { maxLines: 2, startPx: 17, minPx: 12, maxChars: 78 });
+  drawTextBox(ctx, ops.slice(0, 4).join(' -> '), { x: r.x + 20, y: r.y + r.h - 34, w: 290, h: 24 }, {
+    color: MUTED,
+    startPx: 16,
+    minPx: 11,
+    weight: '700',
+    maxLines: 1,
+  });
+}
+
 function drawBigOChart(ctx, slide, region) {
   const text = getSlideText(slide);
   const r = inset(region, 46);
@@ -686,6 +796,7 @@ function drawVisual(ctx, slide, visual, bullets, region) {
   if (type === 'tree') return drawTree(ctx, visual, content);
   if (type === 'stack_queue') return drawStackQueue(ctx, slide, visual, content);
   if (type === 'linkedlist') return drawLinkedList(ctx, visual, content);
+  if (type === 'hash_table') return drawHashTable(ctx, slide, visual, content);
   if (type === 'bigo_chart') return drawBigOChart(ctx, slide, content);
   return drawMindmap(ctx, slide, visual, content, type === 'summary');
 }
@@ -865,6 +976,21 @@ function drawAnimationOverlay(ctx, slide, layout, visual, progress = 1) {
     drawPointer(ctx, { x: current.x, y: r.y + 72 }, { x: current.x + (next.x - current.x) * pulse, y }, current.label, phase);
     return drawMovingBadge(ctx, current.label, current.x - 40, y + 42, '#16a34a');
   }
+  if (type === 'hash_table') {
+    const r = layout.visual;
+    const steps = [
+      { label: 'key', x: r.x + 116, y: r.y + 112 },
+      { label: 'hash', x: r.x + 360, y: r.y + 112 },
+      { label: 'index', x: r.x + 604, y: r.y + 112 },
+      { label: 'bucket', x: r.x + 238, y: r.y + 290 },
+      { label: 'collision', x: r.x + 650, y: r.y + 290 },
+    ];
+    const idx = Math.min(steps.length - 1, Math.floor(phase * steps.length));
+    const current = steps[idx];
+    drawMovingBadge(ctx, current.label, current.x - 42, current.y - 58, idx === 4 ? '#ef4444' : '#2563eb');
+    drawPointer(ctx, { x: current.x + 80, y: current.y - 42 }, { x: current.x, y: current.y }, current.label, pulse);
+    return drawFocusRing(ctx, { x: current.x - 58, y: current.y - 34, w: idx < 3 ? 132 : 172, h: 58 }, idx === 4 ? '#ef4444' : '#2563eb', phase);
+  }
   if (type === 'stack_queue') {
     const r = layout.visual;
     const isQueue = getSlideText(slide).includes('queue') || getSlideText(slide).includes('fifo');
@@ -942,6 +1068,7 @@ module.exports = {
     fitFontSize,
     drawTextBox,
     compactText,
+    normalizeVisibleText,
     loadCanvas,
     drawAnimationOverlay,
   },

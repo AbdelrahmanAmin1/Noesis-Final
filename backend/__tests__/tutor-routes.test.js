@@ -107,14 +107,26 @@ describe('AI tutor routes', () => {
     expect(sessionRes.body.sources[0].heading).toMatch(/Polymorphism|Chapter 10/i);
     expect(sessionRes.body.trace.provider).toBeDefined();
 
+    const confused = await request(app)
+      .post(`/api/tutor/sessions/${start.body.session_id}/continue`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ intent: 'confused' });
+
+    expect(confused.status).toBe(200);
+    expect(confused.body.currentStepIndex).toBe(0);
+    expect(confused.body.stay).toBe(true);
+    expect(confused.body.professorCue).toBeDefined();
+    expect(confused.body.followUpQuestion).toBeDefined();
+
     const cont = await request(app)
       .post(`/api/tutor/sessions/${start.body.session_id}/continue`)
       .set('Authorization', `Bearer ${token}`)
-      .send({ answer: 'The runtime Circle object decides which draw method is called.' });
+      .send({ answer: 'The runtime Circle object decides which draw method is called.', intent: 'check' });
 
     expect(cont.status).toBe(200);
     expect(cont.body.currentStepIndex).toBe(1);
     expect(cont.body.nextStep.label).toBe('Intuition');
     expect(cont.body.feedback).toMatch(/Nice|keep going/i);
+    expect(cont.body.stay).toBe(false);
   });
 });

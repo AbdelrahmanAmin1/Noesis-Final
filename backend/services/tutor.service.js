@@ -2,7 +2,9 @@
 
 const { getDb } = require('../config/db');
 const env = require('../config/env');
+const ai = require('./ai.service');
 const jobs = require('./jobs.service');
+const prompts = require('../utils/prompts');
 const { HttpError } = require('../middleware/error');
 const { retrieveLessonContext, groundingTier } = require('./rag.service');
 const topicResolver = require('./topic-resolver.service');
@@ -87,6 +89,7 @@ function visualTypeFor(topic) {
   if (t.includes('polymorphism')) return 'polymorphism_dispatch';
   if (t.includes('inheritance')) return 'inheritance_tree';
   if (t.includes('linked')) return 'linkedlist';
+  if (t.includes('hash')) return 'hash_table';
   if (t.includes('stack')) return 'stack';
   if (t.includes('queue')) return 'queue';
   if (t.includes('binary') || t.includes('bst') || t.includes('tree')) return 'tree';
@@ -142,6 +145,24 @@ function codeForTopic(topic) {
         { lineRange: '1', text: 'Create the node before changing links.' },
         { lineRange: '2', text: 'Save the old next pointer first.' },
         { lineRange: '3', text: 'Then link the current node to the new node.' },
+      ],
+    };
+  }
+  if (t.includes('hash')) {
+    return {
+      language: 'java',
+      content: [
+        'int index = (key.hashCode() & 0x7fffffff) % table.length;',
+        'Entry current = table[index];',
+        'while (current != null) {',
+        '  if (current.key.equals(key)) return current.value;',
+        '  current = current.next;',
+        '}',
+      ].join('\n'),
+      walkthrough: [
+        { lineRange: '1', text: 'The hash code is converted into a valid bucket index.' },
+        { lineRange: '2', text: 'Lookup jumps directly to that bucket.' },
+        { lineRange: '3-5', text: 'A collision chain is scanned until the exact key is found.' },
       ],
     };
   }
@@ -207,6 +228,45 @@ function contentForTopic(topic) {
         question: 'Where would this make your code easier to extend?',
         hint: 'Look for repeated if/else checks on object type.',
         example: 'Payroll systems, drawing programs, and game entities often use polymorphic calls.',
+      },
+    };
+  }
+  if (t.includes('hash')) {
+    return {
+      warmup: {
+        title: 'Key to bucket',
+        content: 'A hash table stores key-value pairs by computing a bucket index from the key. The goal is to avoid scanning every entry when you look up one key.',
+        question: 'What are the two steps between a key and the bucket where it should be searched?',
+        hint: 'First compute a hash, then map it into the array range.',
+        example: '`index = hash(key) % bucketCount`.',
+      },
+      intuition: {
+        title: 'Collision reality',
+        content: 'Different keys can land in the same bucket. That is a collision, and a real hash table must handle it with a chain, probing, or another strategy.',
+        question: 'Why does a hash table compare keys even after computing the hash?',
+        hint: 'A hash narrows the search, but it is not guaranteed unique.',
+        example: '`cat` and `cot` might share bucket 2, so equals decides which entry matches.',
+      },
+      trick: {
+        title: 'Load factor',
+        content: 'The load factor is size divided by bucket count. When it grows too high, buckets become crowded, so the table resizes and rehashes entries.',
+        question: 'What happens to expected O(1) lookup if load factor keeps growing?',
+        hint: 'Crowded buckets mean more collision work.',
+        example: 'A table of 8 buckets and 6 entries has load factor 0.75.',
+      },
+      formalize: {
+        title: 'Expected versus worst case',
+        content: 'Lookup, insertion, and deletion are expected O(1) with a good hash function and controlled load factor. Worst case is O(n) when many keys collide into the same search path.',
+        question: 'Why is O(1) called expected instead of guaranteed?',
+        hint: 'Consider all keys landing in one bucket.',
+        example: 'One bucket with n collided entries behaves like a linear scan.',
+      },
+      apply: {
+        title: 'Trace lookup',
+        content: 'To trace lookup, compute the bucket index, open that bucket, compare keys, and continue through the collision chain or probe sequence until you find the key or prove it is absent.',
+        question: 'When should lookup stop in a separate-chaining table?',
+        hint: 'Either the key is found or the chain ends.',
+        example: '`bucket 2 -> (cat,41) -> (cot,19) -> null`.',
       },
     };
   }
@@ -467,7 +527,22 @@ function getSession(userId, sessionId) {
   const s = db.prepare('SELECT * FROM tutor_sessions WHERE id=? AND user_id=?').get(sessionId, userId);
   if (!s) throw new HttpError(404, 'session_not_found');
   const plan = parseJson(s.plan_json, { steps: [] });
-  const steps = plan.steps && plan.steps[0] && plan.steps[0].id ? plan.steps : legacyPlanToSteps(plan);
+  const baseSteps = plan.steps && plan.steps[0] && plan.steps[0].id ? plan.steps : legacyPlanToSteps(plan);
+  const stepRows = db.prepare('SELECT idx, step_id, answer_json, feedback_md, status FROM tutor_steps WHERE session_id=? ORDER BY idx').all(s.id);
+  const stepState = new Map(stepRows.map(row => [row.step_id || String(row.idx), row]));
+  const steps = baseSteps.map((step, idx) => {
+    const row = stepState.get(step.id) || stepState.get(String(idx));
+    const answerState = parseJson(row && row.answer_json, null);
+    return {
+      ...step,
+      status: row && row.status || step.status,
+      learnerAnswer: answerState && answerState.answer || '',
+      learnerChoice: answerState && answerState.choice,
+      lastIntent: answerState && answerState.intent || '',
+      feedback: row && row.feedback_md || step.feedback || '',
+      feedback_md: row && row.feedback_md || step.feedback_md || '',
+    };
+  });
   const notes = db.prepare('SELECT id, body, flashcard_worthy, created_at, step_id, note_kind, source_refs_json FROM tutor_notes WHERE session_id=? ORDER BY created_at').all(s.id)
     .map(n => ({ ...n, sourceRefs: parseJson(n.source_refs_json, []) }));
   return {
@@ -520,8 +595,88 @@ function getStatus(userId, sessionId) {
   };
 }
 
-function continueSession(userId, sessionId, payload = {}) {
+function tutorSourcesForFeedback(s) {
+  return parseJson(s.sources_json, []).map((c, i) => ({
+    id: c.id || c.chunkId || i + 1,
+    text: c.excerpt || c.text || '',
+  })).filter(c => c.text);
+}
+
+function deterministicFeedback({ intent, current, answer, hasMcq, correct }) {
+  if (intent === 'confused') {
+    return {
+      feedback: `That's a useful signal. Let's slow the idea down: ${current.hint || current.content}`,
+      professorCue: 'listening',
+      followUpQuestion: current.question || 'Which part feels unclear: the definition, the example, or the code?',
+    };
+  }
+  if (intent === 'example') {
+    return {
+      feedback: `Here is a concrete example to anchor it: ${current.example || current.content}`,
+      professorCue: 'explaining',
+      followUpQuestion: current.question || 'Can you now describe the rule in your own words?',
+    };
+  }
+  if (answer && answer.length < 8 && !hasMcq) {
+    return {
+      feedback: `Good start. Add one concrete detail: ${current.hint || 'connect the idea to the example before moving on.'}`,
+      professorCue: 'listening',
+      followUpQuestion: current.question || 'What detail would make your answer more precise?',
+    };
+  }
+  if (hasMcq && !correct) {
+    return {
+      feedback: current.explanation || current.hint || 'Not quite. Re-check the example and try again.',
+      professorCue: 'listening',
+      followUpQuestion: current.question || 'Try choosing again after using the hint.',
+    };
+  }
+  if (answer) {
+    return {
+      feedback: `Nice. Your answer connects to the key idea: ${current.content}`,
+      professorCue: 'explaining',
+      followUpQuestion: 'Ready for the next step?',
+    };
+  }
+  return {
+    feedback: `Let's keep going. Remember: ${current.hint || current.content}`,
+    professorCue: 'thinking',
+    followUpQuestion: 'Watch how the next step builds on this one.',
+  };
+}
+
+async function modelFeedbackOrFallback(s, current, answerText, correct, fallback) {
+  if (!answerText) return fallback;
+  if (env.NODE_ENV === 'test') return fallback;
+  try {
+    const prompt = prompts.TUTOR_FEEDBACK(
+      s.topic || s.concept,
+      { t: current.title, title: current.title, q: current.question, question: current.question },
+      answerText,
+      correct,
+      tutorSourcesForFeedback(s)
+    );
+    const generated = await Promise.race([
+      ai.generate(prompt, {
+        provider: env.TUTOR_PROVIDER,
+        feature: 'tutor',
+        temperature: 0.25,
+        max_tokens: 220,
+        num_predict: 220,
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('tutor_feedback_timeout')), 1800)),
+    ]);
+    const text = cleanText(generated && (generated.text || generated.output || generated), 900);
+    if (text) return { ...fallback, feedback: text };
+  } catch (err) {
+    log.warn('tutor_feedback_fallback', err.message || err);
+  }
+  return fallback;
+}
+
+async function continueSession(userId, sessionId, payload = {}) {
   const db = getDb();
+  const started = Date.now();
   const s = db.prepare('SELECT * FROM tutor_sessions WHERE id=? AND user_id=?').get(sessionId, userId);
   if (!s) throw new HttpError(404, 'session_not_found');
   if ((s.status || 'ready') !== 'ready') throw new HttpError(409, 'session_not_ready');
@@ -531,36 +686,44 @@ function continueSession(userId, sessionId, payload = {}) {
   const current = steps[idx];
   const answer = cleanText(payload.answer || payload.text || '', 500);
   const choice = typeof payload.choice === 'number' ? payload.choice : null;
+  const intent = ['confused', 'example', 'check'].includes(payload.intent) ? payload.intent : (choice != null || answer ? 'check' : 'advance');
   const hasMcq = Array.isArray(current.options) && typeof current.correct_idx === 'number';
   const correct = hasMcq && choice != null ? choice === current.correct_idx : (answer ? answer.length >= 8 : true);
-  let stay = false;
-  let feedback;
-  if (answer && answer.length < 8 && !hasMcq) {
-    stay = true;
-    feedback = `Good start. Add one concrete detail: ${current.hint || 'connect the idea to the example before moving on.'}`;
-  } else if (hasMcq && choice != null && !correct) {
-    stay = true;
-    feedback = current.explanation || current.hint || 'Not quite. Re-check the example and try again.';
-  } else if (answer) {
-    feedback = `Nice. Your answer connects to the key idea: ${current.content}`;
-  } else {
-    feedback = `Let's keep going. Remember: ${current.hint || current.content}`;
-  }
+  const stay = intent === 'confused' || intent === 'example' || (intent === 'check' && !answer && choice == null) || (answer && answer.length < 8 && !hasMcq) || (hasMcq && choice != null && !correct);
+  const fallback = deterministicFeedback({ intent, current, answer, hasMcq, correct });
+  const feedbackResult = await modelFeedbackOrFallback(
+    s,
+    current,
+    answer || (intent === 'confused' ? 'I am confused.' : intent === 'example' ? 'Give me an example.' : ''),
+    correct,
+    fallback
+  );
+  const feedback = feedbackResult.feedback;
   const nextIndex = stay ? idx : Math.min(idx + 1, steps.length - 1);
   const updatedSteps = steps.map((step, i) => ({
     ...step,
     status: i < nextIndex ? 'completed' : (i === nextIndex ? 'active' : 'locked'),
+    learnerAnswer: i === idx ? answer : step.learnerAnswer,
+    learnerChoice: i === idx ? choice : step.learnerChoice,
+    lastIntent: i === idx ? intent : step.lastIntent,
+    feedback: i === idx ? feedback : step.feedback,
+    feedback_md: i === idx ? feedback : step.feedback_md,
   }));
   db.prepare('UPDATE tutor_sessions SET current_step=?, plan_json=?, updated_at=? WHERE id=?')
     .run(nextIndex, JSON.stringify({ ...plan, steps: updatedSteps }), nowIso(), sessionId);
   storeSteps(db, sessionId, updatedSteps);
   db.prepare('UPDATE tutor_steps SET answer_json=?, feedback_md=?, status=? WHERE session_id=? AND idx=?')
-    .run(JSON.stringify({ answer, choice }), feedback, stay ? 'active' : 'completed', sessionId, idx);
-  recordConceptOutcome(userId, s.topic || s.concept, !!correct, { correctDelta: correct ? 4 : 0, incorrectDelta: correct ? 0 : -3 });
-  const trace = { ...parseJson(s.trace_json, {}), lastContinueMs: 0, lastAnswerWeak: stay };
+    .run(JSON.stringify({ answer, choice, intent }), feedback, stay ? 'active' : 'completed', sessionId, idx);
+  if (intent !== 'confused' && intent !== 'example' && (answer || choice != null)) {
+    recordConceptOutcome(userId, s.topic || s.concept, !!correct, { correctDelta: correct ? 4 : 0, incorrectDelta: correct ? 0 : -3 });
+  }
+  const trace = { ...parseJson(s.trace_json, {}), lastContinueMs: Date.now() - started, lastAnswerWeak: stay, lastIntent: intent };
   db.prepare('UPDATE tutor_sessions SET trace_json=? WHERE id=?').run(JSON.stringify(trace), sessionId);
   return {
     feedback,
+    stay,
+    professorCue: feedbackResult.professorCue || fallback.professorCue || (stay ? 'listening' : 'explaining'),
+    followUpQuestion: feedbackResult.followUpQuestion || fallback.followUpQuestion || '',
     correct,
     nextStep: updatedSteps[nextIndex],
     steps: updatedSteps,

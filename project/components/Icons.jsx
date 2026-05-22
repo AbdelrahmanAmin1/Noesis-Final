@@ -30,6 +30,7 @@ const Icon = {
   Bolt: (p) => <I {...p}><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></I>,
   Flame: (p) => <I {...p}><path d="M12 2s5 5 5 10a5 5 0 01-10 0c0-3 2-5 2-7 0 0 1 2 3 2z"/></I>,
   Clock: (p) => <I {...p}><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></I>,
+  Copy: (p) => <I {...p}><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 012-2h10"/></I>,
   Calendar: (p) => <I {...p}><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></I>,
   Upload: (p) => <I {...p}><path d="M12 17V4M6 10l6-6 6 6"/><path d="M4 20h16"/></I>,
   Download: (p) => <I {...p}><path d="M12 4v13M6 11l6 6 6-6"/><path d="M4 20h16"/></I>,

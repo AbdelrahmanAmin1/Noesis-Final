@@ -151,7 +151,7 @@ describe('Quiz schema (from quiz.routes.js)', () => {
 });
 
 describe('Video script schema (from video.service.js)', () => {
-  const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'bigo_chart'];
+  const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'hash_table', 'bigo_chart'];
 
   const ScriptSchema = z.object({
     slides: z.array(z.object({
