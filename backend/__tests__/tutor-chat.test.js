@@ -121,6 +121,63 @@ describe('free-form tutor chat routes', () => {
     expect(stored.map(row => row.role)).toEqual(['user', 'assistant']);
   });
 
+  it('normalizes raw JSON tutor replies into readable markdown', async () => {
+    mockGeneration(JSON.stringify({
+      explanation: 'A linked-list node stores data plus a next reference [Source 1].',
+      question: 'What does the next reference point to?',
+      hint: 'Look for the link to the following node.',
+      example: 'HEAD -> [10|next] -> [20|next] -> null',
+      code: { language: 'java', content: 'class Node<T> { T data; Node<T> next; }' },
+    }));
+
+    const res = await request(app)
+      .post('/api/tutor/chat')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ material_id: materialId, message: 'Explain nodes in a linked list.' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toMatch(/### Answer/);
+    expect(res.body.reply).toMatch(/### Code/);
+    expect(res.body.reply).not.toMatch(/^\s*[\{\[]/);
+    expect(res.body.response.structured).toBe(true);
+
+    const stored = db.prepare('SELECT content, trace_json FROM tutor_chat_messages WHERE id=?').get(res.body.message_id);
+    expect(stored.content).toMatch(/linked-list node/i);
+    expect(stored.content).not.toMatch(/"explanation"\s*:/);
+    expect(JSON.parse(stored.trace_json).response.structured).toBe(true);
+  });
+
+  it('normalizes fenced JSON tutor replies', async () => {
+    mockGeneration([
+      '```json',
+      '{"title":"Hash table check","explanation":"A load factor near 0.9 causes many probes.","question":"Why resize before the table gets full?"}',
+      '```',
+    ].join('\n'));
+
+    const res = await request(app)
+      .post('/api/tutor/chat')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ material_id: materialId, message: 'Quiz me on load factor.' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toMatch(/Hash table check/);
+    expect(res.body.reply).toMatch(/### Check yourself/);
+    expect(res.body.reply).not.toMatch(/```json/);
+  });
+
+  it('recovers malformed JSON-like tutor replies without exposing braces', async () => {
+    const svc = require('../services/tutor-chat.service');
+    const out = svc._internals.normalizeTutorChatReply(
+      '{"explanation":"A node stores data and a next pointer.","question":"What does next reference?", "hint":"Follow the pointer to the next node."',
+      { sources: [], message: 'What is a node?' },
+    );
+
+    expect(out.reply).toMatch(/### Answer/);
+    expect(out.reply).toMatch(/next pointer/i);
+    expect(out.reply).not.toMatch(/^\s*[\{\[]/);
+    expect(out.reply).not.toMatch(/"explanation"\s*:/);
+  });
+
   it('appends to an existing conversation and returns messages in chronological order', async () => {
     const first = await request(app)
       .post('/api/tutor/chat')

@@ -36,6 +36,8 @@
       const err = new Error(msg);
       err.status = res.status;
       err.data = data;
+      err.code = data && data.error;
+      err.retryAfter = res.headers && res.headers.get('Retry-After');
       throw err;
     }
     return data;
@@ -94,6 +96,9 @@
       update: (id, b) => req('PUT', '/notes/' + id, b),
       remove: (id) => req('DELETE', '/notes/' + id),
       generate: (b) => req('POST', '/notes/generate', b),
+      audio: (id, b) => req('POST', '/notes/' + id + '/audio', b),
+      audioMeta: (id, style) => req('GET', '/notes/' + id + '/audio?meta=1&style=' + encodeURIComponent(style || 'brief')),
+      audioBlob: (id, style) => req('GET', '/notes/' + id + '/audio?style=' + encodeURIComponent(style || 'brief'), null, { raw: true }),
     },
 
     flashcards: {
@@ -150,7 +155,10 @@
       createStoryboard: (b) => req('POST', '/videos/storyboard', b),
       updateScene: (id, sceneId, b) => req('PATCH', '/videos/storyboard/' + id + '/scene/' + encodeURIComponent(sceneId), b),
       regenerateScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/regenerate-scene', b),
-      approveStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/approve'),
+      fixScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix-scene', b),
+      fixStoryboardIssue: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix', b),
+      recheckStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/recheck'),
+      approveStoryboard: (id, b) => req('POST', '/videos/storyboard/' + id + '/approve', b),
       renderStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/render'),
       scenePreviewUrl: (id, sceneId) => BASE + '/videos/storyboard/' + id + '/scene/' + encodeURIComponent(sceneId) + '/preview',
       fileUrl: (id) => BASE + '/videos/' + id + '/file',

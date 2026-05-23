@@ -20,6 +20,7 @@ const Icon = {
   ArrowRight: (p) => <I {...p}><path d="M5 12h14M13 6l6 6-6 6"/></I>,
   ArrowLeft: (p) => <I {...p}><path d="M19 12H5M11 18l-6-6 6-6"/></I>,
   ArrowUpRight: (p) => <I {...p}><path d="M7 17L17 7M9 7h8v8"/></I>,
+  RotateCcw: (p) => <I {...p}><path d="M3 12a9 9 0 109-9 9.7 9.7 0 00-6.7 2.7L3 8"/><path d="M3 3v5h5"/></I>,
   Check: (p) => <I {...p}><path d="M5 12l5 5L20 7"/></I>,
   X: (p) => <I {...p}><path d="M6 6l12 12M18 6l-12 12"/></I>,
   ChevronRight: (p) => <I {...p}><path d="M9 6l6 6-6 6"/></I>,

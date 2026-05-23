@@ -153,6 +153,48 @@ describe('scoreVideoScript', () => {
     expect(result.passed).toBe(false);
   });
 
+  it('fails code walkthrough scenes that reference invisible or nonexistent lines', () => {
+    const script = makeFullScript();
+    script.slides[6].sceneType = 'code_walkthrough';
+    script.slides[6].title = 'Lines 11-15: Node.next';
+    script.slides[6].example_code = 'class Node {\n  int value;\n  Node next;\n}';
+    script.slides[6].code_focus = {
+      language: 'java',
+      content: script.slides[6].example_code,
+      lineRange: '11-15',
+      highlightLines: [11, 12, 13, 14, 15],
+      explanation: 'Node.next stores the link to the next node.',
+    };
+
+    const result = scoreVideoScript(script, { concept: 'Linked List' });
+
+    expect(result.criteria.find(c => c.name === 'code_walkthrough_visible_lines').passed).toBe(false);
+    expect(result.passed).toBe(false);
+  });
+
+  it('passes code walkthrough scenes when the requested line window is visible', () => {
+    const script = makeFullScript();
+    const code = Array.from({ length: 18 }, (_, i) => `line ${i + 1};`).join('\n');
+    script.slides[6].sceneType = 'code_walkthrough';
+    script.slides[6].title = 'Lines 11-15: Node.next';
+    script.slides[6].example_code = code;
+    script.slides[6].code_focus = {
+      language: 'java',
+      content: code,
+      lineRange: '11-15',
+      visibleStartLine: 9,
+      visibleEndLine: 18,
+      highlightLines: [11, 12, 13, 14, 15],
+      explanation: 'Node.next stores the link from one node to the next node in the chain.',
+      pointers: [{ from: 'explanation_card', to: 'code_line_12', style: 'arrow', label: 'next link' }],
+    };
+
+    const result = scoreVideoScript(script, { concept: 'Encapsulation' });
+
+    expect(result.criteria.find(c => c.name === 'code_walkthrough_visible_lines').passed).toBe(true);
+    expect(result.criteria.find(c => c.name === 'code_walkthrough_pointer_targets').passed).toBe(true);
+  });
+
   it('requires concrete hash-table visuals and collision/load-factor coverage', () => {
     const script = lessons.lessonToVideoScript(lessons.fallbackLesson('Hash Table'));
     const result = scoreVideoScript(script, { concept: 'Hash Table' });

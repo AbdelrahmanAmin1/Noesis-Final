@@ -139,9 +139,12 @@ async function healthCheck() {
     },
     tutor: {
       provider: env.TUTOR_PROVIDER,
+      fallbackProvider: env.TUTOR_FALLBACK_PROVIDER,
       groqConfigured: !!env.GROQ_API_KEY,
       strictQuality: env.TUTOR_STRICT_QUALITY,
       asyncStart: env.TUTOR_ASYNC_START,
+      voiceDefault: env.TUTOR_VOICE_DEFAULT,
+      learningMapLayout: env.LEARNING_MAP_LAYOUT,
       cacheTtlMs: env.TUTOR_CACHE_TTL_MS,
     },
   };

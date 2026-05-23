@@ -42,6 +42,8 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
       const err = new Error(msg);
       err.status = res.status;
       err.data = data;
+      err.code = data && data.error;
+      err.retryAfter = res.headers && res.headers.get('Retry-After');
       throw err;
     }
     return data;
@@ -100,6 +102,9 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
       update: (id, b) => req('PUT', '/notes/' + id, b),
       remove: (id) => req('DELETE', '/notes/' + id),
       generate: (b) => req('POST', '/notes/generate', b),
+      audio: (id, b) => req('POST', '/notes/' + id + '/audio', b),
+      audioMeta: (id, style) => req('GET', '/notes/' + id + '/audio?meta=1&style=' + encodeURIComponent(style || 'brief')),
+      audioBlob: (id, style) => req('GET', '/notes/' + id + '/audio?style=' + encodeURIComponent(style || 'brief'), null, { raw: true }),
     },
 
     flashcards: {
@@ -156,7 +161,10 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
       createStoryboard: (b) => req('POST', '/videos/storyboard', b),
       updateScene: (id, sceneId, b) => req('PATCH', '/videos/storyboard/' + id + '/scene/' + encodeURIComponent(sceneId), b),
       regenerateScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/regenerate-scene', b),
-      approveStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/approve'),
+      fixScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix-scene', b),
+      fixStoryboardIssue: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix', b),
+      recheckStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/recheck'),
+      approveStoryboard: (id, b) => req('POST', '/videos/storyboard/' + id + '/approve', b),
       renderStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/render'),
       scenePreviewUrl: (id, sceneId) => BASE + '/videos/storyboard/' + id + '/scene/' + encodeURIComponent(sceneId) + '/preview',
       fileUrl: (id) => BASE + '/videos/' + id + '/file',
@@ -309,6 +317,11 @@ const Icon = {
   })),
   ArrowUpRight: p => React.createElement(I, p, React.createElement("path", {
     d: "M7 17L17 7M9 7h8v8"
+  })),
+  RotateCcw: p => React.createElement(I, p, React.createElement("path", {
+    d: "M3 12a9 9 0 109-9 9.7 9.7 0 00-6.7 2.7L3 8"
+  }), React.createElement("path", {
+    d: "M3 3v5h5"
   })),
   Check: p => React.createElement(I, p, React.createElement("path", {
     d: "M5 12l5 5L20 7"
@@ -4899,6 +4912,222 @@ window.MaterialDetail = MaterialDetail;
 // ---- components/Tutor.jsx ----
 (function () {
   window.__NOESIS_BOOT.files.push("components/Tutor.jsx");
+const NoesisTutorResponse = (() => {
+  const structuredKeys = ['title', 'explanation', 'answer', 'content', 'summary', 'question', 'checkpoint', 'hint', 'example', 'code', 'visual', 'type', 'key_points', 'keyPoints', 'bullets', 'steps'];
+  const decodeJsonish = value => {
+    let text = String(value || '').trim();
+    if (text.startsWith('"') && text.endsWith('"') || text.startsWith("'") && text.endsWith("'")) {
+      try {
+        const parsed = JSON.parse(text);
+        if (typeof parsed === 'string') text = parsed.trim();
+      } catch (_) {
+        text = text.slice(1, -1).trim();
+      }
+    }
+    if (/\\[nrti"]/.test(text)) {
+      text = text.replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\t/g, '  ').replace(/\\"/g, '"');
+    }
+    return text;
+  };
+  const stripFences = value => {
+    const text = decodeJsonish(value);
+    const fullFence = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    return fullFence ? fullFence[1].trim() : text.trim();
+  };
+  const parseMaybeJson = value => {
+    if (value && typeof value === 'object') return value;
+    const text = stripFences(value);
+    const candidates = [text];
+    const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) candidates.push(fence[1].trim());
+    const firstObject = text.indexOf('{');
+    const lastObject = text.lastIndexOf('}');
+    if (firstObject >= 0 && lastObject > firstObject) candidates.push(text.slice(firstObject, lastObject + 1));
+    const firstArray = text.indexOf('[');
+    const lastArray = text.lastIndexOf(']');
+    if (firstArray >= 0 && lastArray > firstArray) candidates.push(text.slice(firstArray, lastArray + 1));
+    for (const raw of candidates) {
+      const candidate = raw.trim();
+      if (!/^[{\[]/.test(candidate)) continue;
+      try {
+        const parsed = JSON.parse(candidate);
+        return typeof parsed === 'string' ? parseMaybeJson(parsed) : parsed;
+      } catch (_) {}
+    }
+    return null;
+  };
+  const jsonField = (text, key) => {
+    const re = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, 'i');
+    const match = String(text || '').match(re);
+    return match ? decodeJsonish(match[1]) : '';
+  };
+  const parseMalformed = value => {
+    const text = stripFences(value);
+    if (!/[{"]\s*(explanation|answer|question|hint|example|code|visual)["\s]*:/i.test(text)) return null;
+    const out = {};
+    for (const key of ['title', 'type', 'explanation', 'answer', 'content', 'summary', 'question', 'checkpoint', 'hint', 'example', 'visual']) {
+      const field = jsonField(text, key);
+      if (field) out[key] = field;
+    }
+    const code = jsonField(text, 'code');
+    if (code) out.code = code;
+    return structuredKeys.some(k => out[k] != null) ? out : null;
+  };
+  const asList = value => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map(item => {
+      if (typeof item === 'string') return item.trim();
+      return String(item && (item.text || item.content || item.title) || '').trim();
+    }).filter(Boolean);
+    if (typeof value === 'string') {
+      return value.split(/\n+|;\s+/).map(item => item.replace(/^[-*\u2022\d.)\s]+/, '').trim()).filter(Boolean);
+    }
+    return [];
+  };
+  const exampleText = example => {
+    if (!example) return '';
+    if (typeof example === 'string') return example;
+    return ['scenario', 'setup', 'calculation', 'result', 'explanation', 'content', 'text'].map(key => example[key]).filter(Boolean).join('\n\n');
+  };
+  const normalize = value => {
+    const parsed = parseMaybeJson(value) || parseMalformed(value);
+    if (parsed && typeof parsed === 'object' && structuredKeys.some(k => parsed[k] != null)) {
+      return {
+        structured: true,
+        type: parsed.type || '',
+        title: parsed.title || '',
+        explanation: parsed.explanation || parsed.content || parsed.answer || parsed.summary || '',
+        keyPoints: asList(parsed.key_points || parsed.keyPoints || parsed.bullets || parsed.steps),
+        question: parsed.question || parsed.checkpoint || parsed.checkpointQuestion || '',
+        hint: parsed.hint || '',
+        example: exampleText(parsed.example),
+        code: parsed.code || null,
+        visual: parsed.visual || null,
+        raw: parsed
+      };
+    }
+    const text = decodeJsonish(value);
+    if (/^```json/i.test(text) || /^[{\[]/.test(text) || /"(explanation|question|hint|example|code)"\s*:/.test(text)) {
+      return {
+        structured: true,
+        type: 'answer',
+        title: 'Tutor answer',
+        explanation: text.replace(/[{}]/g, ' ').replace(/"([a-zA-Z_]+)"\s*:/g, '\n$1: ').replace(/",\s*"/g, '\n').replace(/^"+|"+$/g, '').trim(),
+        keyPoints: [],
+        question: '',
+        hint: '',
+        example: '',
+        code: null,
+        visual: null,
+        raw: null
+      };
+    }
+    return {
+      structured: false,
+      text
+    };
+  };
+  const codeObject = code => {
+    if (!code) return null;
+    if (typeof code === 'string') return {
+      language: '',
+      content: code,
+      walkthrough: []
+    };
+    return {
+      language: code.language || '',
+      content: code.content || code.text || '',
+      walkthrough: Array.isArray(code.walkthrough) ? code.walkthrough : Array.isArray(code.explanation) ? code.explanation : []
+    };
+  };
+  const toMarkdown = value => {
+    const msg = normalize(value);
+    if (!msg.structured) return msg.text;
+    const code = codeObject(msg.code);
+    const visual = msg.visual && typeof msg.visual === 'object' ? msg.visual.caption || msg.visual.description || msg.visual.type || '' : typeof msg.visual === 'string' ? msg.visual : '';
+    return [msg.title || msg.type ? `### ${msg.title || String(msg.type).replace(/_/g, ' ')}` : '', msg.explanation ? `### Answer\n${msg.explanation}` : '', msg.keyPoints && msg.keyPoints.length ? `### Key points\n${msg.keyPoints.map(item => `- ${item}`).join('\n')}` : '', msg.example ? `### Example\n${msg.example}` : '', code && code.content ? `### Code\n\`\`\`${code.language || 'text'}\n${code.content}\n\`\`\`` : '', visual ? `### Visual\n${visual}` : '', msg.hint ? `### Hint\n${msg.hint}` : '', msg.question ? `### Check yourself\n${msg.question}` : ''].filter(Boolean).join('\n\n');
+  };
+  const speechText = value => {
+    return toMarkdown(value).replace(/```[\s\S]*?```/g, ' code example omitted. ').replace(/`([^`]+)`/g, '$1').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[#>*_~|]/g, ' ').replace(/\[(Source|source|chunk)\s*:?\s*\d+\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 4000);
+  };
+  const copyText = value => toMarkdown(value).replace(/\[(chunk|source_chunk)\s*:?\s*\d+\]/gi, '').trim();
+  const StructuredMessage = ({
+    text
+  }) => {
+    const msg = normalize(text);
+    if (!msg.structured) return React.createElement(TutorMarkdown, {
+      text: msg.text
+    });
+    const code = codeObject(msg.code);
+    const visual = msg.visual && msg.visual.type && msg.visual.type !== 'none' ? msg.visual : null;
+    return React.createElement("div", {
+      style: tu.structuredMessage
+    }, (msg.title || msg.type) && React.createElement("div", {
+      style: tu.structuredTitle
+    }, msg.title || String(msg.type).replace(/_/g, ' ')), msg.explanation && React.createElement(TutorMarkdown, {
+      text: msg.explanation
+    }), msg.keyPoints && msg.keyPoints.length > 0 && React.createElement("div", {
+      style: tu.walkthrough
+    }, msg.keyPoints.slice(0, 6).map((item, i) => React.createElement("div", {
+      key: i,
+      style: tu.walkItem
+    }, React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 10,
+        color: 'var(--accent)'
+      }
+    }, i + 1), React.createElement("span", null, item)))), msg.example && React.createElement("div", {
+      style: tu.exampleBox
+    }, React.createElement("b", null, "Example:"), " ", React.createElement(TutorMarkdown, {
+      text: msg.example
+    })), msg.hint && React.createElement("div", {
+      style: tu.hintBox
+    }, React.createElement("b", null, "Hint:"), " ", msg.hint), code && code.content && React.createElement("pre", {
+      style: tu.codeBlock
+    }, code.content), code && code.walkthrough && code.walkthrough.length > 0 && React.createElement("div", {
+      style: tu.walkthrough
+    }, code.walkthrough.map((w, i) => React.createElement("div", {
+      key: i,
+      style: tu.walkItem
+    }, React.createElement("span", {
+      className: "mono",
+      style: {
+        fontSize: 10,
+        color: 'var(--fg-3)'
+      }
+    }, w.lineRange || w.line || i + 1), React.createElement("span", null, w.text || w)))), visual && window.TopicVisual && React.createElement(window.TopicVisual, {
+      template: visual.type,
+      data: visual,
+      code: code,
+      compact: true
+    }), msg.question && React.createElement("div", {
+      style: tu.questionBox
+    }, React.createElement("div", {
+      style: {
+        fontSize: 10.5,
+        color: 'var(--accent)',
+        letterSpacing: '0.1em',
+        textTransform: 'uppercase',
+        marginBottom: 7
+      }
+    }, "Checkpoint"), React.createElement("div", {
+      style: {
+        fontSize: 13.5,
+        color: 'var(--fg-0)',
+        lineHeight: 1.55
+      }
+    }, msg.question)));
+  };
+  return {
+    normalize,
+    toMarkdown,
+    copyText,
+    speechText,
+    StructuredMessage
+  };
+})();
+window.NoesisTutorResponse = NoesisTutorResponse;
 const Tutor = ({
   onNav
 }) => {
@@ -4920,6 +5149,22 @@ const Tutor = ({
   const [answerText, setAnswerText] = React.useState('');
   const [feedback, setFeedback] = React.useState('');
   const [lastTurn, setLastTurn] = React.useState(null);
+  const [failedTurn, setFailedTurn] = React.useState(null);
+  const [guidedTurns, setGuidedTurns] = React.useState([]);
+  const [pendingTutorAction, setPendingTutorAction] = React.useState('');
+  const [voiceMode, setVoiceMode] = React.useState(() => {
+    try {
+      return localStorage.getItem('noesis.tutorVoiceMode') || 'on';
+    } catch (_) {
+      return 'on';
+    }
+  });
+  const [voiceBusy, setVoiceBusy] = React.useState(false);
+  const [voiceError, setVoiceError] = React.useState('');
+  const [voiceAudioUrl, setVoiceAudioUrl] = React.useState('');
+  const [voicePlaying, setVoicePlaying] = React.useState(false);
+  const voiceAudioRef = React.useRef(null);
+  const voiceCacheRef = React.useRef({});
   const [composerFocused, setComposerFocused] = React.useState(false);
   const [paused, setPaused] = React.useState(false);
   const [pauseStartedAt, setPauseStartedAt] = React.useState(null);
@@ -4931,7 +5176,8 @@ const Tutor = ({
   const sources = session && (session.sources || session.source_chunks || []) || [];
   const trace = session && session.trace || {};
   const persistedFeedback = currentStep && (currentStep.feedback || currentStep.feedback_md) || '';
-  const professorState = paused ? 'paused' : action === 'continue' || tutorState === 'continuing' ? 'thinking' : composerFocused || answerText.trim() ? 'listening' : feedback || persistedFeedback ? 'explaining' : 'listening';
+  const visibleTurns = guidedTurns.filter(t => (t.stepIndex == null ? step : t.stepIndex) === step);
+  const professorState = paused ? 'paused' : failedTurn ? 'error' : voicePlaying ? 'speaking' : action === 'continue' || tutorState === 'continuing' || voiceBusy ? 'thinking' : composerFocused || answerText.trim() ? 'listening' : feedback || persistedFeedback || visibleTurns.length ? 'explaining' : 'listening';
   const isGenericLabel = value => {
     const s = String(value || '').trim().toLowerCase();
     return !s || s === 'document' || s === 'file' || s === 'material' || /^chapter\s*\d+$/.test(s) || /^\d+$/.test(s);
@@ -4950,6 +5196,9 @@ const Tutor = ({
     const nextStep = next.steps && next.steps[nextIndex];
     setFeedback(nextStep && (nextStep.feedback || nextStep.feedback_md) || '');
     setLastTurn(null);
+    setFailedTurn(null);
+    setGuidedTurns([]);
+    setPendingTutorAction('');
     setAnswerText('');
     setTutorState('session_ready');
     setProgress(100);
@@ -4994,6 +5243,9 @@ const Tutor = ({
     setSession(null);
     setFeedback('');
     setLastTurn(null);
+    setFailedTurn(null);
+    setGuidedTurns([]);
+    setPendingTutorAction('');
     setAnswerText('');
     try {
       if (materialId) {
@@ -5052,6 +5304,25 @@ const Tutor = ({
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [paused]);
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('noesis.tutorVoiceMode', voiceMode);
+    } catch (_) {}
+  }, [voiceMode]);
+  React.useEffect(() => {
+    return () => {
+      if (voiceAudioRef.current) {
+        try {
+          voiceAudioRef.current.pause();
+        } catch (_) {}
+      }
+      Object.values(voiceCacheRef.current || {}).forEach(url => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (_) {}
+      });
+    };
+  }, []);
   const startedAt = session && session.started_at ? new Date(session.started_at).getTime() : now;
   const timerNow = paused && pauseStartedAt ? pauseStartedAt : now;
   const elapsedS = Math.max(0, Math.floor((timerNow - startedAt - pausedMs) / 1000));
@@ -5094,26 +5365,142 @@ const Tutor = ({
       setAction('');
     }
   };
-  const continueTutor = async (choice = null, intent = 'check') => {
+  const tutorActionLabel = nextAction => ({
+    im_confused: "I'm confused",
+    give_example: 'Give an example',
+    check_answer: 'Check my answer',
+    continue: 'Continue'
+  })[nextAction] || 'Check my answer';
+  const tutorActionStatus = nextAction => ({
+    im_confused: 'Simplifying the idea...',
+    give_example: 'Preparing a concrete example...',
+    check_answer: 'Checking your answer and preparing feedback...',
+    continue: 'Moving to the next tutor step...'
+  })[nextAction] || 'Checking your answer...';
+  const friendlyTutorError = err => {
+    const code = String(err && (err.code || err.message) || '').trim();
+    if (err && err.status === 429 || /^rate_limited_/i.test(code)) {
+      const wait = parseInt(err && err.retryAfter, 10);
+      if (wait > 0) return `The tutor is catching up. Try again in ${wait} second${wait === 1 ? '' : 's'}.`;
+      return 'The tutor is catching up. Please wait a few seconds and try again.';
+    }
+    if (/network/i.test(code)) return 'The tutor could not reach the server. Check that the backend is running, then try again.';
+    return code || 'The tutor could not finish that action. Please try again.';
+  };
+  const clearTutorAudio = () => {
+    if (voiceAudioRef.current) {
+      try {
+        voiceAudioRef.current.pause();
+      } catch (_) {}
+      voiceAudioRef.current = null;
+    }
+    setVoicePlaying(false);
+    setVoiceAudioUrl('');
+  };
+  const generateTutorVoice = async (text, cacheKey = 'latest') => {
+    const speakable = window.NoesisTutorResponse ? window.NoesisTutorResponse.speechText(text) : String(text || '');
+    if (voiceMode !== 'on' || !speakable.trim()) return;
+    clearTutorAudio();
+    setVoiceBusy(true);
+    setVoiceError('');
+    try {
+      if (voiceCacheRef.current[cacheKey]) {
+        const cached = voiceCacheRef.current[cacheKey];
+        const audio = new Audio(cached);
+        audio.onended = () => setVoicePlaying(false);
+        voiceAudioRef.current = audio;
+        setVoiceAudioUrl(cached);
+        setVoicePlaying(true);
+        await audio.play();
+        return;
+      }
+      const res = await window.NoesisAPI.tutor.tts(speakable);
+      if (!res.ok) throw new Error('tts_' + res.status);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      voiceCacheRef.current[cacheKey] = url;
+      const audio = new Audio(url);
+      audio.onended = () => setVoicePlaying(false);
+      audio.onerror = () => {
+        setVoicePlaying(false);
+        setVoiceError('Voice playback failed.');
+      };
+      voiceAudioRef.current = audio;
+      setVoiceAudioUrl(url);
+      setVoicePlaying(true);
+      audio.play().catch(() => {
+        setVoicePlaying(false);
+        setVoiceError('Voice is ready. Press play to listen.');
+      });
+    } catch (e) {
+      setVoiceError(e.message || 'Voice generation failed.');
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+  const toggleTutorAudio = () => {
+    if (!voiceAudioUrl) return;
+    let audio = voiceAudioRef.current;
+    if (!audio) {
+      audio = new Audio(voiceAudioUrl);
+      audio.onended = () => setVoicePlaying(false);
+      voiceAudioRef.current = audio;
+    }
+    if (voicePlaying) {
+      audio.pause();
+      setVoicePlaying(false);
+    } else {
+      audio.play().then(() => setVoicePlaying(true)).catch(() => setVoiceError('Voice playback failed.'));
+    }
+  };
+  const continueTutor = async (choice = null, nextAction = 'check_answer') => {
     if (!session || busy || paused) return;
+    const actionName = nextAction === 'confused' ? 'im_confused' : nextAction === 'example' ? 'give_example' : nextAction === 'check' ? 'check_answer' : nextAction === 'advance' ? 'continue' : nextAction;
     const submitted = choice == null ? answerText.trim() : '';
-    const turnLabel = choice != null ? `Choice ${String.fromCharCode(65 + choice)}` : submitted || (intent === 'confused' ? "I'm confused" : intent === 'example' ? 'Give an example' : 'Check my answer');
+    const turnLabel = choice != null ? `Choice ${String.fromCharCode(65 + choice)}` : submitted || tutorActionLabel(actionName);
     setTutorState('continuing');
     setAction('continue');
+    setPendingTutorAction(actionName);
     setError('');
-    setStatus(intent === 'confused' ? 'Listening for the confusing part...' : intent === 'example' ? 'Preparing a concrete example...' : 'Checking your answer and preparing the next step...');
+    setStatus(tutorActionStatus(actionName));
+    setFailedTurn(null);
+    setLastTurn(null);
+    setFeedback('');
+    clearTutorAudio();
     try {
       const res = await window.NoesisAPI.tutor.continue(session.sessionId || session.session_id, {
+        sessionId: session.sessionId || session.session_id,
+        topic: session.topic || session.concept || '',
+        mode,
+        action: actionName,
+        currentStep: currentStep && currentStep.id,
+        userAnswer: submitted,
+        materialId: session.materialId || session.material_id || null,
         answer: submitted,
         choice,
-        intent
+        intent: actionName
       });
-      setFeedback(res.feedback || '');
+      const tutorReply = res.response || res.feedback || '';
+      setFeedback(tutorReply);
+      const displayStepIndex = res.stay ? step : Number.isInteger(res.currentStepIndex) ? res.currentStepIndex : step;
+      const turn = {
+        id: res.turn && res.turn.id || `local-turn-${Date.now()}`,
+        action: actionName,
+        userLabel: res.turn && res.turn.userLabel || turnLabel,
+        feedback: res.turn && (res.turn.response || res.turn.feedback) || tutorReply,
+        followUpQuestion: res.turn && res.turn.followUpQuestion || res.followUpQuestion || '',
+        avatarState: res.turn && res.turn.avatarState || (res.stay ? 'listening' : 'speaking'),
+        correct: res.correct,
+        error: false,
+        stepIndex: displayStepIndex,
+        createdAt: res.turn && res.turn.createdAt || new Date().toISOString()
+      };
+      setGuidedTurns(prev => [...prev, turn].slice(-20));
       setLastTurn({
-        answer: turnLabel,
-        feedback: res.feedback || '',
+        answer: turn.userLabel,
+        feedback: turn.feedback,
         cue: res.professorCue || '',
-        followUpQuestion: res.followUpQuestion || ''
+        followUpQuestion: turn.followUpQuestion
       });
       setSession({
         ...session,
@@ -5122,15 +5509,37 @@ const Tutor = ({
         current_step: res.currentStepIndex,
         trace: res.trace || session.trace
       });
+      if (res.mode) setMode(res.mode);
       setStep(res.currentStepIndex);
       setAnswerText('');
       setTutorState('session_ready');
       setStatus(res.stay || res.currentStepIndex === step ? 'The professor is staying with this step.' : 'Next tutor step ready.');
+      generateTutorVoice(turn.feedback || '', turn.id);
     } catch (e) {
+      const friendly = friendlyTutorError(e);
       setTutorState('session_ready');
-      setError(e.message || 'Continue failed.');
+      setStatus(friendly);
+      setError('');
+      const failed = {
+        id: `failed-turn-${Date.now()}`,
+        action: actionName,
+        userLabel: turnLabel,
+        feedback: friendly,
+        followUpQuestion: '',
+        avatarState: 'error',
+        error: true,
+        stepIndex: step,
+        createdAt: new Date().toISOString()
+      };
+      setGuidedTurns(prev => [...prev, failed].slice(-20));
+      setFailedTurn({
+        answer: turnLabel,
+        message: friendly
+      });
+      setFeedback('');
     } finally {
       setAction('');
+      setPendingTutorAction('');
     }
   };
   const refreshNotes = React.useCallback(() => {
@@ -5197,6 +5606,16 @@ const Tutor = ({
       text: 'The professor is clarifying the current idea before moving on.',
       icon: 'Lightbulb'
     },
+    speaking: {
+      label: 'Speaking',
+      text: 'The professor is explaining this turn. Read along or replay the voice.',
+      icon: 'Lightbulb'
+    },
+    error: {
+      label: 'Needs retry',
+      text: 'That turn did not complete, but your session is still ready.',
+      icon: 'X'
+    },
     paused: {
       label: 'Paused',
       text: 'The session is paused. Resume when you are ready.',
@@ -5208,6 +5627,7 @@ const Tutor = ({
     icon: 'Brain'
   };
   const ProfessorIcon = Icon[professorCopy.icon] || Icon.Brain;
+  const VoiceIcon = Icon.Volume2 || Icon.Volume || Icon.Headphones || Icon.Speaker;
   return React.createElement("div", {
     style: {
       display: 'flex',
@@ -5258,6 +5678,15 @@ const Tutor = ({
         size: 12
       }), m.label);
     })), React.createElement("button", {
+      className: "btn btn-ghost",
+      onClick: () => {
+        setVoiceMode(voiceMode === 'on' ? 'off' : 'on');
+        if (voiceMode === 'on') clearTutorAudio();
+      },
+      disabled: busy && !session
+    }, VoiceIcon && React.createElement(VoiceIcon, {
+      size: 11
+    }), " Voice ", voiceMode === 'on' ? 'on' : 'off'), React.createElement("button", {
       className: "btn btn-ghost",
       onClick: togglePause,
       disabled: !session || busy
@@ -5370,7 +5799,10 @@ const Tutor = ({
     const active = i === step;
     return React.createElement("button", {
       key: s.id || i,
-      onClick: () => setStep(i),
+      onClick: () => {
+        setStep(i);
+        setFailedTurn(null);
+      },
       disabled: busy,
       style: {
         display: 'flex',
@@ -5538,7 +5970,10 @@ const Tutor = ({
     style: tu.lessonCard
   }, React.createElement("div", {
     style: tu.professorPanel
-  }, React.createElement("div", {
+  }, window.TutorAvatar ? React.createElement(window.TutorAvatar, {
+    state: professorState === 'explaining' ? 'speaking' : professorState,
+    size: 50
+  }) : React.createElement("div", {
     style: tu.professorAvatar
   }, React.createElement(ProfessorIcon, {
     size: 18,
@@ -5687,36 +6122,77 @@ const Tutor = ({
   }, React.createElement("button", {
     className: "btn btn-ghost",
     disabled: !session || paused || busy,
-    onClick: () => continueTutor(null, 'confused')
+    onClick: () => continueTutor(null, 'im_confused')
   }, React.createElement(Icon.Brain, {
     size: 12
-  }), " I'm confused"), React.createElement("button", {
+  }), " ", pendingTutorAction === 'im_confused' ? 'Simplifying...' : "I'm confused"), React.createElement("button", {
     className: "btn btn-ghost",
     disabled: !session || paused || busy,
-    onClick: () => continueTutor(null, 'example')
+    onClick: () => continueTutor(null, 'give_example')
   }, React.createElement(Icon.Lightbulb, {
     size: 12
-  }), " Give an example"), React.createElement("button", {
+  }), " ", pendingTutorAction === 'give_example' ? 'Building example...' : 'Give an example'), React.createElement("button", {
     className: "btn btn-ghost",
     disabled: !session || paused || busy || !answerText.trim() && !currentStep.options,
-    onClick: () => continueTutor(null, 'check')
+    onClick: () => continueTutor(null, 'check_answer')
   }, React.createElement(Icon.Check, {
     size: 12
-  }), " Check my answer")), (lastTurn || feedback || persistedFeedback) && React.createElement("div", {
+  }), " ", pendingTutorAction === 'check_answer' ? 'Checking...' : 'Check my answer')), (visibleTurns.length > 0 || feedback || persistedFeedback) && React.createElement("div", {
     style: tu.conversation
-  }, lastTurn && React.createElement("div", {
+  }, visibleTurns.length > 0 ? visibleTurns.map(turn => React.createElement(React.Fragment, {
+    key: turn.id
+  }, React.createElement("div", {
     style: {
       ...tu.bubble,
       ...tu.studentBubble
     }
-  }, React.createElement("b", null, "You"), React.createElement("div", null, lastTurn.answer)), React.createElement("div", {
+  }, React.createElement("b", null, "You"), React.createElement("div", null, turn.userLabel)), React.createElement("div", {
+    style: {
+      ...tu.bubble,
+      ...tu.tutorBubble,
+      ...(turn.error ? {
+        borderColor: 'var(--warn)'
+      } : {})
+    }
+  }, React.createElement("div", {
+    style: tu.turnHeader
+  }, window.TutorAvatar && React.createElement(window.TutorAvatar, {
+    state: turn.error ? 'error' : turn.avatarState || 'speaking',
+    size: 30
+  }), React.createElement("b", null, "Professor Tutor"), React.createElement("span", {
+    style: tu.turnAction
+  }, tutorActionLabel(turn.action))), turn.error ? React.createElement("div", {
+    style: tu.failedTurn
+  }, turn.feedback) : React.createElement(TutorMessage, {
+    text: turn.feedback
+  }), turn.followUpQuestion && React.createElement("div", {
+    style: tu.followUp
+  }, turn.followUpQuestion), !turn.error && turn.id === (visibleTurns[visibleTurns.length - 1] && visibleTurns[visibleTurns.length - 1].id) && (voiceMode === 'on' || voiceBusy || voiceAudioUrl || voiceError) && React.createElement("div", {
+    style: tu.voiceRow
+  }, React.createElement("button", {
+    className: "btn btn-ghost",
+    style: {
+      padding: '5px 9px',
+      fontSize: 11
+    },
+    disabled: !voiceAudioUrl || voiceBusy,
+    onClick: toggleTutorAudio
+  }, voicePlaying ? React.createElement(Icon.Pause, {
+    size: 11
+  }) : React.createElement(Icon.Play, {
+    size: 11
+  }), " ", voicePlaying ? 'Pause' : 'Play'), voiceBusy && React.createElement("span", null, "Generating voice..."), voiceError && React.createElement("span", {
+    style: {
+      color: 'var(--warn)'
+    }
+  }, voiceError), !voiceBusy && voiceAudioUrl && React.createElement("span", null, "Voice ready"))))) : React.createElement("div", {
     style: {
       ...tu.bubble,
       ...tu.tutorBubble
     }
-  }, React.createElement("b", null, "Professor Tutor"), React.createElement("div", null, lastTurn && lastTurn.feedback || feedback || persistedFeedback), lastTurn && lastTurn.followUpQuestion && React.createElement("div", {
-    style: tu.followUp
-  }, lastTurn.followUpQuestion))), React.createElement("div", {
+  }, React.createElement("b", null, "Professor Tutor"), React.createElement(TutorMessage, {
+    text: feedback || persistedFeedback
+  }))), React.createElement("div", {
     style: {
       marginTop: 20,
       display: 'flex',
@@ -5726,7 +6202,7 @@ const Tutor = ({
   }, React.createElement("button", {
     className: "btn btn-accent",
     disabled: !session || paused || busy,
-    onClick: () => isLastStep ? finishTutor() : continueTutor(null, answerText.trim() ? 'check' : 'advance')
+    onClick: () => isLastStep ? finishTutor() : continueTutor(null, answerText.trim() ? 'check_answer' : 'continue')
   }, action === 'continue' ? React.createElement(React.Fragment, null, "Preparing... ", React.createElement(Icon.Sparkle, {
     size: 12
   })) : !isLastStep ? React.createElement(React.Fragment, null, "Continue ", React.createElement(Icon.ArrowRight, {
@@ -5744,6 +6220,11 @@ const Tutor = ({
     disabled: busy,
     onClick: () => {
       setSession(null);
+      setFeedback('');
+      setLastTurn(null);
+      setFailedTurn(null);
+      setGuidedTurns([]);
+      setPendingTutorAction('');
       setTutorState('ready_to_start');
       setStatus('Choose a material, then start your tutor session.');
     }
@@ -5909,6 +6390,36 @@ const Tutor = ({
   }, React.createElement(Icon.Send, {
     size: 14
   }))))));
+};
+const TutorMarkdown = ({
+  text
+}) => {
+  const raw = String(text || '');
+  if (!raw) return null;
+  if (window.marked && window.DOMPurify) {
+    return React.createElement("div", {
+      className: "md-rendered",
+      style: tu.tutorMarkdown,
+      dangerouslySetInnerHTML: {
+        __html: window.DOMPurify.sanitize(window.marked.parse(raw))
+      }
+    });
+  }
+  return React.createElement("div", {
+    style: {
+      whiteSpace: 'pre-wrap'
+    }
+  }, raw);
+};
+const TutorMessage = ({
+  text
+}) => {
+  const Structured = window.NoesisTutorResponse && window.NoesisTutorResponse.StructuredMessage;
+  return Structured ? React.createElement(Structured, {
+    text: text
+  }) : React.createElement(TutorMarkdown, {
+    text: text
+  });
 };
 const RailTitle = ({
   title
@@ -6136,10 +6647,62 @@ const tu = {
     color: 'var(--fg-1)',
     borderColor: 'var(--accent-soft)'
   },
+  turnHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8
+  },
+  turnAction: {
+    fontSize: 10.5,
+    color: 'var(--accent)',
+    border: '1px solid var(--accent-soft)',
+    background: 'var(--accent-glow)',
+    borderRadius: 999,
+    padding: '2px 7px'
+  },
+  tutorMarkdown: {
+    fontSize: 13,
+    lineHeight: 1.65,
+    color: 'var(--fg-1)'
+  },
+  structuredMessage: {
+    display: 'grid',
+    gap: 10
+  },
+  structuredTitle: {
+    fontSize: 14,
+    fontWeight: 700,
+    color: 'var(--fg-0)',
+    marginBottom: 2
+  },
+  hintBox: {
+    padding: 11,
+    borderRadius: 8,
+    background: 'var(--accent-glow)',
+    border: '1px solid var(--accent-soft)',
+    color: 'var(--fg-1)',
+    fontSize: 12.8,
+    lineHeight: 1.55
+  },
   followUp: {
     marginTop: 8,
     color: 'var(--fg-2)',
     fontSize: 12.5
+  },
+  failedTurn: {
+    marginTop: 8,
+    color: 'var(--warn)',
+    lineHeight: 1.55
+  },
+  voiceRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    marginTop: 10,
+    color: 'var(--fg-3)',
+    fontSize: 11.5
   },
   feedback: {
     marginTop: 16,
@@ -6827,6 +7390,7 @@ const TutorChat = ({
         id: res.message_id || `local-assistant-${Date.now()}`,
         role: 'assistant',
         content: res.reply || '',
+        response: res.response || null,
         sources: res.sources || [],
         suggestions: res.suggestions || [],
         groundingTier: res.groundingTier || '',
@@ -7011,7 +7575,8 @@ const TutorChat = ({
     ttsBusy: ttsBusyMessageId === m.id,
     muted: muted,
     onShowSources: showSourcesForMessage,
-    onCitation: showSourcesForMessage
+    onCitation: showSourcesForMessage,
+    onAction: (text, actionKey) => sendMessage(text, actionKey)
   })), busy && React.createElement(LoadingBubble, null))), showScrollFab && React.createElement("button", {
     style: tc.scrollFab,
     onClick: () => scrollToBottom(true)
@@ -7156,9 +7721,14 @@ const ChatMessage = ({
   ttsBusy,
   muted,
   onShowSources,
-  onCitation
+  onCitation,
+  onAction
 }) => {
   const Icon = window.Icon;
+  const ExplainIcon = Icon.Lightbulb || Icon.Sparkle;
+  const ExampleIcon = Icon.Code || Icon.Braces || Icon.Sparkle;
+  const QuizIcon = Icon.Target || Icon.CircleHelp || Icon.Sparkle;
+  const SourceIcon = Icon.BookOpen || Icon.Book || Icon.FileText || Icon.Sparkle;
   const [copied, setCopied] = React.useState(false);
   const isUser = message.role === 'user';
   const tier = message.grounding && message.grounding.tier || message.groundingTier;
@@ -7178,7 +7748,8 @@ const ChatMessage = ({
   };
   const copyMessage = async () => {
     try {
-      await navigator.clipboard.writeText(String(message.content || ''));
+      const readable = window.NoesisTutorResponse && window.NoesisTutorResponse.copyText ? window.NoesisTutorResponse.copyText(message.content) : String(message.content || '');
+      await navigator.clipboard.writeText(readable);
       setCopied(true);
       setTimeout(() => setCopied(false), 1300);
     } catch (_) {
@@ -7245,18 +7816,155 @@ const ChatMessage = ({
     size: 11
   }))), weakNote && React.createElement("div", {
     style: tc.groundingNote
-  }, weakNote), React.createElement("div", {
+  }, weakNote), !isUser ? React.createElement(TutorReplyCard, {
+    message: message,
+    renderMarkdown: renderMarkdown,
+    onMarkdownClick: handleMarkdownClick
+  }) : React.createElement("div", {
     className: "md-rendered",
     style: tc.markdown,
     onClick: handleMarkdownClick,
     dangerouslySetInnerHTML: renderMarkdown(message.content)
   }), !isUser && message.actionResult && React.createElement(ActionResult, {
     result: message.actionResult
-  })));
+  }), !isUser && !message.error && React.createElement("div", {
+    style: tc.replyActions
+  }, React.createElement("button", {
+    style: tc.replyActionButton,
+    disabled: ttsBusy,
+    onClick: () => onAction && onAction('Explain your last answer more simply with a beginner-friendly analogy.', '')
+  }, React.createElement(ExplainIcon, {
+    size: 12
+  }), " Explain simpler"), React.createElement("button", {
+    style: tc.replyActionButton,
+    onClick: () => onAction && onAction('Show me a concrete example for your last answer.', 'give_example')
+  }, React.createElement(ExampleIcon, {
+    size: 12
+  }), " Give example"), React.createElement("button", {
+    style: tc.replyActionButton,
+    onClick: () => onAction && onAction('Quiz me on your last answer.', 'quiz_me')
+  }, React.createElement(QuizIcon, {
+    size: 12
+  }), " Quiz me"), React.createElement("button", {
+    style: tc.replyActionButton,
+    onClick: () => onShowSources && onShowSources(message)
+  }, React.createElement(SourceIcon, {
+    size: 12
+  }), " Show sources"), React.createElement("button", {
+    style: tc.replyActionButton,
+    disabled: muted || ttsBusy,
+    onClick: () => onSpeak && onSpeak(message)
+  }, playing ? React.createElement(Icon.Pause, {
+    size: 12
+  }) : React.createElement(Icon.Play, {
+    size: 12
+  }), " Speak"))));
+};
+const chatCodeObject = code => {
+  if (!code) return null;
+  if (typeof code === 'string') return {
+    language: 'text',
+    content: code
+  };
+  return {
+    language: code.language || 'text',
+    content: code.content || code.text || code.code || ''
+  };
+};
+const TutorReplyCard = ({
+  message,
+  renderMarkdown,
+  onMarkdownClick
+}) => {
+  const Icon = window.Icon;
+  const [copiedCode, setCopiedCode] = React.useState(false);
+  const helper = window.NoesisTutorResponse;
+  const normalized = helper && helper.normalize ? helper.normalize(message.content) : {
+    structured: false,
+    text: message.content
+  };
+  if (!normalized.structured) {
+    return React.createElement("div", {
+      className: "md-rendered",
+      style: tc.markdown,
+      onClick: onMarkdownClick,
+      dangerouslySetInnerHTML: renderMarkdown(message.content)
+    });
+  }
+  const code = chatCodeObject(normalized.code);
+  const visual = normalized.visual && typeof normalized.visual === 'object' ? normalized.visual.caption || normalized.visual.description || normalized.visual.type || '' : typeof normalized.visual === 'string' ? normalized.visual : '';
+  const copyCode = async () => {
+    if (!code || !code.content) return;
+    try {
+      await navigator.clipboard.writeText(code.content);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 1200);
+    } catch (_) {
+      setCopiedCode(false);
+    }
+  };
+  return React.createElement("div", {
+    style: tc.replyCard
+  }, (normalized.title || normalized.type) && React.createElement("div", {
+    style: tc.replyTitle
+  }, normalized.title || String(normalized.type).replace(/_/g, ' ')), normalized.explanation && React.createElement("section", {
+    style: tc.replySection
+  }, React.createElement("div", {
+    style: tc.replySectionTitle
+  }, "Answer"), React.createElement("div", {
+    className: "md-rendered",
+    style: tc.markdown,
+    onClick: onMarkdownClick,
+    dangerouslySetInnerHTML: renderMarkdown(normalized.explanation)
+  })), normalized.keyPoints && normalized.keyPoints.length > 0 && React.createElement("section", {
+    style: tc.replySection
+  }, React.createElement("div", {
+    style: tc.replySectionTitle
+  }, "Key points"), React.createElement("div", {
+    style: tc.keyPointGrid
+  }, normalized.keyPoints.slice(0, 6).map((point, i) => React.createElement("div", {
+    key: `${point}-${i}`,
+    style: tc.keyPoint
+  }, React.createElement("span", {
+    className: "mono",
+    style: tc.keyPointNumber
+  }, i + 1), React.createElement("span", null, point))))), normalized.example && React.createElement("section", {
+    style: {
+      ...tc.replySection,
+      ...tc.exampleCard
+    }
+  }, React.createElement("div", {
+    style: tc.replySectionTitle
+  }, "Example"), React.createElement("div", {
+    className: "md-rendered",
+    style: tc.markdown,
+    onClick: onMarkdownClick,
+    dangerouslySetInnerHTML: renderMarkdown(normalized.example)
+  })), code && code.content && React.createElement("section", {
+    style: tc.codeCard
+  }, React.createElement("div", {
+    style: tc.replyCodeHeader
+  }, React.createElement("span", null, code.language || 'code'), React.createElement("button", {
+    style: tc.codeCopyButton,
+    onClick: copyCode
+  }, copiedCode ? React.createElement(Icon.Check, {
+    size: 11
+  }) : React.createElement(Icon.Copy, {
+    size: 11
+  }), copiedCode ? 'Copied' : 'Copy code')), React.createElement("pre", {
+    style: tc.replyCode
+  }, code.content)), visual && React.createElement("section", {
+    style: tc.visualCard
+  }, React.createElement("div", {
+    style: tc.replySectionTitle
+  }, "Visual"), React.createElement("div", null, visual)), (normalized.hint || normalized.question) && React.createElement("section", {
+    style: tc.checkpointCard
+  }, normalized.hint && React.createElement("div", null, React.createElement("b", null, "Hint:"), " ", normalized.hint), normalized.question && React.createElement("div", null, React.createElement("b", null, "Check yourself:"), " ", normalized.question)));
 };
 const ActionResult = ({
   result
 }) => {
+  const [selected, setSelected] = React.useState(null);
   if (!result) return null;
   if (result.type === 'flashcards') {
     return React.createElement("div", {
@@ -7269,6 +7977,8 @@ const ActionResult = ({
   }
   if (result.type === 'quiz' && result.quiz) {
     const q = result.quiz;
+    const correctIdx = Number.isInteger(q.correct_idx) ? q.correct_idx : Number(q.correct_idx);
+    const hasSelection = selected != null;
     return React.createElement("div", {
       style: tc.actionResult
     }, React.createElement("div", {
@@ -7277,14 +7987,19 @@ const ActionResult = ({
       style: tc.actionResultText
     }, q.question), Array.isArray(q.options) && q.options.length > 0 && React.createElement("div", {
       style: tc.quizOptions
-    }, q.options.map((option, i) => React.createElement("div", {
+    }, q.options.map((option, i) => React.createElement("button", {
       key: `${option}-${i}`,
-      style: tc.quizOption
+      style: {
+        ...tc.quizOption,
+        ...(hasSelection && i === correctIdx ? tc.quizOptionCorrect : {}),
+        ...(hasSelection && i === selected && i !== correctIdx ? tc.quizOptionWrong : {})
+      },
+      onClick: () => setSelected(i)
     }, React.createElement("span", {
       className: "mono"
-    }, String.fromCharCode(65 + i)), option))), (q.expectedAnswer || q.explanation) && React.createElement("details", {
+    }, String.fromCharCode(65 + i)), option))), (hasSelection || !Array.isArray(q.options) || !q.options.length) && (q.expectedAnswer || q.explanation) && React.createElement("div", {
       style: tc.quizDetails
-    }, React.createElement("summary", null, "Show answer"), q.expectedAnswer && React.createElement("div", null, q.expectedAnswer), q.explanation && React.createElement("div", {
+    }, q.expectedAnswer && React.createElement("div", null, q.expectedAnswer), q.explanation && React.createElement("div", {
       style: {
         marginTop: 6,
         color: 'var(--fg-2)'
@@ -7341,6 +8056,7 @@ const TracePair = ({
   style: tc.tracePair
 }, React.createElement("span", null, label), React.createElement("b", null, value));
 function tutorSpeechText(markdown) {
+  if (window.NoesisTutorResponse) return window.NoesisTutorResponse.speechText(markdown);
   return String(markdown || '').replace(/```[\s\S]*?```/g, ' code example omitted. ').replace(/`([^`]+)`/g, '$1').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1').replace(/[#>*_~|]/g, ' ').replace(/\[(Source|source)\s*\d+\]/g, '').replace(/\s+/g, ' ').trim().slice(0, 4000);
 }
 function enhanceCodeBlocks(html) {
@@ -7635,6 +8351,136 @@ const tc = {
     lineHeight: 1.65,
     color: 'inherit'
   },
+  replyCard: {
+    display: 'grid',
+    gap: 11
+  },
+  replyTitle: {
+    fontSize: 15,
+    color: 'var(--fg-0)',
+    fontWeight: 700,
+    lineHeight: 1.35
+  },
+  replySection: {
+    padding: 12,
+    borderRadius: 8,
+    border: '1px solid var(--line)',
+    background: 'var(--bg-0)'
+  },
+  replySectionTitle: {
+    fontSize: 10.5,
+    color: 'var(--accent)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.1em',
+    marginBottom: 7,
+    fontWeight: 700
+  },
+  exampleCard: {
+    background: 'color-mix(in srgb, var(--accent) 7%, var(--bg-0))',
+    borderColor: 'var(--accent-soft)'
+  },
+  keyPointGrid: {
+    display: 'grid',
+    gap: 7
+  },
+  keyPoint: {
+    display: 'flex',
+    gap: 9,
+    alignItems: 'flex-start',
+    color: 'var(--fg-1)',
+    fontSize: 13,
+    lineHeight: 1.5
+  },
+  keyPointNumber: {
+    width: 18,
+    height: 18,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 999,
+    background: 'var(--accent-glow)',
+    color: 'var(--accent)',
+    flexShrink: 0,
+    fontSize: 10
+  },
+  codeCard: {
+    borderRadius: 8,
+    border: '1px solid #1d4ed8',
+    background: '#0f172a',
+    overflow: 'hidden'
+  },
+  replyCodeHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+    padding: '9px 12px',
+    color: '#bfdbfe',
+    fontSize: 11.5,
+    borderBottom: '1px solid rgba(191,219,254,0.18)'
+  },
+  codeCopyButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '5px 8px',
+    borderRadius: 7,
+    border: '1px solid rgba(191,219,254,0.25)',
+    background: 'rgba(15,23,42,0.72)',
+    color: '#dbeafe',
+    fontSize: 11,
+    cursor: 'pointer'
+  },
+  replyCode: {
+    margin: 0,
+    padding: 14,
+    maxHeight: 320,
+    overflow: 'auto',
+    color: '#dbeafe',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 12.5,
+    lineHeight: 1.6
+  },
+  visualCard: {
+    padding: 12,
+    borderRadius: 8,
+    border: '1px dashed var(--accent-soft)',
+    background: 'var(--bg-0)',
+    color: 'var(--fg-1)',
+    fontSize: 13,
+    lineHeight: 1.55
+  },
+  checkpointCard: {
+    display: 'grid',
+    gap: 8,
+    padding: 12,
+    borderRadius: 8,
+    border: '1px solid var(--accent-soft)',
+    background: 'var(--accent-glow)',
+    color: 'var(--fg-1)',
+    fontSize: 13,
+    lineHeight: 1.55
+  },
+  replyActions: {
+    display: 'flex',
+    gap: 7,
+    flexWrap: 'wrap',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTop: '1px solid var(--line)'
+  },
+  replyActionButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '6px 9px',
+    borderRadius: 999,
+    border: '1px solid var(--line)',
+    background: 'var(--bg-0)',
+    color: 'var(--fg-1)',
+    fontSize: 11.5,
+    cursor: 'pointer'
+  },
   scrollFab: {
     position: 'absolute',
     right: 'clamp(18px, 4vw, 56px)',
@@ -7716,7 +8562,17 @@ const tc = {
     borderRadius: 7,
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
-    fontSize: 12.5
+    color: 'var(--fg-1)',
+    fontSize: 12.5,
+    textAlign: 'left'
+  },
+  quizOptionCorrect: {
+    borderColor: 'var(--ok)',
+    background: 'color-mix(in srgb, var(--ok) 9%, var(--bg-1))'
+  },
+  quizOptionWrong: {
+    borderColor: 'var(--err)',
+    background: 'color-mix(in srgb, var(--err) 9%, var(--bg-1))'
   },
   quizDetails: {
     marginTop: 9,
@@ -8407,94 +9263,123 @@ function layoutTree(root, expandedSet, cfg) {
       h: 0
     }
   };
-  var nw = cfg.nodeWidth,
-    nh = cfg.nodeHeight,
-    lg = cfg.levelGap,
-    sg = cfg.siblingGap;
-  var leafNw = Math.round(nw * 0.82);
+  var canvasW = cfg.canvasWidth || 300;
+  var nh = cfg.nodeHeight;
+  var lg = cfg.levelGap;
+  var topPad = cfg.topPad || 28;
+  var rowGap = cfg.rowGap || 12;
+  var childRowGap = cfg.childRowGap || rowGap;
+  var leftPad = cfg.leftPad || 14;
+  var laneGap = cfg.laneGap || 10;
+  var branchW = cfg.branchWidth || Math.max(118, Math.floor(canvasW * 0.32));
+  var childW = cfg.childWidth || Math.max(104, Math.floor(canvasW * 0.22));
   var positions = new Map();
   var edges = [];
-  function widthOf(node, depth) {
-    if (depth >= 2) return leafNw;
-    var ch = node.children || [];
-    var visibleCh = depth === 0 || expandedSet[node.id] ? ch : [];
-    if (!visibleCh.length) return nw;
-    var total = 0;
-    visibleCh.forEach(function (c) {
-      total += widthOf(c, depth + 1) + sg;
-    });
-    return Math.max(nw, total - sg);
+  var maxY = 0;
+  function nodeId(node) {
+    return node.id || normalizeMapId(node.label);
   }
-  function place(node, depth, cx, topY) {
-    var w = depth >= 2 ? leafNw : nw;
-    var h = depth === 0 ? nh + 8 : depth >= 2 ? nh - 8 : nh;
-    var x = cx - w / 2;
-    var y = topY;
-    positions.set(node.id, {
+  function nodeHeight(depth) {
+    return depth === 0 ? nh + 10 : depth >= 2 ? Math.max(34, nh - 6) : nh;
+  }
+  function visibleChildren(node, depth) {
+    if (depth === 0) return node.children || [];
+    return expandedSet[nodeId(node)] ? node.children || [] : [];
+  }
+  function collectLaneItems(node, depth, parentId, out) {
+    var children = visibleChildren(node, depth);
+    for (var i = 0; i < children.length; i++) {
+      var child = children[i];
+      var childId = nodeId(child);
+      out.push({
+        node: child,
+        id: childId,
+        depth: depth + 1,
+        parentId: parentId
+      });
+      collectLaneItems(child, depth + 1, childId, out);
+    }
+    return out;
+  }
+  function setPosition(node, depth, x, y, w, h, parentId) {
+    var id = nodeId(node);
+    positions.set(id, {
       x: x,
       y: y,
       w: w,
       h: h,
-      cx: cx,
+      cx: x + w / 2,
       depth: depth,
       node: node
     });
-    var ch = node.children || [];
-    var visibleCh = depth === 0 || expandedSet[node.id] ? ch : [];
-    if (!visibleCh.length) return;
-    var childTop = y + h + lg;
-    var totalW = 0;
-    var childWidths = visibleCh.map(function (c) {
-      var cw = widthOf(c, depth + 1);
-      totalW += cw;
-      return cw;
+    if (parentId) edges.push({
+      from: parentId,
+      to: id
     });
-    totalW += (visibleCh.length - 1) * sg;
-    var startX = cx - totalW / 2;
-    var runX = startX;
-    visibleCh.forEach(function (c, i) {
-      var cw = childWidths[i];
-      var childCx = runX + cw / 2;
-      place(c, depth + 1, childCx, childTop);
-      edges.push({
-        from: node.id,
-        to: c.id
-      });
-      runX += cw + sg;
-    });
+    maxY = Math.max(maxY, y + h);
+    return id;
   }
-  var totalW = widthOf(root, 0);
-  var startCx = totalW / 2 + 40;
-  place(root, 0, startCx, 30);
-  var minX = Infinity,
-    maxX = -Infinity,
-    maxY = -Infinity;
-  positions.forEach(function (p) {
-    if (p.x < minX) minX = p.x;
-    if (p.x + p.w > maxX) maxX = p.x + p.w;
-    if (p.y + p.h > maxY) maxY = p.y + p.h;
-  });
-  var pad = 30;
+  function placeBranchRow(branch, y, rootId) {
+    var branchH = nodeHeight(1);
+    var branchId = setPosition(branch, 1, leftPad, y, branchW, branchH, rootId);
+    var lane = collectLaneItems(branch, 1, branchId, []);
+    var laneStartX = leftPad + branchW + laneGap;
+    var available = canvasW - laneStartX - leftPad;
+    var childH = nodeHeight(2);
+    if (available < childW) {
+      laneStartX = leftPad + 18;
+      available = canvasW - laneStartX - leftPad;
+      y += branchH + childRowGap;
+    }
+    var perRow = Math.max(1, Math.floor((available + laneGap) / (childW + laneGap)));
+    for (var i = 0; i < lane.length; i++) {
+      var item = lane[i];
+      var col = i % perRow;
+      var row = Math.floor(i / perRow);
+      var x = laneStartX + col * (childW + laneGap) + Math.max(0, item.depth - 2) * 8;
+      var childWidth = Math.min(childW, Math.max(82, canvasW - x - leftPad));
+      var childY = y + row * (childH + childRowGap);
+      setPosition(item.node, item.depth, x, childY, childWidth, childH, item.parentId);
+    }
+    var childRows = lane.length ? Math.ceil(lane.length / perRow) : 0;
+    var rowH = Math.max(branchH, childRows ? childRows * childH + (childRows - 1) * childRowGap : 0);
+    return y + rowH + rowGap;
+  }
+  var rootY = topPad;
+  var rootH = nodeHeight(0);
+  var rootId = setPosition(root, 0, leftPad, rootY, Math.max(100, canvasW - leftPad * 2), rootH, null);
+  var cursorY = rootY + rootH + lg;
+  var branches = visibleChildren(root, 0);
+  for (var i = 0; i < branches.length; i++) {
+    cursorY = placeBranchRow(branches[i], cursorY, rootId);
+  }
+  var pad = cfg.pad || 28;
   return {
     positions: positions,
     edges: edges,
     bounds: {
-      w: maxX - minX + pad * 2,
-      h: maxY + pad,
-      ox: minX - pad
+      w: canvasW,
+      h: Math.max(maxY + pad, cursorY + pad),
+      ox: 0
     }
   };
 }
 function edgePath(pPos, cPos) {
-  var x1 = pPos.cx,
-    y1 = pPos.y + pPos.h;
-  var x2 = cPos.cx,
-    y2 = cPos.y;
-  var gap = Math.max(1, y2 - y1);
-  var tangent = Math.max(28, Math.min(96, gap * 0.58));
-  var c1y = y1 + tangent;
-  var c2y = y2 - tangent;
-  return 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + c1y + ', ' + x2 + ' ' + c2y + ', ' + x2 + ' ' + y2;
+  var sameRow = Math.abs(pPos.y + pPos.h / 2 - (cPos.y + cPos.h / 2)) < Math.max(pPos.h, cPos.h) * 0.65;
+  if (sameRow && cPos.x > pPos.x) {
+    var startX = pPos.x + pPos.w;
+    var startY = pPos.y + pPos.h / 2;
+    var endX = cPos.x;
+    var endY = cPos.y + cPos.h / 2;
+    var midX = startX + Math.max(10, (endX - startX) * 0.48);
+    return 'M ' + startX + ' ' + startY + ' H ' + midX + ' V ' + endY + ' H ' + endX;
+  }
+  var sx = pPos.x + 12;
+  var sy = pPos.y + pPos.h;
+  var tx = cPos.x + 12;
+  var ty = cPos.y;
+  var midY = sy + Math.max(4, (ty - sy) * 0.45);
+  return 'M ' + sx + ' ' + sy + ' V ' + midY + ' H ' + tx + ' V ' + ty;
 }
 function isRecommendedEdge(fromId, toId, recSet) {
   var fromIdx = recSet[fromId];
@@ -8628,17 +9513,31 @@ const LearningMap = ({
     });
   }, [highlightNode, tree]);
   var cfg = compact ? {
-    nodeWidth: 108,
-    nodeHeight: 34,
-    levelGap: 42,
-    siblingGap: 10
+    nodeHeight: 36,
+    levelGap: 18,
+    rowGap: 12,
+    childRowGap: 7,
+    laneGap: 8,
+    branchWidth: 120,
+    childWidth: 104,
+    leftPad: 8,
+    topPad: 18,
+    canvasWidth: 300,
+    pad: 14
   } : {
-    nodeWidth: 160,
-    nodeHeight: 44,
-    levelGap: 70,
-    siblingGap: 18
+    nodeHeight: 46,
+    levelGap: 30,
+    rowGap: 18,
+    childRowGap: 10,
+    laneGap: 12,
+    branchWidth: 190,
+    childWidth: 150,
+    leftPad: 20,
+    topPad: 28,
+    canvasWidth: 700,
+    pad: 28
   };
-  var effectiveExpanded = compact ? {} : expanded;
+  var effectiveExpanded = expanded;
   var layout = React.useMemo(function () {
     return layoutTree(tree, effectiveExpanded, cfg);
   }, [tree, effectiveExpanded, compact]);
@@ -8677,13 +9576,10 @@ const LearningMap = ({
   var pos = layout.positions;
   var edgeList = layout.edges;
   var bounds = layout.bounds;
-  var vbX = bounds.ox || 0;
-  var nodeOffsetX = -vbX;
-  var vbW = Math.max(bounds.w, compact ? 420 : 720);
-  var vbH = Math.max(bounds.h, compact ? 170 : 320);
-  var canvasW = Math.ceil(vbW);
-  var canvasContentH = Math.ceil(vbH);
-  var canvasViewportH = compact ? Math.min(230, canvasContentH) : Math.max(340, canvasContentH);
+  var nodeOffsetX = 0;
+  var canvasW = Math.ceil(bounds.w);
+  var canvasContentH = Math.ceil(Math.max(bounds.h, compact ? 170 : 320));
+  var canvasViewportH = compact ? Math.min(300, canvasContentH) : Math.max(360, Math.min(canvasContentH, 760));
   var svgViewBox = '0 0 ' + canvasW + ' ' + canvasContentH;
   var highlightId = highlightNode ? resolveTreeNodeId(tree, highlightNode) : null;
   return React.createElement("section", {
@@ -8708,12 +9604,18 @@ const LearningMap = ({
       ...lm.startBadge,
       ...(compact ? lm.compactStartBadge : {})
     }
-  }, "Start here: ", React.createElement("b", null, start))), !compact && React.createElement("div", {
-    style: lm.path
-  }, recPath.slice(0, 7).map(function (p, i) {
+  }, "Start here: ", React.createElement("b", null, start))), React.createElement("div", {
+    style: {
+      ...lm.path,
+      ...(compact ? lm.compactPath : {})
+    }
+  }, recPath.slice(0, compact ? 4 : 7).map(function (p, i) {
     return React.createElement("span", {
       key: p + i,
-      style: lm.pathChip
+      style: {
+        ...lm.pathChip,
+        ...(compact ? lm.compactPathChip : {})
+      }
     }, i + 1, ". ", p);
   })), React.createElement("div", {
     style: {
@@ -8794,7 +9696,7 @@ const LearningMap = ({
     var depth = p.depth;
     var color = nodeColor(n);
     var hasCh = (n.children || []).length > 0;
-    var isExp = effectiveExpanded[n.id];
+    var isExp = effectiveExpanded[nodeId];
     var isHighlighted = highlightId && highlightId === nodeId;
     var recIdx = recSet[nodeId];
     var isPathNode = !!recIdx;
@@ -8873,9 +9775,9 @@ const LearningMap = ({
         }
       }, n.label), recIdx && React.createElement("span", {
         style: lm.recBadge
-      }, recIdx), !compact && hasCh && React.createElement("span", {
+      }, recIdx), hasCh && React.createElement("span", {
         onClick: function (e) {
-          toggleExpand(n.id, e);
+          toggleExpand(nodeId, e);
         },
         style: lm.chevron,
         title: isExp ? 'Collapse branch' : 'Expand branch',
@@ -9791,7 +10693,7 @@ const lm = {
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)',
     padding: 18,
-    overflow: 'hidden'
+    overflow: 'visible'
   },
   compactShell: {
     padding: 12
@@ -9853,10 +10755,23 @@ const lm = {
     padding: '4px 8px',
     background: 'var(--bg-2)'
   },
+  compactPath: {
+    gap: 4,
+    marginTop: 8
+  },
+  compactPathChip: {
+    fontSize: 10.5,
+    padding: '3px 6px',
+    maxWidth: '100%',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+  },
   canvas: {
     position: 'relative',
     marginTop: 10,
-    overflow: 'auto',
+    overflowY: 'auto',
+    overflowX: 'hidden',
     WebkitOverflowScrolling: 'touch',
     scrollbarWidth: 'thin'
   },
@@ -9867,9 +10782,10 @@ const lm = {
   },
   canvasInner: {
     position: 'relative',
-    minWidth: 360,
+    minWidth: 0,
     minHeight: 170,
-    margin: '0 auto'
+    margin: '0 auto',
+    maxWidth: 'none'
   },
   edgeSvg: {
     position: 'absolute',
@@ -10064,14 +10980,20 @@ const lm = {
     lineHeight: 1.2,
     minWidth: 0,
     overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap'
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical'
   }
 };
 window.NoesisVisualRegistry = {
   resolveTopicVisual,
   supportedVisualTypes: () => Object.keys(TOPIC_VISUALS),
   isSupported: (value, context = '') => !!resolveTopicVisual(value, context)
+};
+window.NoesisLearningMapInternals = {
+  layoutTree,
+  edgePath,
+  normalizeMapId
 };
 window.TopicVisual = TopicVisual;
 window.LearningMap = LearningMap;
@@ -10138,6 +11060,11 @@ const visualStatusLabel = (validation, warnings) => {
   return 'Visual needs review';
 };
 const visualStatusStyle = (validation, warnings) => validation && validation.passed === true && !warnings.length ? sr.statusGood : sr.statusNeedsReview;
+const isCriticalStoryboardWarning = (code = '') => /^domain:missing_required_visual:/.test(String(code || '')) || /storyboard:too_few_scenes|domain:oop_missing_class_object_visual|domain:data_structure_missing_operation_visual|domain:algorithm_missing_flow_or_complexity_visual/.test(String(code || ''));
+const targetVisualTypeFromWarning = (code = '') => {
+  const match = String(code || '').match(/missing_required_visual:([a-z0-9_]+)/i);
+  return match ? match[1] : '';
+};
 const GenerationSummary = ({
   record,
   board,
@@ -10222,10 +11149,128 @@ const GenerationSummary = ({
     size: 13
   }), React.createElement("span", null, warnings.slice(0, 5).join(' | '))));
 };
+const ApprovalPanel = ({
+  quality,
+  busy,
+  onFix,
+  onGlobalFix,
+  onRecheck,
+  onApproveAnyway
+}) => {
+  const Icon = window.Icon;
+  const RotateIcon = Icon.RotateCcw || Icon.ArrowLeft || Icon.Sparkle;
+  if (!quality || !quality.classified) return null;
+  const {
+    critical,
+    warnings,
+    info
+  } = quality.classified;
+  const details = quality.warningDetails || [];
+  const detailMap = {};
+  for (const d of details) detailMap[d.code] = d;
+  const sceneIdFromWarning = code => {
+    const match = code.match(/^([^:]+?):/);
+    return match && !/^(domain|topic|storyboard|grounding|enrichment)$/.test(match[1]) ? match[1] : null;
+  };
+  const renderWarningItem = (code, severity) => {
+    const detail = detailMap[code] || {
+      label: code.replace(/_/g, ' ')
+    };
+    const sceneId = detail.sceneId || sceneIdFromWarning(code);
+    const canFix = severity === 'critical' && /missing_required_visual|missing_concrete_visual_payload|generic_visual_template|visual_type_payload_mismatch/.test(code);
+    const targetVisualType = targetVisualTypeFromWarning(code);
+    return React.createElement("div", {
+      key: code,
+      style: sr.approvalItem
+    }, React.createElement("div", {
+      style: {
+        flex: 1,
+        minWidth: 0
+      }
+    }, React.createElement("div", {
+      style: sr.approvalCode
+    }, sceneId ? `Scene ${sceneId}` : 'Global'), React.createElement("div", {
+      style: sr.approvalLabel
+    }, detail.label), detail.fix && React.createElement("div", {
+      style: sr.approvalFix
+    }, detail.fix)), canFix && React.createElement("button", {
+      className: "btn btn-ghost",
+      style: {
+        fontSize: 11,
+        whiteSpace: 'nowrap'
+      },
+      disabled: !!busy,
+      onClick: () => sceneId ? onFix(sceneId, 'fix_auto', targetVisualType) : onGlobalFix({
+        warningCode: code,
+        targetVisualType,
+        action: 'fix_auto'
+      })
+    }, React.createElement(Icon.Sparkle, {
+      size: 11
+    }), " ", sceneId ? 'Fix' : 'Fix automatically'));
+  };
+  return React.createElement("section", {
+    style: sr.approvalPanel
+  }, React.createElement("div", {
+    style: sr.approvalHead
+  }, React.createElement(Icon.Target, {
+    size: 15,
+    style: {
+      color: critical.length ? 'var(--err, #ef4444)' : 'var(--warn)'
+    }
+  }), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, React.createElement("div", {
+    style: sr.approvalTitle
+  }, critical.length ? `${critical.length} critical issue${critical.length > 1 ? 's' : ''} must be fixed` : 'Non-critical warnings remain'), React.createElement("div", {
+    style: sr.approvalSub
+  }, critical.length ? 'Fix critical issues before approval.' : 'You can approve anyway or fix these warnings.')), React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 8
+    }
+  }, React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: !!busy,
+    onClick: onRecheck
+  }, React.createElement(RotateIcon, {
+    size: 11
+  }), " ", busy === 'recheck' ? 'Checking...' : 'Re-check'), !critical.length && React.createElement("button", {
+    className: "btn btn-accent",
+    disabled: !!busy,
+    onClick: onApproveAnyway
+  }, React.createElement(Icon.Check, {
+    size: 11
+  }), " Approve anyway"))), critical.length > 0 && React.createElement("div", {
+    style: sr.approvalSection
+  }, React.createElement("div", {
+    style: {
+      ...sr.approvalSectionTitle,
+      color: 'var(--err, #ef4444)'
+    }
+  }, "Critical blockers"), critical.map(c => renderWarningItem(c, 'critical'))), warnings.length > 0 && React.createElement("div", {
+    style: sr.approvalSection
+  }, React.createElement("div", {
+    style: {
+      ...sr.approvalSectionTitle,
+      color: 'var(--warn)'
+    }
+  }, "Warnings"), warnings.map(w => renderWarningItem(w, 'warning'))), info.length > 0 && React.createElement("div", {
+    style: sr.approvalSection
+  }, React.createElement("div", {
+    style: {
+      ...sr.approvalSectionTitle,
+      color: 'var(--fg-3)'
+    }
+  }, "Info"), info.map(i => renderWarningItem(i, 'info'))));
+};
 const StoryboardReview = ({
   onNav
 }) => {
   const Icon = window.Icon;
+  const RotateIcon = Icon.RotateCcw || Icon.ArrowLeft || Icon.Sparkle;
   const [storyboard, setStoryboard] = React.useState(null);
   const [busy, setBusy] = React.useState('');
   const [status, setStatus] = React.useState('');
@@ -10251,16 +11296,69 @@ const StoryboardReview = ({
       setBusy('');
     }
   };
-  const approve = async () => {
+  const [qualityResult, setQualityResult] = React.useState(null);
+  const approve = async force => {
     setBusy('approve');
+    setQualityResult(null);
     try {
-      const d = await window.NoesisAPI.videos.approveStoryboard(id);
+      const d = await window.NoesisAPI.videos.approveStoryboard(id, force ? {
+        force: true
+      } : undefined);
       setStoryboard(d.storyboard);
       setStatus('Storyboard approved. Ready to render.');
     } catch (e) {
-      const details = e.data && e.data.details && e.data.details.warnings;
-      const detailText = Array.isArray(details) && details.length ? ` ${details.slice(0, 3).join(' | ')}` : '';
-      setStatus('Approval failed: ' + (e.message || 'error') + detailText);
+      const details = e.data && e.data.details;
+      if (details && details.classified) {
+        setQualityResult(details);
+        setStatus('');
+      } else {
+        const warns = details && details.warnings;
+        const detailText = Array.isArray(warns) && warns.length ? ` ${warns.slice(0, 3).join(' | ')}` : '';
+        setStatus('Approval failed: ' + (e.message || 'error') + detailText);
+      }
+    } finally {
+      setBusy('');
+    }
+  };
+  const recheck = async () => {
+    setBusy('recheck');
+    try {
+      const d = await window.NoesisAPI.videos.recheckStoryboard(id);
+      setQualityResult(d.quality);
+      await load();
+      setStatus('Quality check complete.');
+    } catch (e) {
+      setStatus('Recheck failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy('');
+    }
+  };
+  const doFixScene = async (sceneId, fixType, targetVisualType = '') => {
+    setBusy('fix-' + sceneId);
+    try {
+      const d = await window.NoesisAPI.videos.fixScene(id, {
+        sceneId,
+        fixType,
+        targetVisualType
+      });
+      setStoryboard(d.storyboard);
+      setQualityResult(null);
+      setStatus('Scene fixed. Re-run checks or approve.');
+    } catch (e) {
+      setStatus('Fix failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy('');
+    }
+  };
+  const doFixIssue = async payload => {
+    setBusy('fix-global');
+    try {
+      const d = await window.NoesisAPI.videos.fixStoryboardIssue(id, payload);
+      setStoryboard(d.storyboard);
+      setQualityResult(d.quality || null);
+      setStatus(d.fixedSceneId ? `Generated missing visual in ${d.fixedSceneId}. Re-check before approval.` : 'Storyboard issue fixed. Re-check before approval.');
+    } catch (e) {
+      setStatus('Automatic fix failed: ' + (e.message || 'error'));
     } finally {
       setBusy('');
     }
@@ -10284,9 +11382,18 @@ const StoryboardReview = ({
       });
       setStatus('Video ready.');
     } catch (e) {
-      const details = e.data && e.data.details && e.data.details.warnings;
-      const detailText = Array.isArray(details) && details.length ? ` ${details.slice(0, 3).join(' | ')}` : '';
-      setStatus('Render failed: ' + (e.message || 'error') + detailText);
+      const details = e.data && e.data.details;
+      if (details && details.classified) {
+        setQualityResult(details);
+        const critical = details.classified.critical || [];
+        const warnings = details.warnings || [];
+        setStatus(critical.length ? 'Critical blockers must be fixed before rendering MP4.' : 'Render needs approval for the remaining warnings: ' + warnings.slice(0, 3).join(' | '));
+      } else {
+        setStatus('Render failed: ' + (e.message || 'error'));
+      }
+      try {
+        await load();
+      } catch (_) {}
     } finally {
       setBusy('');
     }
@@ -10305,6 +11412,11 @@ const StoryboardReview = ({
   const scenes = storyboard.scenes || [];
   const storyboardQuality = storyboard.quality && storyboard.quality.storyboard || {};
   const warnings = storyboardQuality.warnings || [];
+  const activeQuality = qualityResult || storyboardQuality;
+  const activeCritical = activeQuality && activeQuality.classified && activeQuality.classified.critical ? activeQuality.classified.critical : warnings.filter(isCriticalStoryboardWarning);
+  const hasCriticalBlockers = activeCritical.length > 0;
+  const hasApprovalOverride = !!(storyboard.quality && storyboard.quality.approvalOverride);
+  const canRenderStoryboard = !hasCriticalBlockers && (storyboard.status === 'approved' || storyboard.status === 'rendering' || storyboard.approved_at && hasApprovalOverride);
   const visualSceneResults = (storyboardQuality.visual && storyboardQuality.visual.scenes || []).reduce((acc, item) => {
     if (item && item.sceneId) acc[item.sceneId] = item;
     return acc;
@@ -10321,13 +11433,21 @@ const StoryboardReview = ({
     }), " Material"), React.createElement("button", {
       className: "btn btn-ghost",
       disabled: !!busy,
-      onClick: approve
+      onClick: recheck
+    }, React.createElement(RotateIcon, {
+      size: 12
+    }), " ", busy === 'recheck' ? 'Checking...' : 'Re-check'), React.createElement("button", {
+      className: "btn btn-ghost",
+      disabled: !!busy || hasCriticalBlockers,
+      onClick: () => approve(false),
+      title: hasCriticalBlockers ? 'Fix critical blockers before approval' : 'Approve storyboard'
     }, React.createElement(Icon.Check, {
       size: 12
     }), " ", busy === 'approve' ? 'Approving...' : 'Approve'), React.createElement("button", {
       className: "btn btn-accent",
-      disabled: !!busy || storyboard.status !== 'approved',
-      onClick: render
+      disabled: !!busy || !canRenderStoryboard,
+      onClick: render,
+      title: hasCriticalBlockers ? 'Fix critical blockers before rendering' : 'Render approved storyboard'
     }, React.createElement(Icon.Play, {
       size: 12
     }), " ", busy === 'render' ? 'Rendering...' : 'Render MP4'))
@@ -10347,7 +11467,14 @@ const StoryboardReview = ({
     className: "chip chip-accent"
   }, storyboard.status), React.createElement("span", null, scenes.length, " scenes"), React.createElement("span", null, warnings.length, " warning", warnings.length === 1 ? '' : 's'))), status && React.createElement("div", {
     style: sr.notice
-  }, status), React.createElement(GenerationSummary, {
+  }, status), qualityResult && React.createElement(ApprovalPanel, {
+    quality: qualityResult,
+    busy: busy,
+    onFix: doFixScene,
+    onGlobalFix: doFixIssue,
+    onRecheck: recheck,
+    onApproveAnyway: () => approve(true)
+  }), React.createElement(GenerationSummary, {
     record: storyboard,
     board: board,
     scenes: scenes,
@@ -10361,8 +11488,9 @@ const StoryboardReview = ({
       index: index,
       scene: scene,
       visualResult: visualSceneResults[scene.id || row.scene_id],
-      busy: busy === scene.id,
-      onPatch: patchScene
+      busy: busy === scene.id || busy === 'fix-' + scene.id,
+      onPatch: patchScene,
+      onFix: doFixScene
     });
   })), video && React.createElement("section", {
     style: sr.videoBox
@@ -10384,9 +11512,11 @@ const SceneCard = ({
   index,
   visualResult,
   busy,
-  onPatch
+  onPatch,
+  onFix
 }) => {
   const Icon = window.Icon;
+  const TopicVisual = window.TopicVisual || UnsupportedStoryboardVisual;
   const [open, setOpen] = React.useState(false);
   const [showMeta, setShowMeta] = React.useState(false);
   const [narration, setNarration] = React.useState(scene.narration || '');
@@ -10435,7 +11565,16 @@ const SceneCard = ({
       ...sr.statusPill,
       ...visualStatusStyle(validation, split.visual)
     }
-  }, visualStatusLabel(validation, split.visual)), React.createElement("button", {
+  }, visualStatusLabel(validation, split.visual)), split.visual.length > 0 && onFix && React.createElement("button", {
+    className: "btn btn-ghost",
+    style: {
+      fontSize: 11
+    },
+    disabled: busy,
+    onClick: () => onFix(scene.id, 'fix_auto')
+  }, React.createElement(Icon.Sparkle, {
+    size: 10
+  }), " Fix visual"), React.createElement("button", {
     className: "btn btn-bare",
     onClick: () => setOpen(v => !v)
   }, open ? 'Close' : 'Edit')), keyIdea && React.createElement("div", {
@@ -10485,7 +11624,7 @@ const SceneCard = ({
     style: sr.visualWarnings
   }, React.createElement(Icon.Target, {
     size: 13
-  }), React.createElement("span", null, split.visual.map(normalizeWarning).join(', ')))), React.createElement(window.TopicVisual, {
+  }), React.createElement("span", null, split.visual.map(normalizeWarning).join(', ')))), React.createElement(TopicVisual, {
     template: visualType,
     data: visualData,
     code: code,
@@ -10584,6 +11723,20 @@ const VisualList = ({
 }, truncate(item, 48))) : React.createElement("span", {
   style: sr.muted
 }, "None reported")));
+const UnsupportedStoryboardVisual = ({
+  template,
+  data = {},
+  compact
+}) => React.createElement("div", {
+  style: {
+    ...sr.unsupportedVisual,
+    minHeight: compact ? 120 : 180
+  }
+}, React.createElement("div", {
+  style: sr.metaLabel
+}, "Visual preview unavailable"), React.createElement("div", {
+  style: sr.metaValue
+}, cleanValue(template || data.type, 'Unknown visual type')));
 const EmptyStoryboard = ({
   onNav
 }) => React.createElement("div", {
@@ -11025,6 +12178,78 @@ const sr = {
     fontSize: 13,
     color: 'var(--fg-1)',
     fontWeight: 600
+  },
+  unsupportedVisual: {
+    border: '1px dashed var(--line)',
+    background: 'var(--bg-2)',
+    borderRadius: 8,
+    padding: 12,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: 4
+  },
+  approvalPanel: {
+    border: '1px solid var(--warn)',
+    background: 'color-mix(in srgb, var(--warn) 5%, var(--bg-1))',
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16
+  },
+  approvalHead: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 12
+  },
+  approvalTitle: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: 'var(--fg-0)'
+  },
+  approvalSub: {
+    fontSize: 12.5,
+    color: 'var(--fg-2)',
+    marginTop: 2
+  },
+  approvalSection: {
+    marginTop: 10,
+    padding: '10px 0 0',
+    borderTop: '1px solid var(--line)'
+  },
+  approvalSectionTitle: {
+    fontSize: 10.5,
+    textTransform: 'uppercase',
+    letterSpacing: '0.1em',
+    fontWeight: 700,
+    marginBottom: 8
+  },
+  approvalItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '8px 10px',
+    borderRadius: 6,
+    border: '1px solid var(--line)',
+    background: 'var(--bg-0)',
+    marginBottom: 6
+  },
+  approvalCode: {
+    fontSize: 10,
+    color: 'var(--accent)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em'
+  },
+  approvalLabel: {
+    fontSize: 12.5,
+    color: 'var(--fg-1)',
+    lineHeight: 1.4,
+    marginTop: 2
+  },
+  approvalFix: {
+    fontSize: 11,
+    color: 'var(--fg-3)',
+    marginTop: 2
   }
 };
 window.StoryboardReview = StoryboardReview;
@@ -12785,12 +14010,46 @@ const NotesEditor = ({
   const [title, setTitle] = React.useState('');
   const [body, setBody] = React.useState('');
   const [mode, setMode] = React.useState('read');
+  const [audioStyle, setAudioStyle] = React.useState('none');
+  const [audioBusy, setAudioBusy] = React.useState(false);
+  const [audioStatus, setAudioStatus] = React.useState('');
+  const [audioError, setAudioError] = React.useState('');
+  const [audioUrl, setAudioUrl] = React.useState('');
+  const [audioPlaying, setAudioPlaying] = React.useState(false);
+  const audioRef = React.useRef(null);
+  const audioRequestRef = React.useRef(0);
   React.useEffect(() => {
+    audioRequestRef.current += 1;
     setTitle(current ? current.t : '');
     setBody(current ? current.body_md || '' : '');
     setStatus('');
     setMode('read');
+    setAudioStyle('none');
+    setAudioStatus('');
+    setAudioError('');
+    setAudioBusy(false);
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+      } catch (_) {}
+      audioRef.current = null;
+    }
+    setAudioPlaying(false);
+    setAudioUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
   }, [current && current.id]);
+  React.useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        try {
+          audioRef.current.pause();
+        } catch (_) {}
+      }
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, [audioUrl]);
   const tags = React.useMemo(() => {
     let parsed = [];
     try {
@@ -12848,6 +14107,119 @@ const NotesEditor = ({
       setStatus('Failed: ' + (e.message || 'error'));
     } finally {
       setBusy(false);
+    }
+  };
+  const clearLoadedAudio = () => {
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+      } catch (_) {}
+      audioRef.current = null;
+    }
+    setAudioPlaying(false);
+    setAudioUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+  };
+  const friendlyNoteAudioError = err => {
+    const code = String(err && (err.code || err.message) || '').trim();
+    if (/audio_404|audio_not_found|not_found/i.test(code)) return 'No audio has been generated yet. Choose Generate audio first.';
+    if (/note_not_found/i.test(code)) return 'This note could not be found. Refresh your notes and try again.';
+    if (/rate_limited/i.test(code)) return 'Audio generation is cooling down. Wait a few seconds and try again.';
+    if (/tts|voice|audio/i.test(code)) return 'Voice generation failed. You can keep reading the note and try again later.';
+    return code || 'Could not prepare note audio.';
+  };
+  const loadNoteAudio = async style => {
+    const res = await window.NoesisAPI.notes.audioBlob(current.id, style);
+    if (!res.ok) throw new Error('audio_' + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    if (audioRef.current) {
+      try {
+        audioRef.current.pause();
+      } catch (_) {}
+    }
+    setAudioUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+    const audio = new Audio(url);
+    audio.onended = () => setAudioPlaying(false);
+    audioRef.current = audio;
+    setAudioStatus(style === 'brief' ? 'Brief voice ready.' : 'Detailed voice ready.');
+    return audio;
+  };
+  const checkNoteAudio = async style => {
+    if (!current || style === 'none') return;
+    const requestId = ++audioRequestRef.current;
+    clearLoadedAudio();
+    setAudioError('');
+    setAudioStatus('Checking saved voice explanation...');
+    try {
+      const meta = await window.NoesisAPI.notes.audioMeta(current.id, style);
+      if (requestId !== audioRequestRef.current) return;
+      if (!meta || meta.status === 'missing') {
+        setAudioStatus('No audio generated yet.');
+        return;
+      }
+      await loadNoteAudio(style);
+      if (requestId === audioRequestRef.current) setAudioStatus(style === 'brief' ? 'Brief voice ready.' : 'Detailed voice ready.');
+    } catch (e) {
+      if (requestId !== audioRequestRef.current) return;
+      setAudioError(friendlyNoteAudioError(e));
+      setAudioStatus('');
+    }
+  };
+  const generateAudio = async () => {
+    if (!current || audioStyle === 'none' || audioBusy) return;
+    setAudioBusy(true);
+    setAudioError('');
+    setAudioStatus('Preparing voice explanation...');
+    try {
+      const job = await window.NoesisAPI.notes.audio(current.id, {
+        style: audioStyle,
+        voice: 'default',
+        speed: 'normal',
+        regenerate: !!audioUrl
+      });
+      const completed = await window.NoesisAPI.pollJob(job.job_id, {
+        intervalMs: 1000,
+        timeoutMs: 240000,
+        onProgress: j => setAudioStatus(j.message || `Generating voice... ${j.progress || 0}%`)
+      });
+      if (completed && completed.result && completed.result.status === 'completed') {
+        setAudioStatus('Voice ready. Loading audio...');
+      }
+      const audio = await loadNoteAudio(audioStyle);
+      setAudioPlaying(true);
+      audio.play().catch(() => {
+        setAudioPlaying(false);
+        setAudioStatus('Voice ready. Press play to listen.');
+      });
+    } catch (e) {
+      setAudioError(friendlyNoteAudioError(e));
+      setAudioStatus('');
+    } finally {
+      setAudioBusy(false);
+    }
+  };
+  const toggleAudio = async () => {
+    if (!current || audioStyle === 'none') return;
+    let audio = audioRef.current;
+    try {
+      if (!audio && !audioUrl) audio = await loadNoteAudio(audioStyle);
+      if (!audio) audio = audioRef.current;
+      if (!audio) return;
+      if (audioPlaying) {
+        audio.pause();
+        setAudioPlaying(false);
+      } else {
+        await audio.play();
+        setAudioPlaying(true);
+      }
+    } catch (e) {
+      setAudioError(friendlyNoteAudioError(e));
     }
   };
   return React.createElement("main", {
@@ -12937,6 +14309,56 @@ const NotesEditor = ({
       __html: window.DOMPurify ? window.DOMPurify.sanitize(window.marked ? window.marked.parse(body || '') : body) : body || ''
     }
   }), React.createElement("div", {
+    style: ns.audioPanel
+  }, React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 180
+    }
+  }, React.createElement("div", {
+    style: ns.audioLabel
+  }, "Voice explanation"), React.createElement("select", {
+    className: "input",
+    value: audioStyle,
+    disabled: audioBusy,
+    onChange: e => {
+      const nextStyle = e.target.value;
+      setAudioStyle(nextStyle);
+      setAudioStatus('');
+      setAudioError('');
+      clearLoadedAudio();
+      if (nextStyle !== 'none') checkNoteAudio(nextStyle);
+    },
+    style: {
+      fontSize: 12.5,
+      width: '100%'
+    }
+  }, React.createElement("option", {
+    value: "none"
+  }, "No audio"), React.createElement("option", {
+    value: "brief"
+  }, "Brief audio explanation"), React.createElement("option", {
+    value: "detailed"
+  }, "Detailed audio explanation"))), React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: audioBusy || audioStyle === 'none',
+    onClick: generateAudio
+  }, React.createElement(Icon.Sparkle, {
+    size: 12
+  }), " ", audioBusy ? 'Generating...' : audioUrl ? 'Regenerate' : 'Generate audio'), React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: audioBusy || audioStyle === 'none' || !audioUrl,
+    onClick: toggleAudio
+  }, audioPlaying ? React.createElement(Icon.Pause, {
+    size: 12
+  }) : React.createElement(Icon.Play, {
+    size: 12
+  }), " ", audioPlaying ? 'Pause' : 'Play'), (audioStatus || audioError) && React.createElement("div", {
+    style: {
+      ...ns.audioStatus,
+      color: audioError ? 'var(--err)' : 'var(--fg-3)'
+    }
+  }, audioError || audioStatus)), React.createElement("div", {
     style: {
       display: 'flex',
       gap: 10,
@@ -13070,6 +14492,29 @@ const ns = {
     fontSize: 14.5,
     lineHeight: 1.75,
     color: 'var(--fg-1)'
+  },
+  audioPanel: {
+    marginTop: 18,
+    padding: 12,
+    borderRadius: 8,
+    border: '1px solid var(--line)',
+    background: 'var(--bg-1)',
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: 10,
+    flexWrap: 'wrap'
+  },
+  audioLabel: {
+    fontSize: 10.5,
+    color: 'var(--fg-3)',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    marginBottom: 6
+  },
+  audioStatus: {
+    width: '100%',
+    fontSize: 11.5,
+    lineHeight: 1.45
   }
 };
 window.Notes = Notes;
@@ -14971,6 +16416,55 @@ const {
   useState,
   useEffect
 } = React;
+class RouteErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      error: null
+    };
+  }
+  static getDerivedStateFromError(error) {
+    return {
+      error
+    };
+  }
+  componentDidCatch(error, info) {
+    console.error('[noesis route error]', error, info);
+  }
+  componentDidUpdate(prevProps) {
+    if (prevProps.route !== this.props.route && this.state.error) {
+      this.setState({
+        error: null
+      });
+    }
+  }
+  render() {
+    if (this.state.error) {
+      return React.createElement(RouteErrorFallback, {
+        route: this.props.route,
+        error: this.state.error,
+        onBack: this.props.onBack
+      });
+    }
+    return this.props.children;
+  }
+}
+const RouteErrorFallback = ({
+  route,
+  error,
+  onBack
+}) => React.createElement("div", {
+  style: routeErr.page
+}, React.createElement("div", {
+  style: routeErr.eyebrow
+}, route), React.createElement("h1", {
+  style: routeErr.title
+}, "This screen hit a runtime error."), React.createElement("pre", {
+  style: routeErr.detail
+}, error && (error.message || String(error))), React.createElement("button", {
+  className: "btn btn-accent",
+  onClick: onBack
+}, "Back to materials"));
 const App = () => {
   const APP_ROUTES = ['dashboard', 'materials', 'material', 'storyboard', 'study-plan', 'tutor', 'notes', 'flashcards', 'quiz', 'progress', 'settings'];
   const [route, setRoute] = useState(localStorage.getItem('noesis.route') || 'landing');
@@ -15124,6 +16618,10 @@ const App = () => {
   };
   const activeScreen = screens[route] || screens.dashboard;
   const protectedLoading = APP_ROUTES.includes(route) && authState === 'checking';
+  const routedScreen = protectedLoading ? React.createElement(AppLoading, null) : React.createElement(RouteErrorBoundary, {
+    route: route,
+    onBack: () => goto('materials')
+  }, activeScreen);
   return React.createElement("div", {
     "data-screen-label": route,
     style: {
@@ -15156,10 +16654,10 @@ const App = () => {
   }, React.createElement("div", {
     key: route,
     className: "route-in"
-  }, protectedLoading ? React.createElement(AppLoading, null) : activeScreen))) : React.createElement("div", {
+  }, routedScreen))) : React.createElement("div", {
     key: route,
     className: "route-in"
-  }, activeScreen)), tweaksOpen && React.createElement(TweaksPanel, {
+  }, routedScreen)), tweaksOpen && React.createElement(TweaksPanel, {
     theme: theme,
     setTheme: setTheme,
     route: route,
@@ -15184,6 +16682,41 @@ const AppLoading = () => React.createElement("div", {
     fontSize: 13
   }
 }, "Checking your session...");
+const routeErr = {
+  page: {
+    minHeight: '100vh',
+    padding: 40,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    gap: 14,
+    color: 'var(--fg-0)',
+    maxWidth: 720
+  },
+  eyebrow: {
+    fontSize: 11,
+    color: 'var(--accent)',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase'
+  },
+  title: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 34,
+    fontWeight: 300,
+    margin: 0
+  },
+  detail: {
+    maxWidth: '100%',
+    whiteSpace: 'pre-wrap',
+    color: 'var(--err)',
+    background: 'var(--bg-1)',
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 12
+  }
+};
 const TweaksPanel = ({
   theme,
   setTheme,
@@ -15337,5 +16870,7 @@ const TweaksPanel = ({
     size: 12
   }), " Replay splash"));
 };
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App, null));
+const rootEl = document.getElementById('root');
+window.__NOESIS_REACT_OWNS_ROOT = true;
+ReactDOM.createRoot(rootEl).render(React.createElement(App, null));
 })();

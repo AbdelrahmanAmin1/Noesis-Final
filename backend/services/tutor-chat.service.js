@@ -58,6 +58,231 @@ function cleanText(value, max = 4000) {
     .slice(0, max);
 }
 
+const STRUCTURED_REPLY_KEYS = [
+  'type',
+  'title',
+  'explanation',
+  'answer',
+  'content',
+  'summary',
+  'question',
+  'checkpoint',
+  'hint',
+  'example',
+  'code',
+  'visual',
+  'key_points',
+  'keyPoints',
+  'bullets',
+  'steps',
+];
+
+function decodeJsonishString(value) {
+  let text = String(value || '').trim();
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    try {
+      const parsed = JSON.parse(text);
+      if (typeof parsed === 'string') text = parsed.trim();
+    } catch (_) {
+      text = text.slice(1, -1).trim();
+    }
+  }
+  if (/\\[nrti"]/.test(text)) {
+    text = text
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '')
+      .replace(/\\t/g, '  ')
+      .replace(/\\"/g, '"');
+  }
+  return text;
+}
+
+function stripJsonFence(value) {
+  const text = decodeJsonishString(value);
+  const fullFence = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fullFence) return fullFence[1].trim();
+  return text;
+}
+
+function parseJsonCandidate(candidate) {
+  const text = stripJsonFence(candidate);
+  const attempts = [text];
+  const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fence) attempts.push(fence[1].trim());
+  const firstObject = text.indexOf('{');
+  const lastObject = text.lastIndexOf('}');
+  if (firstObject >= 0 && lastObject > firstObject) attempts.push(text.slice(firstObject, lastObject + 1));
+  const firstArray = text.indexOf('[');
+  const lastArray = text.lastIndexOf(']');
+  if (firstArray >= 0 && lastArray > firstArray) attempts.push(text.slice(firstArray, lastArray + 1));
+
+  for (const raw of attempts) {
+    const attempt = raw.trim();
+    if (!/^[{\[]/.test(attempt)) continue;
+    try {
+      const parsed = JSON.parse(attempt);
+      if (typeof parsed === 'string') return parseJsonCandidate(parsed);
+      return parsed;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function hasStructuredReplyShape(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return STRUCTURED_REPLY_KEYS.some(key => value[key] != null);
+}
+
+function jsonField(text, key) {
+  const re = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, 'i');
+  const match = String(text || '').match(re);
+  if (!match) return '';
+  return decodeJsonishString(match[1]);
+}
+
+function parseMalformedStructuredReply(value) {
+  const text = stripJsonFence(value);
+  if (!/[{"]\s*(explanation|answer|question|hint|example|code|visual)["\s]*:/i.test(text)) return null;
+  const out = {};
+  for (const key of ['title', 'type', 'explanation', 'answer', 'content', 'summary', 'question', 'checkpoint', 'hint', 'example', 'visual']) {
+    const field = jsonField(text, key);
+    if (field) out[key] = field;
+  }
+  const code = jsonField(text, 'code');
+  if (code) out.code = code;
+  return hasStructuredReplyShape(out) ? out : null;
+}
+
+function arrayish(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map(v => cleanText(typeof v === 'string' ? v : v && (v.text || v.content || v.title), 500)).filter(Boolean);
+  if (typeof value === 'string') {
+    return value
+      .split(/\n+|;\s+/)
+      .map(item => cleanText(item.replace(/^[-*\u2022\d.)\s]+/, ''), 500))
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function markdownCode(code) {
+  if (!code) return '';
+  if (typeof code === 'string') return code.trim();
+  return String(code.content || code.text || code.code || '').trim();
+}
+
+function stringifyExample(example) {
+  if (!example) return '';
+  if (typeof example === 'string') return cleanText(example, 1400);
+  const parts = [];
+  for (const key of ['scenario', 'setup', 'calculation', 'result', 'explanation', 'content', 'text']) {
+    if (example[key]) parts.push(cleanText(example[key], 700));
+  }
+  return parts.join('\n\n').trim();
+}
+
+function sanitizeSourceReferences(text, sourceCount = 0) {
+  return String(text || '')
+    .replace(/\[(?:chunk|source_chunk)\s*:?\s*\d+\]/gi, '')
+    .replace(/\(?\bSource\s+(\d+)\)?/gi, (match, n) => {
+      const sourceNum = Number(n);
+      if (sourceNum >= 1 && sourceNum <= sourceCount) return `[Source ${sourceNum}]`;
+      return '';
+    })
+    .replace(/\s+([.,;:!?])/g, '$1')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim();
+}
+
+function structuredReplyObject(value) {
+  const parsed = parseJsonCandidate(value);
+  if (hasStructuredReplyShape(parsed)) return parsed;
+  const malformed = parseMalformedStructuredReply(value);
+  return hasStructuredReplyShape(malformed) ? malformed : null;
+}
+
+function structuredReplyToMarkdown(obj, opts = {}) {
+  const sourceCount = Array.isArray(opts.sources) ? opts.sources.length : 0;
+  const title = cleanText(obj.title || (obj.type ? String(obj.type).replace(/_/g, ' ') : ''), 120);
+  const answer = cleanText(obj.explanation || obj.answer || obj.content || obj.summary || '', 1800);
+  const keyPoints = arrayish(obj.key_points || obj.keyPoints || obj.bullets || obj.steps).slice(0, 6);
+  const example = stringifyExample(obj.example);
+  const hint = cleanText(obj.hint, 800);
+  const question = cleanText(obj.question || obj.checkpoint || obj.checkpointQuestion, 800);
+  const code = markdownCode(obj.code);
+  const language = obj.code && typeof obj.code === 'object' ? cleanText(obj.code.language || 'text', 40) : 'text';
+  const visual = typeof obj.visual === 'string'
+    ? cleanText(obj.visual, 900)
+    : obj.visual && typeof obj.visual === 'object'
+      ? cleanText(obj.visual.caption || obj.visual.description || obj.visual.type || '', 900)
+      : '';
+  const sections = [];
+  if (title) sections.push(`### ${title}`);
+  sections.push(`### Answer\n${answer || 'Here is the clearest useful version of the answer.'}`);
+  if (keyPoints.length) sections.push(`### Key points\n${keyPoints.map(item => `- ${item}`).join('\n')}`);
+  if (example) sections.push(`### Example\n${example}`);
+  if (code) sections.push(`### Code\n\`\`\`${language || 'text'}\n${code}\n\`\`\``);
+  if (visual) sections.push(`### Visual\n${visual}`);
+  if (hint) sections.push(`### Hint\n${hint}`);
+  if (question) sections.push(`### Check yourself\n${question}`);
+  return sanitizeSourceReferences(sections.join('\n\n'), sourceCount);
+}
+
+function responseMetadataFromStructured(obj) {
+  if (!obj) return null;
+  return {
+    structured: true,
+    type: cleanText(obj.type || '', 80),
+    title: cleanText(obj.title || '', 120),
+    fields: STRUCTURED_REPLY_KEYS.filter(key => obj[key] != null),
+  };
+}
+
+function replyLooksBadForDisplay(reply) {
+  const text = String(reply || '').trim();
+  if (!text) return true;
+  if (/^```json/i.test(text) || /^[{\[]/.test(text)) return true;
+  if (/"(explanation|question|hint|example|code)"\s*:/.test(text)) return true;
+  if (text.length > 1000 && !/\n\s*(#{2,3}\s+|[-*]\s+)/.test(text)) return true;
+  return false;
+}
+
+function readableFallback(reply, message) {
+  const text = cleanText(
+    decodeJsonishString(reply)
+      .replace(/[{}]/g, ' ')
+      .replace(/"([a-zA-Z_]+)"\s*:/g, '\n### $1\n')
+      .replace(/",\s*"/g, '\n')
+      .replace(/^"+|"+$/g, ''),
+    1800,
+  );
+  const answer = text && !/^###\s*$/m.test(text) ? text : `I can help with that. The key is to connect your question to the main concept and then test it with a small example.`;
+  return [
+    '### Answer',
+    answer,
+    '',
+    '### Check yourself',
+    `Can you restate the main idea behind "${cleanText(message, 90) || 'this topic'}" in one sentence?`,
+  ].join('\n');
+}
+
+function normalizeTutorChatReply(reply, opts = {}) {
+  const structured = structuredReplyObject(reply);
+  if (structured) {
+    const markdown = structuredReplyToMarkdown(structured, opts);
+    return {
+      reply: cleanText(markdown, 8000),
+      response: responseMetadataFromStructured(structured),
+    };
+  }
+  let text = sanitizeSourceReferences(cleanText(decodeJsonishString(reply), 8000), Array.isArray(opts.sources) ? opts.sources.length : 0);
+  if (replyLooksBadForDisplay(text)) text = readableFallback(text, opts.message || '');
+  return {
+    reply: cleanText(text, 8000),
+    response: null,
+  };
+}
+
 function materialForUser(db, userId, materialId) {
   if (!materialId) return null;
   const row = db.prepare('SELECT id, title FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
@@ -385,6 +610,8 @@ async function sendMessage(userId, payload = {}) {
   const parsedAction = parseActionArtifacts(raw, actionKey);
   let { reply, suggestions } = parseSuggestions(parsedAction.text);
   if (!reply) reply = 'I could not form a useful answer from the available context. Try asking the question in a more specific way.';
+  const normalizedReply = normalizeTutorChatReply(reply, { sources, message, grounding });
+  reply = normalizedReply.reply;
   reply = ensureGroundingDisclosure(reply, grounding);
   if (!suggestions.length) suggestions = fallbackSuggestions(message);
 
@@ -412,6 +639,7 @@ async function sendMessage(userId, payload = {}) {
     chunkCount: context.chunks.length,
     action: actionKey || null,
     grounding,
+    response: normalizedReply.response,
   };
   const assistantMessageId = storeMessage(db, conversation.id, 'assistant', reply, {
     sources,
@@ -431,6 +659,7 @@ async function sendMessage(userId, payload = {}) {
     grounding,
     action: actionKey,
     actionResult,
+    response: normalizedReply.response,
     usedExtraExplanation: tier === 'weak',
     trace,
   };
@@ -460,6 +689,7 @@ function getMessages(userId, conversationId, limit = 50, offset = 0) {
         grounding: trace.grounding || groundingSummary(row.grounding_tier || null, parseJson(row.sources_json, [])),
         trace,
         actionResult: trace.actionResult || null,
+        response: trace.response || null,
         created_at: row.created_at,
       };
     }),
@@ -493,5 +723,5 @@ module.exports = {
   getMessages,
   getConversations,
   deleteConversation,
-  _internals: { parseSuggestions, formatHistory, cleanText, normalizeAction, parseActionArtifacts, sanitizeFlashcards, normalizeQuiz, groundingSummary, ensureGroundingDisclosure },
+  _internals: { parseSuggestions, formatHistory, cleanText, normalizeAction, parseActionArtifacts, sanitizeFlashcards, normalizeQuiz, groundingSummary, ensureGroundingDisclosure, normalizeTutorChatReply, structuredReplyObject },
 };

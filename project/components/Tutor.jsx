@@ -1,4 +1,227 @@
 // AI Tutor workspace — grounded, structured tutor sessions.
+const NoesisTutorResponse = (() => {
+  const structuredKeys = ['title', 'explanation', 'answer', 'content', 'summary', 'question', 'checkpoint', 'hint', 'example', 'code', 'visual', 'type', 'key_points', 'keyPoints', 'bullets', 'steps'];
+
+  const decodeJsonish = (value) => {
+    let text = String(value || '').trim();
+    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+      try {
+        const parsed = JSON.parse(text);
+        if (typeof parsed === 'string') text = parsed.trim();
+      } catch (_) {
+        text = text.slice(1, -1).trim();
+      }
+    }
+    if (/\\[nrti"]/.test(text)) {
+      text = text
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '')
+        .replace(/\\t/g, '  ')
+        .replace(/\\"/g, '"');
+    }
+    return text;
+  };
+
+  const stripFences = (value) => {
+    const text = decodeJsonish(value);
+    const fullFence = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    return fullFence ? fullFence[1].trim() : text.trim();
+  };
+
+  const parseMaybeJson = (value) => {
+    if (value && typeof value === 'object') return value;
+    const text = stripFences(value);
+    const candidates = [text];
+    const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fence) candidates.push(fence[1].trim());
+    const firstObject = text.indexOf('{');
+    const lastObject = text.lastIndexOf('}');
+    if (firstObject >= 0 && lastObject > firstObject) candidates.push(text.slice(firstObject, lastObject + 1));
+    const firstArray = text.indexOf('[');
+    const lastArray = text.lastIndexOf(']');
+    if (firstArray >= 0 && lastArray > firstArray) candidates.push(text.slice(firstArray, lastArray + 1));
+    for (const raw of candidates) {
+      const candidate = raw.trim();
+      if (!/^[{\[]/.test(candidate)) continue;
+      try {
+        const parsed = JSON.parse(candidate);
+        return typeof parsed === 'string' ? parseMaybeJson(parsed) : parsed;
+      } catch (_) {}
+    }
+    return null;
+  };
+
+  const jsonField = (text, key) => {
+    const re = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, 'i');
+    const match = String(text || '').match(re);
+    return match ? decodeJsonish(match[1]) : '';
+  };
+
+  const parseMalformed = (value) => {
+    const text = stripFences(value);
+    if (!/[{"]\s*(explanation|answer|question|hint|example|code|visual)["\s]*:/i.test(text)) return null;
+    const out = {};
+    for (const key of ['title', 'type', 'explanation', 'answer', 'content', 'summary', 'question', 'checkpoint', 'hint', 'example', 'visual']) {
+      const field = jsonField(text, key);
+      if (field) out[key] = field;
+    }
+    const code = jsonField(text, 'code');
+    if (code) out.code = code;
+    return structuredKeys.some(k => out[k] != null) ? out : null;
+  };
+
+  const asList = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map(item => {
+      if (typeof item === 'string') return item.trim();
+      return String(item && (item.text || item.content || item.title) || '').trim();
+    }).filter(Boolean);
+    if (typeof value === 'string') {
+      return value.split(/\n+|;\s+/).map(item => item.replace(/^[-*\u2022\d.)\s]+/, '').trim()).filter(Boolean);
+    }
+    return [];
+  };
+
+  const exampleText = (example) => {
+    if (!example) return '';
+    if (typeof example === 'string') return example;
+    return ['scenario', 'setup', 'calculation', 'result', 'explanation', 'content', 'text']
+      .map(key => example[key])
+      .filter(Boolean)
+      .join('\n\n');
+  };
+
+  const normalize = (value) => {
+    const parsed = parseMaybeJson(value) || parseMalformed(value);
+    if (parsed && typeof parsed === 'object' && structuredKeys.some(k => parsed[k] != null)) {
+      return {
+        structured: true,
+        type: parsed.type || '',
+        title: parsed.title || '',
+        explanation: parsed.explanation || parsed.content || parsed.answer || parsed.summary || '',
+        keyPoints: asList(parsed.key_points || parsed.keyPoints || parsed.bullets || parsed.steps),
+        question: parsed.question || parsed.checkpoint || parsed.checkpointQuestion || '',
+        hint: parsed.hint || '',
+        example: exampleText(parsed.example),
+        code: parsed.code || null,
+        visual: parsed.visual || null,
+        raw: parsed,
+      };
+    }
+    const text = decodeJsonish(value);
+    if (/^```json/i.test(text) || /^[{\[]/.test(text) || /"(explanation|question|hint|example|code)"\s*:/.test(text)) {
+      return {
+        structured: true,
+        type: 'answer',
+        title: 'Tutor answer',
+        explanation: text
+          .replace(/[{}]/g, ' ')
+          .replace(/"([a-zA-Z_]+)"\s*:/g, '\n$1: ')
+          .replace(/",\s*"/g, '\n')
+          .replace(/^"+|"+$/g, '')
+          .trim(),
+        keyPoints: [],
+        question: '',
+        hint: '',
+        example: '',
+        code: null,
+        visual: null,
+        raw: null,
+      };
+    }
+    return { structured: false, text };
+  };
+
+  const codeObject = (code) => {
+    if (!code) return null;
+    if (typeof code === 'string') return { language: '', content: code, walkthrough: [] };
+    return {
+      language: code.language || '',
+      content: code.content || code.text || '',
+      walkthrough: Array.isArray(code.walkthrough) ? code.walkthrough : (Array.isArray(code.explanation) ? code.explanation : []),
+    };
+  };
+
+  const toMarkdown = (value) => {
+    const msg = normalize(value);
+    if (!msg.structured) return msg.text;
+    const code = codeObject(msg.code);
+    const visual = msg.visual && typeof msg.visual === 'object'
+      ? (msg.visual.caption || msg.visual.description || msg.visual.type || '')
+      : (typeof msg.visual === 'string' ? msg.visual : '');
+    return [
+      (msg.title || msg.type) ? `### ${msg.title || String(msg.type).replace(/_/g, ' ')}` : '',
+      msg.explanation ? `### Answer\n${msg.explanation}` : '',
+      msg.keyPoints && msg.keyPoints.length ? `### Key points\n${msg.keyPoints.map(item => `- ${item}`).join('\n')}` : '',
+      msg.example ? `### Example\n${msg.example}` : '',
+      code && code.content ? `### Code\n\`\`\`${code.language || 'text'}\n${code.content}\n\`\`\`` : '',
+      visual ? `### Visual\n${visual}` : '',
+      msg.hint ? `### Hint\n${msg.hint}` : '',
+      msg.question ? `### Check yourself\n${msg.question}` : '',
+    ].filter(Boolean).join('\n\n');
+  };
+
+  const speechText = (value) => {
+    return toMarkdown(value)
+      .replace(/```[\s\S]*?```/g, ' code example omitted. ')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[#>*_~|]/g, ' ')
+      .replace(/\[(Source|source|chunk)\s*:?\s*\d+\]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 4000);
+  };
+
+  const copyText = (value) => toMarkdown(value)
+    .replace(/\[(chunk|source_chunk)\s*:?\s*\d+\]/gi, '')
+    .trim();
+
+  const StructuredMessage = ({ text }) => {
+    const msg = normalize(text);
+    if (!msg.structured) return <TutorMarkdown text={msg.text}/>;
+    const code = codeObject(msg.code);
+    const visual = msg.visual && msg.visual.type && msg.visual.type !== 'none' ? msg.visual : null;
+    return (
+      <div style={tu.structuredMessage}>
+        {(msg.title || msg.type) && <div style={tu.structuredTitle}>{msg.title || String(msg.type).replace(/_/g, ' ')}</div>}
+        {msg.explanation && <TutorMarkdown text={msg.explanation}/>}
+        {msg.keyPoints && msg.keyPoints.length > 0 && (
+          <div style={tu.walkthrough}>
+            {msg.keyPoints.slice(0, 6).map((item, i) => (
+              <div key={i} style={tu.walkItem}>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--accent)' }}>{i + 1}</span>
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {msg.example && <div style={tu.exampleBox}><b>Example:</b> <TutorMarkdown text={msg.example}/></div>}
+        {msg.hint && <div style={tu.hintBox}><b>Hint:</b> {msg.hint}</div>}
+        {code && code.content && <pre style={tu.codeBlock}>{code.content}</pre>}
+        {code && code.walkthrough && code.walkthrough.length > 0 && (
+          <div style={tu.walkthrough}>
+            {code.walkthrough.map((w, i) => (
+              <div key={i} style={tu.walkItem}>
+                <span className="mono" style={{ fontSize: 10, color: 'var(--fg-3)' }}>{w.lineRange || w.line || i + 1}</span>
+                <span>{w.text || w}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {visual && window.TopicVisual && <window.TopicVisual template={visual.type} data={visual} code={code} compact/>}
+        {msg.question && <div style={tu.questionBox}>
+          <div style={{ fontSize: 10.5, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 7 }}>Checkpoint</div>
+          <div style={{ fontSize: 13.5, color: 'var(--fg-0)', lineHeight: 1.55 }}>{msg.question}</div>
+        </div>}
+      </div>
+    );
+  };
+
+  return { normalize, toMarkdown, copyText, speechText, StructuredMessage };
+})();
+window.NoesisTutorResponse = NoesisTutorResponse;
+
 const Tutor = ({ onNav }) => {
   const Icon = window.Icon;
   const [step, setStep] = React.useState(0);
@@ -18,6 +241,18 @@ const Tutor = ({ onNav }) => {
   const [answerText, setAnswerText] = React.useState('');
   const [feedback, setFeedback] = React.useState('');
   const [lastTurn, setLastTurn] = React.useState(null);
+  const [failedTurn, setFailedTurn] = React.useState(null);
+  const [guidedTurns, setGuidedTurns] = React.useState([]);
+  const [pendingTutorAction, setPendingTutorAction] = React.useState('');
+  const [voiceMode, setVoiceMode] = React.useState(() => {
+    try { return localStorage.getItem('noesis.tutorVoiceMode') || 'on'; } catch (_) { return 'on'; }
+  });
+  const [voiceBusy, setVoiceBusy] = React.useState(false);
+  const [voiceError, setVoiceError] = React.useState('');
+  const [voiceAudioUrl, setVoiceAudioUrl] = React.useState('');
+  const [voicePlaying, setVoicePlaying] = React.useState(false);
+  const voiceAudioRef = React.useRef(null);
+  const voiceCacheRef = React.useRef({});
   const [composerFocused, setComposerFocused] = React.useState(false);
   const [paused, setPaused] = React.useState(false);
   const [pauseStartedAt, setPauseStartedAt] = React.useState(null);
@@ -30,13 +265,18 @@ const Tutor = ({ onNav }) => {
   const sources = session && (session.sources || session.source_chunks || []) || [];
   const trace = session && session.trace || {};
   const persistedFeedback = currentStep && (currentStep.feedback || currentStep.feedback_md) || '';
+  const visibleTurns = guidedTurns.filter(t => (t.stepIndex == null ? step : t.stepIndex) === step);
   const professorState = paused
     ? 'paused'
-    : (action === 'continue' || tutorState === 'continuing')
+    : failedTurn
+      ? 'error'
+      : voicePlaying
+        ? 'speaking'
+        : (action === 'continue' || tutorState === 'continuing' || voiceBusy)
       ? 'thinking'
       : composerFocused || answerText.trim()
         ? 'listening'
-        : (feedback || persistedFeedback)
+        : (feedback || persistedFeedback || visibleTurns.length)
           ? 'explaining'
           : 'listening';
 
@@ -59,6 +299,9 @@ const Tutor = ({ onNav }) => {
     const nextStep = next.steps && next.steps[nextIndex];
     setFeedback((nextStep && (nextStep.feedback || nextStep.feedback_md)) || '');
     setLastTurn(null);
+    setFailedTurn(null);
+    setGuidedTurns([]);
+    setPendingTutorAction('');
     setAnswerText('');
     setTutorState('session_ready');
     setProgress(100);
@@ -102,6 +345,9 @@ const Tutor = ({ onNav }) => {
     setSession(null);
     setFeedback('');
     setLastTurn(null);
+    setFailedTurn(null);
+    setGuidedTurns([]);
+    setPendingTutorAction('');
     setAnswerText('');
     try {
       if (materialId) {
@@ -164,6 +410,21 @@ const Tutor = ({ onNav }) => {
     return () => clearInterval(id);
   }, [paused]);
 
+  React.useEffect(() => {
+    try { localStorage.setItem('noesis.tutorVoiceMode', voiceMode); } catch (_) {}
+  }, [voiceMode]);
+
+  React.useEffect(() => {
+    return () => {
+      if (voiceAudioRef.current) {
+        try { voiceAudioRef.current.pause(); } catch (_) {}
+      }
+      Object.values(voiceCacheRef.current || {}).forEach(url => {
+        try { URL.revokeObjectURL(url); } catch (_) {}
+      });
+    };
+  }, []);
+
   const startedAt = session && session.started_at ? new Date(session.started_at).getTime() : now;
   const timerNow = paused && pauseStartedAt ? pauseStartedAt : now;
   const elapsedS = Math.max(0, Math.floor((timerNow - startedAt - pausedMs) / 1000));
@@ -206,34 +467,177 @@ const Tutor = ({ onNav }) => {
     }
   };
 
-  const continueTutor = async (choice = null, intent = 'check') => {
+  const tutorActionLabel = (nextAction) => ({
+    im_confused: "I'm confused",
+    give_example: 'Give an example',
+    check_answer: 'Check my answer',
+    continue: 'Continue',
+  }[nextAction] || 'Check my answer');
+
+  const tutorActionStatus = (nextAction) => ({
+    im_confused: 'Simplifying the idea...',
+    give_example: 'Preparing a concrete example...',
+    check_answer: 'Checking your answer and preparing feedback...',
+    continue: 'Moving to the next tutor step...',
+  }[nextAction] || 'Checking your answer...');
+
+  const friendlyTutorError = (err) => {
+    const code = String((err && (err.code || err.message)) || '').trim();
+    if ((err && err.status === 429) || /^rate_limited_/i.test(code)) {
+      const wait = parseInt(err && err.retryAfter, 10);
+      if (wait > 0) return `The tutor is catching up. Try again in ${wait} second${wait === 1 ? '' : 's'}.`;
+      return 'The tutor is catching up. Please wait a few seconds and try again.';
+    }
+    if (/network/i.test(code)) return 'The tutor could not reach the server. Check that the backend is running, then try again.';
+    return code || 'The tutor could not finish that action. Please try again.';
+  };
+
+  const clearTutorAudio = () => {
+    if (voiceAudioRef.current) {
+      try { voiceAudioRef.current.pause(); } catch (_) {}
+      voiceAudioRef.current = null;
+    }
+    setVoicePlaying(false);
+    setVoiceAudioUrl('');
+  };
+
+  const generateTutorVoice = async (text, cacheKey = 'latest') => {
+    const speakable = window.NoesisTutorResponse ? window.NoesisTutorResponse.speechText(text) : String(text || '');
+    if (voiceMode !== 'on' || !speakable.trim()) return;
+    clearTutorAudio();
+    setVoiceBusy(true);
+    setVoiceError('');
+    try {
+      if (voiceCacheRef.current[cacheKey]) {
+        const cached = voiceCacheRef.current[cacheKey];
+        const audio = new Audio(cached);
+        audio.onended = () => setVoicePlaying(false);
+        voiceAudioRef.current = audio;
+        setVoiceAudioUrl(cached);
+        setVoicePlaying(true);
+        await audio.play();
+        return;
+      }
+      const res = await window.NoesisAPI.tutor.tts(speakable);
+      if (!res.ok) throw new Error('tts_' + res.status);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      voiceCacheRef.current[cacheKey] = url;
+      const audio = new Audio(url);
+      audio.onended = () => setVoicePlaying(false);
+      audio.onerror = () => {
+        setVoicePlaying(false);
+        setVoiceError('Voice playback failed.');
+      };
+      voiceAudioRef.current = audio;
+      setVoiceAudioUrl(url);
+      setVoicePlaying(true);
+      audio.play().catch(() => {
+        setVoicePlaying(false);
+        setVoiceError('Voice is ready. Press play to listen.');
+      });
+    } catch (e) {
+      setVoiceError(e.message || 'Voice generation failed.');
+    } finally {
+      setVoiceBusy(false);
+    }
+  };
+
+  const toggleTutorAudio = () => {
+    if (!voiceAudioUrl) return;
+    let audio = voiceAudioRef.current;
+    if (!audio) {
+      audio = new Audio(voiceAudioUrl);
+      audio.onended = () => setVoicePlaying(false);
+      voiceAudioRef.current = audio;
+    }
+    if (voicePlaying) {
+      audio.pause();
+      setVoicePlaying(false);
+    } else {
+      audio.play().then(() => setVoicePlaying(true)).catch(() => setVoiceError('Voice playback failed.'));
+    }
+  };
+
+  const continueTutor = async (choice = null, nextAction = 'check_answer') => {
     if (!session || busy || paused) return;
+    const actionName = nextAction === 'confused' ? 'im_confused'
+      : nextAction === 'example' ? 'give_example'
+        : nextAction === 'check' ? 'check_answer'
+          : nextAction === 'advance' ? 'continue'
+            : nextAction;
     const submitted = choice == null ? answerText.trim() : '';
     const turnLabel = choice != null
       ? `Choice ${String.fromCharCode(65 + choice)}`
-      : (submitted || (intent === 'confused' ? "I'm confused" : intent === 'example' ? 'Give an example' : 'Check my answer'));
+      : (submitted || tutorActionLabel(actionName));
     setTutorState('continuing');
     setAction('continue');
+    setPendingTutorAction(actionName);
     setError('');
-    setStatus(intent === 'confused' ? 'Listening for the confusing part...' : intent === 'example' ? 'Preparing a concrete example...' : 'Checking your answer and preparing the next step...');
+    setStatus(tutorActionStatus(actionName));
+    setFailedTurn(null);
+    setLastTurn(null);
+    setFeedback('');
+    clearTutorAudio();
     try {
       const res = await window.NoesisAPI.tutor.continue(session.sessionId || session.session_id, {
+        sessionId: session.sessionId || session.session_id,
+        topic: session.topic || session.concept || '',
+        mode,
+        action: actionName,
+        currentStep: currentStep && currentStep.id,
+        userAnswer: submitted,
+        materialId: session.materialId || session.material_id || null,
         answer: submitted,
         choice,
-        intent,
+        intent: actionName,
       });
-      setFeedback(res.feedback || '');
-      setLastTurn({ answer: turnLabel, feedback: res.feedback || '', cue: res.professorCue || '', followUpQuestion: res.followUpQuestion || '' });
+      const tutorReply = res.response || res.feedback || '';
+      setFeedback(tutorReply);
+      const displayStepIndex = res.stay ? step : (Number.isInteger(res.currentStepIndex) ? res.currentStepIndex : step);
+      const turn = {
+        id: (res.turn && res.turn.id) || `local-turn-${Date.now()}`,
+        action: actionName,
+        userLabel: (res.turn && res.turn.userLabel) || turnLabel,
+        feedback: (res.turn && (res.turn.response || res.turn.feedback)) || tutorReply,
+        followUpQuestion: (res.turn && res.turn.followUpQuestion) || res.followUpQuestion || '',
+        avatarState: (res.turn && res.turn.avatarState) || (res.stay ? 'listening' : 'speaking'),
+        correct: res.correct,
+        error: false,
+        stepIndex: displayStepIndex,
+        createdAt: (res.turn && res.turn.createdAt) || new Date().toISOString(),
+      };
+      setGuidedTurns(prev => [...prev, turn].slice(-20));
+      setLastTurn({ answer: turn.userLabel, feedback: turn.feedback, cue: res.professorCue || '', followUpQuestion: turn.followUpQuestion });
       setSession({ ...session, steps: res.steps || session.steps, currentStepIndex: res.currentStepIndex, current_step: res.currentStepIndex, trace: res.trace || session.trace });
+      if (res.mode) setMode(res.mode);
       setStep(res.currentStepIndex);
       setAnswerText('');
       setTutorState('session_ready');
       setStatus(res.stay || res.currentStepIndex === step ? 'The professor is staying with this step.' : 'Next tutor step ready.');
+      generateTutorVoice(turn.feedback || '', turn.id);
     } catch (e) {
+      const friendly = friendlyTutorError(e);
       setTutorState('session_ready');
-      setError(e.message || 'Continue failed.');
+      setStatus(friendly);
+      setError('');
+      const failed = {
+        id: `failed-turn-${Date.now()}`,
+        action: actionName,
+        userLabel: turnLabel,
+        feedback: friendly,
+        followUpQuestion: '',
+        avatarState: 'error',
+        error: true,
+        stepIndex: step,
+        createdAt: new Date().toISOString(),
+      };
+      setGuidedTurns(prev => [...prev, failed].slice(-20));
+      setFailedTurn({ answer: turnLabel, message: friendly });
+      setFeedback('');
     } finally {
       setAction('');
+      setPendingTutorAction('');
     }
   };
 
@@ -295,9 +699,12 @@ const Tutor = ({ onNav }) => {
     listening: { label: 'Listening', text: 'The professor is watching your reasoning and waiting for your next move.', icon: 'Brain' },
     thinking: { label: 'Thinking', text: 'The professor is checking your response and preparing feedback.', icon: 'Sparkle' },
     explaining: { label: 'Explaining', text: 'The professor is clarifying the current idea before moving on.', icon: 'Lightbulb' },
+    speaking: { label: 'Speaking', text: 'The professor is explaining this turn. Read along or replay the voice.', icon: 'Lightbulb' },
+    error: { label: 'Needs retry', text: 'That turn did not complete, but your session is still ready.', icon: 'X' },
     paused: { label: 'Paused', text: 'The session is paused. Resume when you are ready.', icon: 'Pause' },
   }[professorState] || { label: 'Listening', text: 'The professor is listening.', icon: 'Brain' };
   const ProfessorIcon = Icon[professorCopy.icon] || Icon.Brain;
+  const VoiceIcon = (Icon.Volume2 || Icon.Volume || Icon.Headphones || Icon.Speaker);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
@@ -325,6 +732,9 @@ const Tutor = ({ onNav }) => {
               );
             })}
           </div>
+          <button className="btn btn-ghost" onClick={() => { setVoiceMode(voiceMode === 'on' ? 'off' : 'on'); if (voiceMode === 'on') clearTutorAudio(); }} disabled={busy && !session}>
+            {VoiceIcon && <VoiceIcon size={11}/>} Voice {voiceMode === 'on' ? 'on' : 'off'}
+          </button>
           <button className="btn btn-ghost" onClick={togglePause} disabled={!session || busy}>
             {paused ? <Icon.Play size={11}/> : <Icon.Pause size={11}/>} {paused ? 'Resume' : 'Pause'}
           </button>
@@ -371,7 +781,7 @@ const Tutor = ({ onNav }) => {
                   const done = s.status === 'completed' || i < step;
                   const active = i === step;
                   return (
-                    <button key={s.id || i} onClick={() => setStep(i)} disabled={busy} style={{
+                    <button key={s.id || i} onClick={() => { setStep(i); setFailedTurn(null); }} disabled={busy} style={{
                       display: 'flex', gap: 12, alignItems: 'flex-start',
                       padding: '10px 10px', borderRadius: 'var(--r-sm)',
                       background: active ? 'var(--bg-2)' : 'transparent',
@@ -438,10 +848,12 @@ const Tutor = ({ onNav }) => {
                 </h1>
                 <div style={tu.lessonCard}>
                   <div style={tu.professorPanel}>
-                    <div style={tu.professorAvatar}>
-                      <ProfessorIcon size={18} style={{ color: 'var(--accent)' }}/>
-                      <span style={{ ...tu.professorPulse, opacity: professorState === 'listening' ? 1 : 0.35 }}/>
-                    </div>
+                    {window.TutorAvatar
+                      ? <window.TutorAvatar state={professorState === 'explaining' ? 'speaking' : professorState} size={50}/>
+                      : <div style={tu.professorAvatar}>
+                        <ProfessorIcon size={18} style={{ color: 'var(--accent)' }}/>
+                        <span style={{ ...tu.professorPulse, opacity: professorState === 'listening' ? 1 : 0.35 }}/>
+                      </div>}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                         <b style={{ color: 'var(--fg-0)', fontSize: 13.5 }}>Professor Tutor</b>
@@ -501,36 +913,61 @@ const Tutor = ({ onNav }) => {
                   )}
 
                   <div style={tu.quickActions}>
-                    <button className="btn btn-ghost" disabled={!session || paused || busy} onClick={() => continueTutor(null, 'confused')}>
-                      <Icon.Brain size={12}/> I'm confused
+                    <button className="btn btn-ghost" disabled={!session || paused || busy} onClick={() => continueTutor(null, 'im_confused')}>
+                      <Icon.Brain size={12}/> {pendingTutorAction === 'im_confused' ? 'Simplifying...' : "I'm confused"}
                     </button>
-                    <button className="btn btn-ghost" disabled={!session || paused || busy} onClick={() => continueTutor(null, 'example')}>
-                      <Icon.Lightbulb size={12}/> Give an example
+                    <button className="btn btn-ghost" disabled={!session || paused || busy} onClick={() => continueTutor(null, 'give_example')}>
+                      <Icon.Lightbulb size={12}/> {pendingTutorAction === 'give_example' ? 'Building example...' : 'Give an example'}
                     </button>
-                    <button className="btn btn-ghost" disabled={!session || paused || busy || (!answerText.trim() && !currentStep.options)} onClick={() => continueTutor(null, 'check')}>
-                      <Icon.Check size={12}/> Check my answer
+                    <button className="btn btn-ghost" disabled={!session || paused || busy || (!answerText.trim() && !currentStep.options)} onClick={() => continueTutor(null, 'check_answer')}>
+                      <Icon.Check size={12}/> {pendingTutorAction === 'check_answer' ? 'Checking...' : 'Check my answer'}
                     </button>
                   </div>
 
-                  {(lastTurn || feedback || persistedFeedback) && (
+                  {(visibleTurns.length > 0 || feedback || persistedFeedback) && (
                     <div style={tu.conversation}>
-                      {lastTurn && <div style={{ ...tu.bubble, ...tu.studentBubble }}><b>You</b><div>{lastTurn.answer}</div></div>}
-                      <div style={{ ...tu.bubble, ...tu.tutorBubble }}>
-                        <b>Professor Tutor</b>
-                        <div>{(lastTurn && lastTurn.feedback) || feedback || persistedFeedback}</div>
-                        {lastTurn && lastTurn.followUpQuestion && <div style={tu.followUp}>{lastTurn.followUpQuestion}</div>}
-                      </div>
+                      {visibleTurns.length > 0 ? visibleTurns.map((turn) => (
+                        <React.Fragment key={turn.id}>
+                          <div style={{ ...tu.bubble, ...tu.studentBubble }}><b>You</b><div>{turn.userLabel}</div></div>
+                          <div style={{ ...tu.bubble, ...tu.tutorBubble, ...(turn.error ? { borderColor: 'var(--warn)' } : {}) }}>
+                            <div style={tu.turnHeader}>
+                              {window.TutorAvatar && <window.TutorAvatar state={turn.error ? 'error' : (turn.avatarState || 'speaking')} size={30}/>}
+                              <b>Professor Tutor</b>
+                              <span style={tu.turnAction}>{tutorActionLabel(turn.action)}</span>
+                            </div>
+                            {turn.error
+                              ? <div style={tu.failedTurn}>{turn.feedback}</div>
+                              : <TutorMessage text={turn.feedback}/>}
+                            {turn.followUpQuestion && <div style={tu.followUp}>{turn.followUpQuestion}</div>}
+                            {!turn.error && turn.id === (visibleTurns[visibleTurns.length - 1] && visibleTurns[visibleTurns.length - 1].id) && (voiceMode === 'on' || voiceBusy || voiceAudioUrl || voiceError) && (
+                              <div style={tu.voiceRow}>
+                                <button className="btn btn-ghost" style={{ padding: '5px 9px', fontSize: 11 }} disabled={!voiceAudioUrl || voiceBusy} onClick={toggleTutorAudio}>
+                                  {voicePlaying ? <Icon.Pause size={11}/> : <Icon.Play size={11}/>} {voicePlaying ? 'Pause' : 'Play'}
+                                </button>
+                                {voiceBusy && <span>Generating voice...</span>}
+                                {voiceError && <span style={{ color: 'var(--warn)' }}>{voiceError}</span>}
+                                {!voiceBusy && voiceAudioUrl && <span>Voice ready</span>}
+                              </div>
+                            )}
+                          </div>
+                        </React.Fragment>
+                      )) : (
+                        <div style={{ ...tu.bubble, ...tu.tutorBubble }}>
+                          <b>Professor Tutor</b>
+                          <TutorMessage text={feedback || persistedFeedback}/>
+                        </div>
+                      )}
                     </div>
                   )}
 
                   <div style={{ marginTop: 20, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <button className="btn btn-accent" disabled={!session || paused || busy} onClick={() => isLastStep ? finishTutor() : continueTutor(null, answerText.trim() ? 'check' : 'advance')}>
+                    <button className="btn btn-accent" disabled={!session || paused || busy} onClick={() => isLastStep ? finishTutor() : continueTutor(null, answerText.trim() ? 'check_answer' : 'continue')}>
                       {action === 'continue' ? <>Preparing... <Icon.Sparkle size={12}/></> : !isLastStep ? <>Continue <Icon.ArrowRight size={12}/></> : <>Finish <Icon.Check size={12}/></>}
                     </button>
                     <button className="btn btn-bare" disabled={!session || paused || busy} onClick={() => saveNote(`${currentStep.title}\n\n${currentStep.content}${currentStep.example ? `\n\nExample: ${currentStep.example}` : ''}`, 'explanation')}>
                       <Icon.Bookmark size={12}/> Save explanation
                     </button>
-                    <button className="btn btn-ghost" disabled={busy} onClick={() => { setSession(null); setTutorState('ready_to_start'); setStatus('Choose a material, then start your tutor session.'); }}>
+                    <button className="btn btn-ghost" disabled={busy} onClick={() => { setSession(null); setFeedback(''); setLastTurn(null); setFailedTurn(null); setGuidedTurns([]); setPendingTutorAction(''); setTutorState('ready_to_start'); setStatus('Choose a material, then start your tutor session.'); }}>
                       New session
                     </button>
                   </div>
@@ -618,6 +1055,20 @@ const Tutor = ({ onNav }) => {
   );
 };
 
+const TutorMarkdown = ({ text }) => {
+  const raw = String(text || '');
+  if (!raw) return null;
+  if (window.marked && window.DOMPurify) {
+    return <div className="md-rendered" style={tu.tutorMarkdown} dangerouslySetInnerHTML={{ __html: window.DOMPurify.sanitize(window.marked.parse(raw)) }} />;
+  }
+  return <div style={{ whiteSpace: 'pre-wrap' }}>{raw}</div>;
+};
+
+const TutorMessage = ({ text }) => {
+  const Structured = window.NoesisTutorResponse && window.NoesisTutorResponse.StructuredMessage;
+  return Structured ? <Structured text={text}/> : <TutorMarkdown text={text}/>;
+};
+
 const RailTitle = ({ title }) => <div style={{ fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>;
 const TraceRow = ({ label, value }) => (
   <div style={tu.traceRow}>
@@ -690,7 +1141,15 @@ const tu = {
   bubble: { padding: 12, borderRadius: 8, lineHeight: 1.6, fontSize: 13, border: '1px solid var(--line)' },
   studentBubble: { justifySelf: 'end', maxWidth: '82%', background: 'var(--bg-2)', color: 'var(--fg-1)' },
   tutorBubble: { justifySelf: 'start', maxWidth: '92%', background: 'var(--bg-0)', color: 'var(--fg-1)', borderColor: 'var(--accent-soft)' },
+  turnHeader: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
+  turnAction: { fontSize: 10.5, color: 'var(--accent)', border: '1px solid var(--accent-soft)', background: 'var(--accent-glow)', borderRadius: 999, padding: '2px 7px' },
+  tutorMarkdown: { fontSize: 13, lineHeight: 1.65, color: 'var(--fg-1)' },
+  structuredMessage: { display: 'grid', gap: 10 },
+  structuredTitle: { fontSize: 14, fontWeight: 700, color: 'var(--fg-0)', marginBottom: 2 },
+  hintBox: { padding: 11, borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-1)', fontSize: 12.8, lineHeight: 1.55 },
   followUp: { marginTop: 8, color: 'var(--fg-2)', fontSize: 12.5 },
+  failedTurn: { marginTop: 8, color: 'var(--warn)', lineHeight: 1.55 },
+  voiceRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10, color: 'var(--fg-3)', fontSize: 11.5 },
   feedback: { marginTop: 16, padding: 14, borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-1)', lineHeight: 1.6 },
   noteEntry: { marginBottom: 16 },
   sourceEntry: { marginBottom: 14, padding: 12, borderRadius: 'var(--r-sm)', background: 'var(--bg-1)', border: '1px solid var(--line)' },

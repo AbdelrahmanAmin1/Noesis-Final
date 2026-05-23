@@ -1,6 +1,43 @@
 // Main app — routes between all screens
 const { useState, useEffect } = React;
 
+class RouteErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[noesis route error]', error, info);
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.route !== this.props.route && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (this.state.error) {
+      return <RouteErrorFallback route={this.props.route} error={this.state.error} onBack={this.props.onBack}/>;
+    }
+    return this.props.children;
+  }
+}
+
+const RouteErrorFallback = ({ route, error, onBack }) => (
+  <div style={routeErr.page}>
+    <div style={routeErr.eyebrow}>{route}</div>
+    <h1 style={routeErr.title}>This screen hit a runtime error.</h1>
+    <pre style={routeErr.detail}>{error && (error.message || String(error))}</pre>
+    <button className="btn btn-accent" onClick={onBack}>Back to materials</button>
+  </div>
+);
+
 const App = () => {
   const APP_ROUTES = ['dashboard','materials','material','storyboard','study-plan','tutor','notes','flashcards','quiz','progress','settings'];
   const [route, setRoute] = useState(localStorage.getItem('noesis.route') || 'landing');
@@ -118,6 +155,11 @@ const App = () => {
   };
   const activeScreen = screens[route] || screens.dashboard;
   const protectedLoading = APP_ROUTES.includes(route) && authState === 'checking';
+  const routedScreen = protectedLoading ? <AppLoading /> : (
+    <RouteErrorBoundary route={route} onBack={() => goto('materials')}>
+      {activeScreen}
+    </RouteErrorBoundary>
+  );
 
   return (
     <div data-screen-label={route} style={{ minHeight: '100vh', background: 'var(--bg-0)', position: 'relative' }}>
@@ -130,12 +172,12 @@ const App = () => {
             <window.Sidebar current={route} onNav={goto} onSettings={() => goto('settings')} onLogout={logout} onHome={home}/>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div key={route} className="route-in">
-                {protectedLoading ? <AppLoading /> : activeScreen}
+                {routedScreen}
               </div>
             </div>
           </div>
         ) : (
-          <div key={route} className="route-in">{activeScreen}</div>
+          <div key={route} className="route-in">{routedScreen}</div>
         )}
       </div>
 
@@ -151,6 +193,13 @@ const AppLoading = () => (
     Checking your session...
   </div>
 );
+
+const routeErr = {
+  page: { minHeight: '100vh', padding: 40, display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 14, color: 'var(--fg-0)', maxWidth: 720 },
+  eyebrow: { fontSize: 11, color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase' },
+  title: { fontFamily: 'var(--font-display)', fontSize: 34, fontWeight: 300, margin: 0 },
+  detail: { maxWidth: '100%', whiteSpace: 'pre-wrap', color: 'var(--err)', background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, fontSize: 12 },
+};
 
 const TweaksPanel = ({ theme, setTheme, route, setRoute, onClose }) => {
   const Icon = window.Icon;
@@ -210,4 +259,6 @@ const TweaksPanel = ({ theme, setTheme, route, setRoute, onClose }) => {
   );
 };
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+const rootEl = document.getElementById('root');
+window.__NOESIS_REACT_OWNS_ROOT = true;
+ReactDOM.createRoot(rootEl).render(<App/>);

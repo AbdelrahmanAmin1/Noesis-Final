@@ -11,6 +11,7 @@ const { retrieveLessonContext, groundingTier } = require('../services/rag.servic
 const lessons = require('../services/lesson.service');
 const topicResolver = require('../services/topic-resolver.service');
 const learningMaps = require('../services/learning-map.service');
+const notesAudio = require('../services/notes-audio.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -45,6 +46,53 @@ router.post('/', requireAuth, (req, res, next) => {
       title, cleanBody, null, null, JSON.stringify(tags || []), nowIso(), nowIso()
     );
     res.json({ id: r.lastInsertRowid });
+  } catch (e) { next(e); }
+});
+
+router.post('/:id/audio', requireAuth, aiLimiter, (req, res, next) => {
+  try {
+    const noteId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(noteId)) throw new HttpError(400, 'invalid_note_id');
+    const job = notesAudio.createNoteAudioJob(req.user.id, noteId, {
+      style: req.body && req.body.style || 'brief',
+      voice: req.body && req.body.voice || 'default',
+      speed: req.body && req.body.speed || 'normal',
+      regenerate: !!(req.body && req.body.regenerate),
+    });
+    res.status(202).json({
+      job_id: job.id,
+      status: job.status,
+      progress: job.progress,
+      message: 'Generating note audio...',
+    });
+  } catch (e) { next(e); }
+});
+
+router.get('/:id/audio', requireAuth, (req, res, next) => {
+  try {
+    const noteId = parseInt(req.params.id, 10);
+    if (!Number.isInteger(noteId)) throw new HttpError(400, 'invalid_note_id');
+    const wantsMeta = req.query.meta === '1' || req.query.meta === 'true';
+    const row = notesAudio.latestAudio(req.user.id, noteId, req.query.style || 'brief');
+    if (!row && wantsMeta) {
+      const db = getDb();
+      const note = db.prepare('SELECT id FROM notes WHERE id=? AND user_id=?').get(noteId, req.user.id);
+      if (!note) throw new HttpError(404, 'note_not_found');
+      res.json({
+        note_id: noteId,
+        style: String(req.query.style || 'brief').toLowerCase(),
+        status: 'missing',
+        message: 'No audio generated yet.',
+      });
+      return;
+    }
+    if (!row) throw new HttpError(404, 'audio_not_found', 'No audio has been generated for this note yet.');
+    if (wantsMeta) {
+      res.json(notesAudio.publicAudioResult(row));
+      return;
+    }
+    res.setHeader('Content-Type', 'audio/wav');
+    res.sendFile(row.audio_path);
   } catch (e) { next(e); }
 });
 

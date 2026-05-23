@@ -106,13 +106,44 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
   const [title, setTitle] = React.useState('');
   const [body, setBody] = React.useState('');
   const [mode, setMode] = React.useState('read');
+  const [audioStyle, setAudioStyle] = React.useState('none');
+  const [audioBusy, setAudioBusy] = React.useState(false);
+  const [audioStatus, setAudioStatus] = React.useState('');
+  const [audioError, setAudioError] = React.useState('');
+  const [audioUrl, setAudioUrl] = React.useState('');
+  const [audioPlaying, setAudioPlaying] = React.useState(false);
+  const audioRef = React.useRef(null);
+  const audioRequestRef = React.useRef(0);
 
   React.useEffect(() => {
+    audioRequestRef.current += 1;
     setTitle(current ? current.t : '');
     setBody(current ? current.body_md || '' : '');
     setStatus('');
     setMode('read');
+    setAudioStyle('none');
+    setAudioStatus('');
+    setAudioError('');
+    setAudioBusy(false);
+    if (audioRef.current) {
+      try { audioRef.current.pause(); } catch (_) {}
+      audioRef.current = null;
+    }
+    setAudioPlaying(false);
+    setAudioUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
   }, [current && current.id]);
+
+  React.useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        try { audioRef.current.pause(); } catch (_) {}
+      }
+      if (audioUrl) URL.revokeObjectURL(audioUrl);
+    };
+  }, [audioUrl]);
 
   const tags = React.useMemo(() => {
     let parsed = [];
@@ -161,6 +192,116 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
     }
   };
 
+  const clearLoadedAudio = () => {
+    if (audioRef.current) {
+      try { audioRef.current.pause(); } catch (_) {}
+      audioRef.current = null;
+    }
+    setAudioPlaying(false);
+    setAudioUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return '';
+    });
+  };
+
+  const friendlyNoteAudioError = (err) => {
+    const code = String((err && (err.code || err.message)) || '').trim();
+    if (/audio_404|audio_not_found|not_found/i.test(code)) return 'No audio has been generated yet. Choose Generate audio first.';
+    if (/note_not_found/i.test(code)) return 'This note could not be found. Refresh your notes and try again.';
+    if (/rate_limited/i.test(code)) return 'Audio generation is cooling down. Wait a few seconds and try again.';
+    if (/tts|voice|audio/i.test(code)) return 'Voice generation failed. You can keep reading the note and try again later.';
+    return code || 'Could not prepare note audio.';
+  };
+
+  const loadNoteAudio = async (style) => {
+    const res = await window.NoesisAPI.notes.audioBlob(current.id, style);
+    if (!res.ok) throw new Error('audio_' + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    if (audioRef.current) {
+      try { audioRef.current.pause(); } catch (_) {}
+    }
+    setAudioUrl(prev => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+    const audio = new Audio(url);
+    audio.onended = () => setAudioPlaying(false);
+    audioRef.current = audio;
+    setAudioStatus(style === 'brief' ? 'Brief voice ready.' : 'Detailed voice ready.');
+    return audio;
+  };
+
+  const checkNoteAudio = async (style) => {
+    if (!current || style === 'none') return;
+    const requestId = ++audioRequestRef.current;
+    clearLoadedAudio();
+    setAudioError('');
+    setAudioStatus('Checking saved voice explanation...');
+    try {
+      const meta = await window.NoesisAPI.notes.audioMeta(current.id, style);
+      if (requestId !== audioRequestRef.current) return;
+      if (!meta || meta.status === 'missing') {
+        setAudioStatus('No audio generated yet.');
+        return;
+      }
+      await loadNoteAudio(style);
+      if (requestId === audioRequestRef.current) setAudioStatus(style === 'brief' ? 'Brief voice ready.' : 'Detailed voice ready.');
+    } catch (e) {
+      if (requestId !== audioRequestRef.current) return;
+      setAudioError(friendlyNoteAudioError(e));
+      setAudioStatus('');
+    }
+  };
+
+  const generateAudio = async () => {
+    if (!current || audioStyle === 'none' || audioBusy) return;
+    setAudioBusy(true);
+    setAudioError('');
+    setAudioStatus('Preparing voice explanation...');
+    try {
+      const job = await window.NoesisAPI.notes.audio(current.id, { style: audioStyle, voice: 'default', speed: 'normal', regenerate: !!audioUrl });
+      const completed = await window.NoesisAPI.pollJob(job.job_id, {
+        intervalMs: 1000,
+        timeoutMs: 240000,
+        onProgress: (j) => setAudioStatus(j.message || `Generating voice... ${j.progress || 0}%`),
+      });
+      if (completed && completed.result && completed.result.status === 'completed') {
+        setAudioStatus('Voice ready. Loading audio...');
+      }
+      const audio = await loadNoteAudio(audioStyle);
+      setAudioPlaying(true);
+      audio.play().catch(() => {
+        setAudioPlaying(false);
+        setAudioStatus('Voice ready. Press play to listen.');
+      });
+    } catch (e) {
+      setAudioError(friendlyNoteAudioError(e));
+      setAudioStatus('');
+    } finally {
+      setAudioBusy(false);
+    }
+  };
+
+  const toggleAudio = async () => {
+    if (!current || audioStyle === 'none') return;
+    let audio = audioRef.current;
+    try {
+      if (!audio && !audioUrl) audio = await loadNoteAudio(audioStyle);
+      if (!audio) audio = audioRef.current;
+      if (!audio) return;
+      if (audioPlaying) {
+        audio.pause();
+        setAudioPlaying(false);
+      } else {
+        await audio.play();
+        setAudioPlaying(true);
+      }
+    } catch (e) {
+      setAudioError(friendlyNoteAudioError(e));
+    }
+  };
+
   return (
     <main style={ns.editor}>
       <div style={{ maxWidth: 720, margin: '0 auto', padding: '36px' }}>
@@ -194,6 +335,30 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
                 ? <window.LessonRenderer lesson={current.lesson_json} markdown={body} />
                 : <div className="md-rendered" style={ns.mdBody} dangerouslySetInnerHTML={{ __html: window.DOMPurify ? window.DOMPurify.sanitize(window.marked ? window.marked.parse(body || '') : body) : (body || '') }} />
             )}
+            <div style={ns.audioPanel}>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={ns.audioLabel}>Voice explanation</div>
+                <select className="input" value={audioStyle} disabled={audioBusy} onChange={(e) => {
+                  const nextStyle = e.target.value;
+                  setAudioStyle(nextStyle);
+                  setAudioStatus('');
+                  setAudioError('');
+                  clearLoadedAudio();
+                  if (nextStyle !== 'none') checkNoteAudio(nextStyle);
+                }} style={{ fontSize: 12.5, width: '100%' }}>
+                  <option value="none">No audio</option>
+                  <option value="brief">Brief audio explanation</option>
+                  <option value="detailed">Detailed audio explanation</option>
+                </select>
+              </div>
+              <button className="btn btn-ghost" disabled={audioBusy || audioStyle === 'none'} onClick={generateAudio}>
+                <Icon.Sparkle size={12}/> {audioBusy ? 'Generating...' : audioUrl ? 'Regenerate' : 'Generate audio'}
+              </button>
+              <button className="btn btn-ghost" disabled={audioBusy || audioStyle === 'none' || !audioUrl} onClick={toggleAudio}>
+                {audioPlaying ? <Icon.Pause size={12}/> : <Icon.Play size={12}/>} {audioPlaying ? 'Pause' : 'Play'}
+              </button>
+              {(audioStatus || audioError) && <div style={{ ...ns.audioStatus, color: audioError ? 'var(--err)' : 'var(--fg-3)' }}>{audioError || audioStatus}</div>}
+            </div>
             <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
               {mode === 'edit' && <button className="btn btn-accent" disabled={busy || !title.trim()} onClick={save}>{status === 'Saving...' ? 'Saving...' : 'Save'}</button>}
               <button className="btn btn-ghost" disabled={busy} onClick={remove} style={{ color: 'var(--err)' }}>{status === 'Deleting...' ? 'Deleting...' : 'Delete'}</button>
@@ -224,6 +389,12 @@ const ns = {
   titleInput: { width: '100%', fontFamily: 'var(--font-display)', fontSize: 32, marginBottom: 14 },
   bodyInput: { width: '100%', minHeight: 420, resize: 'vertical', fontSize: 14.5, lineHeight: 1.7 },
   mdBody: { minHeight: 420, fontSize: 14.5, lineHeight: 1.75, color: 'var(--fg-1)' },
+  audioPanel: {
+    marginTop: 18, padding: 12, borderRadius: 8, border: '1px solid var(--line)',
+    background: 'var(--bg-1)', display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap',
+  },
+  audioLabel: { fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 },
+  audioStatus: { width: '100%', fontSize: 11.5, lineHeight: 1.45 },
 };
 
 window.Notes = Notes;

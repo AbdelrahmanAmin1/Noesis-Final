@@ -4,7 +4,6 @@ const { getDb } = require('../config/db');
 const env = require('../config/env');
 const ai = require('./ai.service');
 const jobs = require('./jobs.service');
-const prompts = require('../utils/prompts');
 const { HttpError } = require('../middleware/error');
 const { retrieveLessonContext, groundingTier } = require('./rag.service');
 const topicResolver = require('./topic-resolver.service');
@@ -184,6 +183,42 @@ function codeForTopic(topic) {
       walkthrough: [
         { lineRange: '1', text: 'Enqueue adds at the rear.' },
         { lineRange: '2', text: 'Dequeue removes from the front.' },
+      ],
+    };
+  }
+  if (t.includes('bst') || t.includes('binary search tree')) {
+    return {
+      language: 'java',
+      content: [
+        'Node insert(Node root, int value) {',
+        '  if (root == null) return new Node(value);',
+        '  if (value < root.value) root.left = insert(root.left, value);',
+        '  else if (value > root.value) root.right = insert(root.right, value);',
+        '  return root;',
+        '}',
+      ].join('\n'),
+      walkthrough: [
+        { lineRange: '2', text: 'An empty spot becomes the new node.' },
+        { lineRange: '3', text: 'Smaller values move into the left subtree.' },
+        { lineRange: '4', text: 'Larger values move into the right subtree.' },
+      ],
+    };
+  }
+  if (t.includes('big-o') || t.includes('big o') || t.includes('complexity')) {
+    return {
+      language: 'java',
+      content: [
+        'for (int i = 0; i < n; i++) {',
+        '  System.out.println(items[i]);',
+        '}',
+        '',
+        'for (int i = 0; i < n; i++) {',
+        '  for (int j = 0; j < n; j++) compare(i, j);',
+        '}',
+      ].join('\n'),
+      walkthrough: [
+        { lineRange: '1-3', text: 'One loop grows linearly, so it is O(n).' },
+        { lineRange: '5-7', text: 'Nested loops multiply work, so they are O(n^2).' },
       ],
     };
   }
@@ -602,74 +637,421 @@ function tutorSourcesForFeedback(s) {
   })).filter(c => c.text);
 }
 
-function deterministicFeedback({ intent, current, answer, hasMcq, correct }) {
-  if (intent === 'confused') {
+function normalizeTutorAction(payload = {}, answer = '', choice = null) {
+  const raw = String(payload.action || payload.intent || '').trim().toLowerCase();
+  const map = {
+    confused: 'im_confused',
+    im_confused: 'im_confused',
+    "i'm confused": 'im_confused',
+    example: 'give_example',
+    give_example: 'give_example',
+    check: 'check_answer',
+    check_answer: 'check_answer',
+    advance: 'continue',
+    continue: 'continue',
+  };
+  if (map[raw]) return map[raw];
+  if (choice != null || answer) return 'check_answer';
+  return 'continue';
+}
+
+function normalizeTutorMode(value) {
+  return ['socratic', 'explain', 'example'].includes(value) ? value : 'socratic';
+}
+
+function topicKind(topic) {
+  const text = String(topic || '').toLowerCase();
+  if (/(encapsulation|inheritance|polymorphism|abstraction|class|object|oop)/.test(text)) return 'oop';
+  if (/(linked list|node|stack|queue|tree|hash|heap|graph|data structure)/.test(text)) return 'ds';
+  return 'general';
+}
+
+function bankAccountExample() {
+  return [
+    'Here is a real encapsulation example with a `BankAccount`.',
+    '',
+    '```java',
+    'class BankAccount {',
+    '  private double balance;',
+    '',
+    '  public BankAccount(double openingBalance) {',
+    '    if (openingBalance < 0) throw new IllegalArgumentException("negative opening balance");',
+    '    balance = openingBalance;',
+    '  }',
+    '',
+    '  public void deposit(double amount) {',
+    '    if (amount <= 0) throw new IllegalArgumentException("deposit must be positive");',
+    '    balance += amount;',
+    '  }',
+    '',
+    '  public boolean withdraw(double amount) {',
+    '    if (amount <= 0 || amount > balance) return false;',
+    '    balance -= amount;',
+    '    return true;',
+    '  }',
+    '',
+    '  public double getBalance() { return balance; }',
+    '}',
+    '```',
+    '',
+    'Line by line: `private balance` blocks outside code from setting impossible values like `-500`. `deposit` and `withdraw` are the controlled public doors. Each method validates the request before changing state. The common mistake is making `balance` public, because then any caller can bypass the rules.',
+  ].join('\n');
+}
+
+function topicExample(topic, current) {
+  const kind = topicKind(topic);
+  const lower = String(topic || '').toLowerCase();
+  if (lower.includes('encapsulation')) return bankAccountExample();
+  if (lower.includes('polymorphism')) {
+    return [
+      'Concrete polymorphism example:',
+      '',
+      '```java',
+      'Shape s = new Circle();',
+      's.draw();        // runs Circle.draw()',
+      's = new Rectangle();',
+      's.draw();        // runs Rectangle.draw()',
+      '```',
+      '',
+      'The variable type is `Shape`, but Java chooses the overridden method from the actual runtime object. A common mistake is thinking the reference type alone decides the method.',
+    ].join('\n');
+  }
+  if (lower.includes('linked')) {
+    return [
+      'Concrete linked-list insertion example:',
+      '',
+      '```java',
+      'Node newNode = new Node(value);',
+      'newNode.next = current.next;',
+      'current.next = newNode;',
+      '```',
+      '',
+      'The order matters. First create the node, then save the old next pointer, then redirect `current.next`. If you skip the second line, the rest of the list can become unreachable.',
+    ].join('\n');
+  }
+  if (lower.includes('inheritance')) {
+    return [
+      'Concrete inheritance example:',
+      '',
+      '```java',
+      'class Shape {',
+      '  double area() { return 0; }',
+      '}',
+      '',
+      'class Circle extends Shape {',
+      '  double radius;',
+      '  Circle(double radius) { this.radius = radius; }',
+      '  @Override double area() { return Math.PI * radius * radius; }',
+      '}',
+      '```',
+      '',
+      '`Circle extends Shape` means Circle is a specialized Shape. The common mistake is using inheritance for a has-a relationship, like saying a Car extends Engine instead of a Car having an Engine.',
+    ].join('\n');
+  }
+  if (lower.includes('stack')) {
+    return [
+      'Concrete stack example:',
+      '',
+      '```java',
+      'Stack<String> history = new Stack<>();',
+      'history.push("typed A");',
+      'history.push("typed B");',
+      'String last = history.pop(); // "typed B"',
+      '```',
+      '',
+      'A stack is LIFO: the last thing pushed is the first thing popped. A common mistake is treating it like a queue and expecting the oldest item to leave first.',
+    ].join('\n');
+  }
+  if (lower.includes('queue')) {
+    return [
+      'Concrete queue example:',
+      '',
+      '```java',
+      'Queue<String> line = new ArrayDeque<>();',
+      'line.add("A");',
+      'line.add("B");',
+      'String first = line.remove(); // "A"',
+      '```',
+      '',
+      'A queue is FIFO: the first item added is the first removed. A common mistake is removing from the rear, which breaks queue order.',
+    ].join('\n');
+  }
+  if (lower.includes('bst') || lower.includes('binary search tree')) {
+    return [
+      'Concrete BST insertion example:',
+      '',
+      '```java',
+      'Node insert(Node root, int value) {',
+      '  if (root == null) return new Node(value);',
+      '  if (value < root.value) root.left = insert(root.left, value);',
+      '  else if (value > root.value) root.right = insert(root.right, value);',
+      '  return root;',
+      '}',
+      '```',
+      '',
+      'Each comparison chooses left or right. The common mistake is forgetting that the BST rule must hold for every subtree, not just the root.',
+    ].join('\n');
+  }
+  if (lower.includes('big-o') || lower.includes('big o') || lower.includes('complexity')) {
+    return [
+      'Concrete Big-O example:',
+      '',
+      '```java',
+      'for (int i = 0; i < n; i++) print(items[i]);     // O(n)',
+      '',
+      'for (int i = 0; i < n; i++)',
+      '  for (int j = 0; j < n; j++) compare(i, j);    // O(n^2)',
+      '```',
+      '',
+      'Big-O describes how work grows as input grows. A common mistake is counting exact milliseconds instead of the growth pattern.',
+    ].join('\n');
+  }
+  if (kind === 'oop' || kind === 'ds') {
+    return `${current.example || current.content}\n\nFor this kind of topic, trace one tiny state change and name the rule before and after the change. The common mistake is memorizing the term without checking what changes in the object or structure.`;
+  }
+  return `${current.example || current.content}\n\nMini example: pick one input, apply the rule once, then explain what changed and why that change was allowed.`;
+}
+
+function modePrefix(mode, action) {
+  if (mode === 'socratic' && action !== 'give_example') return 'Let me guide you rather than dump the answer:';
+  if (mode === 'example') return 'I will anchor this in a concrete example:';
+  return 'Here is the clear version:';
+}
+
+function modeSystemPrompt(mode) {
+  if (mode === 'socratic') return [
+    'You are a Socratic tutor. NEVER give the full answer directly.',
+    '- Ask one guiding question at a time.',
+    '- Give a hint if the learner is stuck.',
+    '- Check understanding before moving forward.',
+    '- Build toward the answer step by step.',
+    '- End with a checkpoint question.',
+  ].join('\n');
+  if (mode === 'example') return [
+    'You are an example-first tutor.',
+    '- Lead with a concrete, runnable code example immediately.',
+    '- Explain each line of the code.',
+    '- Connect the example back to the concept.',
+    '- Mention one common mistake.',
+    '- End with: "Try modifying this: [specific challenge]"',
+  ].join('\n');
+  return [
+    'You are a clear, direct tutor explaining concepts.',
+    '- Start with a concise definition.',
+    '- Use a real-world analogy.',
+    '- Give a concrete code example for OOP/Data Structures topics.',
+    '- Walk through the example step by step.',
+    '- End with a checkpoint: ask one question to verify understanding.',
+  ].join('\n');
+}
+
+function actionPromptSection(action) {
+  if (action === 'im_confused') return [
+    'The learner is confused. Respond by:',
+    '1. Restate the concept in simpler terms (no jargon).',
+    '2. Use one everyday analogy.',
+    '3. Break it into 2-3 tiny steps.',
+    '4. Ask ONE simple yes/no or fill-in-the-blank question.',
+  ].join('\n');
+  if (action === 'give_example') return [
+    'Give a REAL, complete code example. For OOP topics use Java.',
+    'Include: class definition, method, and a main() that demonstrates the concept.',
+    'Explain each part. Connect to the concept. Mention one common mistake.',
+  ].join('\n');
+  if (action === 'check_answer') return [
+    'Evaluate the learner\'s answer:',
+    '1. What is CORRECT in their answer.',
+    '2. What is MISSING or incomplete.',
+    '3. Give the improved/complete answer.',
+    '4. Suggest the next step.',
+  ].join('\n');
+  return [
+    'Advance to the next meaningful step in the lesson.',
+    'Do NOT repeat what was just covered. Build on it.',
+    'Introduce the next sub-topic or a harder variant.',
+  ].join('\n');
+}
+
+function tutorActionLabel(action) {
+  return {
+    im_confused: "I'm confused",
+    give_example: 'Give an example',
+    check_answer: 'Check my answer',
+    continue: 'Continue',
+  }[action] || 'Tutor turn';
+}
+
+function turnAvatarState(action, stay, correct) {
+  if (action === 'check_answer' && !correct) return 'listening';
+  if (action === 'im_confused') return 'speaking';
+  if (action === 'give_example') return 'speaking';
+  if (action === 'continue' && !stay) return 'speaking';
+  return stay ? 'listening' : 'speaking';
+}
+
+function parseStructuredTutorJson(value) {
+  const raw = String(value || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  if (!/^\{/.test(raw)) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function responseTypeForAction(action) {
+  if (action === 'give_example') return 'example';
+  if (action === 'check_answer') return 'feedback';
+  if (action === 'im_confused') return 'hint';
+  if (action === 'continue') return 'next_step';
+  return 'explanation';
+}
+
+function structuredResponseFromFeedback(feedback, { action, topic, current }) {
+  const parsed = parseStructuredTutorJson(feedback);
+  if (parsed) return parsed;
+  const code = action === 'give_example' || action === 'continue' ? codeForTopic(topic) : null;
+  return {
+    type: responseTypeForAction(action),
+    title: action === 'give_example'
+      ? `Example: ${topic}`
+      : (action === 'im_confused' ? 'Simpler version' : (current && current.title) || topic || 'Tutor response'),
+    explanation: feedback,
+    question: current && current.question || '',
+    hint: action === 'im_confused' ? (current && current.hint || '') : '',
+    example: action === 'give_example' ? (current && current.example || '') : '',
+    code,
+    visual: { type: visualTypeFor(topic), nodes: [], edges: [], caption: topic || '' },
+    sources: [],
+    trace: {},
+  };
+}
+
+function deterministicFeedback({ action, mode, topic, current, answer, hasMcq, correct }) {
+  const prefix = modePrefix(mode, action);
+  if (action === 'im_confused') {
     return {
-      feedback: `That's a useful signal. Let's slow the idea down: ${current.hint || current.content}`,
+      feedback: [
+        `${prefix} ${current.title || 'this idea'} is one rule plus one example.`,
+        `Simpler version: ${current.hint || current.content}`,
+        `Analogy: think of it like a checkpoint at a door. The door controls what can happen, so the inside state does not get broken.`,
+        `Mini example: ${current.example || topicExample(topic, current).split('\n')[0]}`,
+        `One small check: ${current.question || 'Which part is unclear: the definition, the example, or the code?'}`,
+      ].join('\n\n'),
       professorCue: 'listening',
       followUpQuestion: current.question || 'Which part feels unclear: the definition, the example, or the code?',
     };
   }
-  if (intent === 'example') {
+  if (action === 'give_example') {
     return {
-      feedback: `Here is a concrete example to anchor it: ${current.example || current.content}`,
+      feedback: `${prefix}\n\n${topicExample(topic, current)}\n\nNow connect it back: ${current.content}`,
       professorCue: 'explaining',
       followUpQuestion: current.question || 'Can you now describe the rule in your own words?',
     };
   }
+  if (action === 'continue') {
+    return {
+      feedback: `${prefix} we are ready to move on. Keep this checkpoint in mind: ${current.hint || current.content}`,
+      professorCue: 'thinking',
+      followUpQuestion: 'Watch how the next step builds on this one.',
+    };
+  }
+  if (action === 'check_answer' && !answer && !hasMcq) {
+    return {
+      feedback: `I need a short answer before I can check it. Write one sentence with the rule you think applies, then add one concrete detail from the example. I will tell you what is correct, what is missing, and how to sharpen it.`,
+      professorCue: 'listening',
+      followUpQuestion: current.question || 'What is your best one-sentence answer?',
+    };
+  }
   if (answer && answer.length < 8 && !hasMcq) {
     return {
-      feedback: `Good start. Add one concrete detail: ${current.hint || 'connect the idea to the example before moving on.'}`,
+      feedback: `Good start, but it is too thin to check deeply yet. What is correct: you are pointing at the right topic. What is missing: one concrete detail or example. Better answer: ${current.hint || 'name the rule, then connect it to the example before moving on.'}`,
       professorCue: 'listening',
       followUpQuestion: current.question || 'What detail would make your answer more precise?',
     };
   }
   if (hasMcq && !correct) {
     return {
-      feedback: current.explanation || current.hint || 'Not quite. Re-check the example and try again.',
+      feedback: `Not quite. What is correct: you tried to apply the current rule. What is missing: this choice does not match the example's behavior. Correction: ${current.explanation || current.hint || 're-check the example and choose the option that follows the rule.'}`,
       professorCue: 'listening',
       followUpQuestion: current.question || 'Try choosing again after using the hint.',
     };
   }
   if (answer) {
     return {
-      feedback: `Nice. Your answer connects to the key idea: ${current.content}`,
+      feedback: `Nice. What is correct: your answer gives enough substance to connect with the key idea. What to sharpen: make the rule explicit. Better answer: ${current.content} Next step: apply that rule to a concrete example.`,
       professorCue: 'explaining',
       followUpQuestion: 'Ready for the next step?',
     };
   }
   return {
-    feedback: `Let's keep going. Remember: ${current.hint || current.content}`,
+    feedback: `${prefix} ${current.content}\n\nCheckpoint: ${current.question || current.hint || 'Try to explain the rule in your own words.'}`,
     professorCue: 'thinking',
     followUpQuestion: 'Watch how the next step builds on this one.',
   };
 }
 
-async function modelFeedbackOrFallback(s, current, answerText, correct, fallback) {
+function tutorReplyIsUseful(text, { action, topic, mode }) {
+  const value = cleanText(text, 2800);
+  const minLen = (action === 'im_confused') ? 90 : 180;
+  if (value.length < minLen) return false;
+  if (/\.\.\./.test(value)) return false;
+  if (parseStructuredTutorJson(value)) return false;
+  if (/^\s*[{[]/.test(value) && /"?(explanation|question|hint|example|code)"?\s*:/i.test(value)) return false;
+  if (/we will define|trace an example|placeholder|apply it\.?$/i.test(value)) return false;
+  if (action === 'give_example') {
+    if (!/(example|for instance|```|class|node|stack|queue|hash|bankaccount)/i.test(value)) return false;
+    if (topicKind(topic) !== 'general' && !/```|class\s+\w+|new\s+\w+|Node|push|pop|enqueue|hash/i.test(value)) return false;
+  }
+  if (action === 'im_confused' && !/(simpler|analogy|think of|imagine|mini example|small check|jargon)/i.test(value)) return false;
+  if (action === 'im_confused' && !/\?/.test(value)) return false;
+  if (action === 'check_answer' && !/(correct|missing|better|not quite|feedback|sharpen|correction)/i.test(value)) return false;
+  if (mode === 'socratic' && action !== 'give_example' && !/\?/.test(value)) return false;
+  if (mode === 'example' && action !== 'check_answer' && action !== 'im_confused' && !/```/.test(value)) return false;
+  return true;
+}
+
+async function modelFeedbackOrFallback(s, current, answerText, correct, fallback, ctx = {}) {
   if (!answerText) return fallback;
   if (env.NODE_ENV === 'test') return fallback;
-  try {
-    const prompt = prompts.TUTOR_FEEDBACK(
-      s.topic || s.concept,
-      { t: current.title, title: current.title, q: current.question, question: current.question },
-      answerText,
-      correct,
-      tutorSourcesForFeedback(s)
-    );
-    const generated = await Promise.race([
-      ai.generate(prompt, {
-        provider: env.TUTOR_PROVIDER,
-        feature: 'tutor',
-        temperature: 0.25,
-        max_tokens: 220,
-        num_predict: 220,
-      }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('tutor_feedback_timeout')), 1800)),
-    ]);
-    const text = cleanText(generated && (generated.text || generated.output || generated), 900);
-    if (text) return { ...fallback, feedback: text };
-  } catch (err) {
-    log.warn('tutor_feedback_fallback', err.message || err);
+  const action = ctx.action || 'check_answer';
+  const mode = normalizeTutorMode(ctx.mode || s.mode);
+  const sources = tutorSourcesForFeedback(s);
+  const prompt = [
+    modeSystemPrompt(mode),
+    '',
+    `Topic: ${s.topic || s.concept}.`,
+    actionPromptSection(action),
+    '',
+    '- Be concrete and step-by-step.',
+    '- If action is give_example for OOP/Data Structures, include a real runnable code example in a ``` block.',
+    '- If action is im_confused, simplify, use one analogy, and ask one simple question.',
+    '- If action is check_answer, evaluate what is correct, what is missing, give a better answer, and suggest the next step.',
+    '',
+    `Current step: ${current.title}. Question: ${current.question}. Key idea: ${current.content}`,
+    `Learner message: ${answerText}`,
+    `Correctness signal: ${correct ? 'likely correct' : 'needs correction'}`,
+    sources.length ? `Source excerpts:\n${sources.slice(0, 3).map((src, i) => `[${i + 1}] ${src.text}`).join('\n')}` : '',
+  ].filter(Boolean).join('\n\n');
+  const providers = [...new Set([env.TUTOR_PROVIDER, env.TUTOR_FALLBACK_PROVIDER].filter(Boolean))];
+  for (const provider of providers) {
+    try {
+      const generated = await Promise.race([
+        ai.generate(prompt, {
+          provider,
+          feature: 'tutor',
+          temperature: 0.25,
+          max_tokens: 800,
+          num_predict: 800,
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('tutor_feedback_timeout')), 12000)),
+      ]);
+      const text = cleanText(generated && (generated.text || generated.output || generated), 2400);
+      if (tutorReplyIsUseful(text, { action, topic: s.topic || s.concept, mode })) return { ...fallback, feedback: text };
+    } catch (err) {
+      log.warn('tutor_feedback_fallback', err.message || err);
+    }
   }
   return fallback;
 }
@@ -684,44 +1066,74 @@ async function continueSession(userId, sessionId, payload = {}) {
   const steps = plan.steps && plan.steps[0] && plan.steps[0].id ? plan.steps : legacyPlanToSteps(plan);
   const idx = Math.max(0, Math.min(Number(s.current_step || 0), steps.length - 1));
   const current = steps[idx];
-  const answer = cleanText(payload.answer || payload.text || '', 500);
+  const answer = cleanText(payload.userAnswer || payload.answer || payload.text || '', 500);
   const choice = typeof payload.choice === 'number' ? payload.choice : null;
-  const intent = ['confused', 'example', 'check'].includes(payload.intent) ? payload.intent : (choice != null || answer ? 'check' : 'advance');
+  const mode = normalizeTutorMode(payload.mode || s.mode);
+  const action = normalizeTutorAction(payload, answer, choice);
   const hasMcq = Array.isArray(current.options) && typeof current.correct_idx === 'number';
   const correct = hasMcq && choice != null ? choice === current.correct_idx : (answer ? answer.length >= 8 : true);
-  const stay = intent === 'confused' || intent === 'example' || (intent === 'check' && !answer && choice == null) || (answer && answer.length < 8 && !hasMcq) || (hasMcq && choice != null && !correct);
-  const fallback = deterministicFeedback({ intent, current, answer, hasMcq, correct });
-  const feedbackResult = await modelFeedbackOrFallback(
+  const stay = action === 'im_confused' ||
+    action === 'give_example' ||
+    (action === 'check_answer' && !answer && choice == null) ||
+    (action === 'check_answer' && answer && answer.length < 8 && !hasMcq) ||
+    (action === 'check_answer' && hasMcq && choice != null && !correct);
+  const fallback = deterministicFeedback({ action, mode, topic: s.topic || s.concept, current, answer, hasMcq, correct });
+  let feedbackResult = await modelFeedbackOrFallback(
     s,
     current,
-    answer || (intent === 'confused' ? 'I am confused.' : intent === 'example' ? 'Give me an example.' : ''),
+    answer || (action === 'im_confused' ? 'I am confused.' : action === 'give_example' ? 'Give me an example.' : action === 'continue' ? 'Continue.' : ''),
     correct,
-    fallback
+    fallback,
+    { action, mode }
   );
+  if (!tutorReplyIsUseful(feedbackResult.feedback, { action, topic: s.topic || s.concept, mode })) {
+    feedbackResult = fallback;
+  }
   const feedback = feedbackResult.feedback;
+  const response = structuredResponseFromFeedback(feedback, { action, mode, topic: s.topic || s.concept, current });
   const nextIndex = stay ? idx : Math.min(idx + 1, steps.length - 1);
   const updatedSteps = steps.map((step, i) => ({
     ...step,
     status: i < nextIndex ? 'completed' : (i === nextIndex ? 'active' : 'locked'),
     learnerAnswer: i === idx ? answer : step.learnerAnswer,
     learnerChoice: i === idx ? choice : step.learnerChoice,
-    lastIntent: i === idx ? intent : step.lastIntent,
+    lastIntent: i === idx ? action : step.lastIntent,
     feedback: i === idx ? feedback : step.feedback,
     feedback_md: i === idx ? feedback : step.feedback_md,
   }));
-  db.prepare('UPDATE tutor_sessions SET current_step=?, plan_json=?, updated_at=? WHERE id=?')
-    .run(nextIndex, JSON.stringify({ ...plan, steps: updatedSteps }), nowIso(), sessionId);
+  db.prepare('UPDATE tutor_sessions SET current_step=?, plan_json=?, mode=?, updated_at=? WHERE id=?')
+    .run(nextIndex, JSON.stringify({ ...plan, steps: updatedSteps }), mode, nowIso(), sessionId);
   storeSteps(db, sessionId, updatedSteps);
   db.prepare('UPDATE tutor_steps SET answer_json=?, feedback_md=?, status=? WHERE session_id=? AND idx=?')
-    .run(JSON.stringify({ answer, choice, intent }), feedback, stay ? 'active' : 'completed', sessionId, idx);
-  if (intent !== 'confused' && intent !== 'example' && (answer || choice != null)) {
+    .run(JSON.stringify({ answer, choice, intent: action, action, mode }), feedback, stay ? 'active' : 'completed', sessionId, idx);
+  if (action === 'check_answer' && (answer || choice != null)) {
     recordConceptOutcome(userId, s.topic || s.concept, !!correct, { correctDelta: correct ? 4 : 0, incorrectDelta: correct ? 0 : -3 });
   }
-  const trace = { ...parseJson(s.trace_json, {}), lastContinueMs: Date.now() - started, lastAnswerWeak: stay, lastIntent: intent };
+  const trace = { ...parseJson(s.trace_json, {}), lastContinueMs: Date.now() - started, lastAnswerWeak: stay, lastIntent: action, lastAction: action, lastMode: mode };
   db.prepare('UPDATE tutor_sessions SET trace_json=? WHERE id=?').run(JSON.stringify(trace), sessionId);
+  const userLabel = choice != null
+    ? `Choice ${String.fromCharCode(65 + choice)}`
+    : (answer || tutorActionLabel(action));
+  const turn = {
+    id: `turn-${sessionId}-${idx}-${Date.now()}`,
+    action,
+    userLabel,
+    feedback,
+    response,
+    followUpQuestion: feedbackResult.followUpQuestion || fallback.followUpQuestion || '',
+    avatarState: turnAvatarState(action, stay, correct),
+    correct,
+    stay,
+    stepIndex: idx,
+    nextStepIndex: nextIndex,
+    createdAt: nowIso(),
+  };
   return {
     feedback,
+    response,
     stay,
+    action,
+    mode,
     professorCue: feedbackResult.professorCue || fallback.professorCue || (stay ? 'listening' : 'explaining'),
     followUpQuestion: feedbackResult.followUpQuestion || fallback.followUpQuestion || '',
     correct,
@@ -729,6 +1141,7 @@ async function continueSession(userId, sessionId, payload = {}) {
     steps: updatedSteps,
     currentStepIndex: nextIndex,
     trace,
+    turn,
   };
 }
 
@@ -749,5 +1162,5 @@ module.exports = {
   continueSession,
   sourceChunksForClient,
   buildPlan,
-  _internals: { isGeneric, cache, validateStep, contentForTopic },
+  _internals: { isGeneric, cache, validateStep, contentForTopic, deterministicFeedback, tutorReplyIsUseful, normalizeTutorAction, topicExample, structuredResponseFromFeedback },
 };

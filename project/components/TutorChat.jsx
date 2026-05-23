@@ -284,6 +284,7 @@ const TutorChat = ({ onNav, onMode, initialConversationId = null }) => {
         id: res.message_id || `local-assistant-${Date.now()}`,
         role: 'assistant',
         content: res.reply || '',
+        response: res.response || null,
         sources: res.sources || [],
         suggestions: res.suggestions || [],
         groundingTier: res.groundingTier || '',
@@ -464,6 +465,7 @@ const TutorChat = ({ onNav, onMode, initialConversationId = null }) => {
                     muted={muted}
                     onShowSources={showSourcesForMessage}
                     onCitation={showSourcesForMessage}
+                    onAction={(text, actionKey) => sendMessage(text, actionKey)}
                   />
                 ))}
                 {busy && <LoadingBubble/>}
@@ -596,8 +598,12 @@ const TutorChat = ({ onNav, onMode, initialConversationId = null }) => {
   );
 };
 
-const ChatMessage = ({ message, renderMarkdown, groundingTone, onSpeak, playing, ttsBusy, muted, onShowSources, onCitation }) => {
+const ChatMessage = ({ message, renderMarkdown, groundingTone, onSpeak, playing, ttsBusy, muted, onShowSources, onCitation, onAction }) => {
   const Icon = window.Icon;
+  const ExplainIcon = Icon.Lightbulb || Icon.Sparkle;
+  const ExampleIcon = Icon.Code || Icon.Braces || Icon.Sparkle;
+  const QuizIcon = Icon.Target || Icon.CircleHelp || Icon.Sparkle;
+  const SourceIcon = Icon.BookOpen || Icon.Book || Icon.FileText || Icon.Sparkle;
   const [copied, setCopied] = React.useState(false);
   const isUser = message.role === 'user';
   const tier = (message.grounding && message.grounding.tier) || message.groundingTier;
@@ -620,7 +626,10 @@ const ChatMessage = ({ message, renderMarkdown, groundingTone, onSpeak, playing,
   };
   const copyMessage = async () => {
     try {
-      await navigator.clipboard.writeText(String(message.content || ''));
+      const readable = window.NoesisTutorResponse && window.NoesisTutorResponse.copyText
+        ? window.NoesisTutorResponse.copyText(message.content)
+        : String(message.content || '');
+      await navigator.clipboard.writeText(readable);
       setCopied(true);
       setTimeout(() => setCopied(false), 1300);
     } catch (_) {
@@ -665,14 +674,125 @@ const ChatMessage = ({ message, renderMarkdown, groundingTone, onSpeak, playing,
           )}
         </div>
         {weakNote && <div style={tc.groundingNote}>{weakNote}</div>}
-        <div className="md-rendered" style={tc.markdown} onClick={handleMarkdownClick} dangerouslySetInnerHTML={renderMarkdown(message.content)}/>
+        {!isUser
+          ? <TutorReplyCard message={message} renderMarkdown={renderMarkdown} onMarkdownClick={handleMarkdownClick}/>
+          : <div className="md-rendered" style={tc.markdown} onClick={handleMarkdownClick} dangerouslySetInnerHTML={renderMarkdown(message.content)}/>}
         {!isUser && message.actionResult && <ActionResult result={message.actionResult}/>}
+        {!isUser && !message.error && (
+          <div style={tc.replyActions}>
+            <button style={tc.replyActionButton} disabled={ttsBusy} onClick={() => onAction && onAction('Explain your last answer more simply with a beginner-friendly analogy.', '')}>
+              <ExplainIcon size={12}/> Explain simpler
+            </button>
+            <button style={tc.replyActionButton} onClick={() => onAction && onAction('Show me a concrete example for your last answer.', 'give_example')}>
+              <ExampleIcon size={12}/> Give example
+            </button>
+            <button style={tc.replyActionButton} onClick={() => onAction && onAction('Quiz me on your last answer.', 'quiz_me')}>
+              <QuizIcon size={12}/> Quiz me
+            </button>
+            <button style={tc.replyActionButton} onClick={() => onShowSources && onShowSources(message)}>
+              <SourceIcon size={12}/> Show sources
+            </button>
+            <button style={tc.replyActionButton} disabled={muted || ttsBusy} onClick={() => onSpeak && onSpeak(message)}>
+              {playing ? <Icon.Pause size={12}/> : <Icon.Play size={12}/>} Speak
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
+const chatCodeObject = (code) => {
+  if (!code) return null;
+  if (typeof code === 'string') return { language: 'text', content: code };
+  return {
+    language: code.language || 'text',
+    content: code.content || code.text || code.code || '',
+  };
+};
+
+const TutorReplyCard = ({ message, renderMarkdown, onMarkdownClick }) => {
+  const Icon = window.Icon;
+  const [copiedCode, setCopiedCode] = React.useState(false);
+  const helper = window.NoesisTutorResponse;
+  const normalized = helper && helper.normalize ? helper.normalize(message.content) : { structured: false, text: message.content };
+  if (!normalized.structured) {
+    return <div className="md-rendered" style={tc.markdown} onClick={onMarkdownClick} dangerouslySetInnerHTML={renderMarkdown(message.content)}/>;
+  }
+  const code = chatCodeObject(normalized.code);
+  const visual = normalized.visual && typeof normalized.visual === 'object'
+    ? (normalized.visual.caption || normalized.visual.description || normalized.visual.type || '')
+    : (typeof normalized.visual === 'string' ? normalized.visual : '');
+  const copyCode = async () => {
+    if (!code || !code.content) return;
+    try {
+      await navigator.clipboard.writeText(code.content);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 1200);
+    } catch (_) {
+      setCopiedCode(false);
+    }
+  };
+  return (
+    <div style={tc.replyCard}>
+      {(normalized.title || normalized.type) && (
+        <div style={tc.replyTitle}>{normalized.title || String(normalized.type).replace(/_/g, ' ')}</div>
+      )}
+      {normalized.explanation && (
+        <section style={tc.replySection}>
+          <div style={tc.replySectionTitle}>Answer</div>
+          <div className="md-rendered" style={tc.markdown} onClick={onMarkdownClick} dangerouslySetInnerHTML={renderMarkdown(normalized.explanation)}/>
+        </section>
+      )}
+      {normalized.keyPoints && normalized.keyPoints.length > 0 && (
+        <section style={tc.replySection}>
+          <div style={tc.replySectionTitle}>Key points</div>
+          <div style={tc.keyPointGrid}>
+            {normalized.keyPoints.slice(0, 6).map((point, i) => (
+              <div key={`${point}-${i}`} style={tc.keyPoint}>
+                <span className="mono" style={tc.keyPointNumber}>{i + 1}</span>
+                <span>{point}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {normalized.example && (
+        <section style={{ ...tc.replySection, ...tc.exampleCard }}>
+          <div style={tc.replySectionTitle}>Example</div>
+          <div className="md-rendered" style={tc.markdown} onClick={onMarkdownClick} dangerouslySetInnerHTML={renderMarkdown(normalized.example)}/>
+        </section>
+      )}
+      {code && code.content && (
+        <section style={tc.codeCard}>
+          <div style={tc.replyCodeHeader}>
+            <span>{code.language || 'code'}</span>
+            <button style={tc.codeCopyButton} onClick={copyCode}>
+              {copiedCode ? <Icon.Check size={11}/> : <Icon.Copy size={11}/>}
+              {copiedCode ? 'Copied' : 'Copy code'}
+            </button>
+          </div>
+          <pre style={tc.replyCode}>{code.content}</pre>
+        </section>
+      )}
+      {visual && (
+        <section style={tc.visualCard}>
+          <div style={tc.replySectionTitle}>Visual</div>
+          <div>{visual}</div>
+        </section>
+      )}
+      {(normalized.hint || normalized.question) && (
+        <section style={tc.checkpointCard}>
+          {normalized.hint && <div><b>Hint:</b> {normalized.hint}</div>}
+          {normalized.question && <div><b>Check yourself:</b> {normalized.question}</div>}
+        </section>
+      )}
+    </div>
+  );
+};
+
 const ActionResult = ({ result }) => {
+  const [selected, setSelected] = React.useState(null);
   if (!result) return null;
   if (result.type === 'flashcards') {
     return (
@@ -684,6 +804,8 @@ const ActionResult = ({ result }) => {
   }
   if (result.type === 'quiz' && result.quiz) {
     const q = result.quiz;
+    const correctIdx = Number.isInteger(q.correct_idx) ? q.correct_idx : Number(q.correct_idx);
+    const hasSelection = selected != null;
     return (
       <div style={tc.actionResult}>
         <div style={tc.actionResultTitle}>Quick quiz</div>
@@ -691,19 +813,26 @@ const ActionResult = ({ result }) => {
         {Array.isArray(q.options) && q.options.length > 0 && (
           <div style={tc.quizOptions}>
             {q.options.map((option, i) => (
-              <div key={`${option}-${i}`} style={tc.quizOption}>
+              <button
+                key={`${option}-${i}`}
+                style={{
+                  ...tc.quizOption,
+                  ...(hasSelection && i === correctIdx ? tc.quizOptionCorrect : {}),
+                  ...(hasSelection && i === selected && i !== correctIdx ? tc.quizOptionWrong : {}),
+                }}
+                onClick={() => setSelected(i)}
+              >
                 <span className="mono">{String.fromCharCode(65 + i)}</span>
                 {option}
-              </div>
+              </button>
             ))}
           </div>
         )}
-        {(q.expectedAnswer || q.explanation) && (
-          <details style={tc.quizDetails}>
-            <summary>Show answer</summary>
+        {(hasSelection || !Array.isArray(q.options) || !q.options.length) && (q.expectedAnswer || q.explanation) && (
+          <div style={tc.quizDetails}>
             {q.expectedAnswer && <div>{q.expectedAnswer}</div>}
             {q.explanation && <div style={{ marginTop: 6, color: 'var(--fg-2)' }}>{q.explanation}</div>}
-          </details>
+          </div>
         )}
       </div>
     );
@@ -742,6 +871,7 @@ const TracePair = ({ label, value }) => (
 );
 
 function tutorSpeechText(markdown) {
+  if (window.NoesisTutorResponse) return window.NoesisTutorResponse.speechText(markdown);
   return String(markdown || '')
     .replace(/```[\s\S]*?```/g, ' code example omitted. ')
     .replace(/`([^`]+)`/g, '$1')
@@ -875,6 +1005,22 @@ const tc = {
   },
   messageIconButtonActive: { color: 'var(--accent)', borderColor: 'var(--accent-soft)', background: 'var(--accent-glow)' },
   markdown: { fontSize: 13.5, lineHeight: 1.65, color: 'inherit' },
+  replyCard: { display: 'grid', gap: 11 },
+  replyTitle: { fontSize: 15, color: 'var(--fg-0)', fontWeight: 700, lineHeight: 1.35 },
+  replySection: { padding: 12, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-0)' },
+  replySectionTitle: { fontSize: 10.5, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 7, fontWeight: 700 },
+  exampleCard: { background: 'color-mix(in srgb, var(--accent) 7%, var(--bg-0))', borderColor: 'var(--accent-soft)' },
+  keyPointGrid: { display: 'grid', gap: 7 },
+  keyPoint: { display: 'flex', gap: 9, alignItems: 'flex-start', color: 'var(--fg-1)', fontSize: 13, lineHeight: 1.5 },
+  keyPointNumber: { width: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 999, background: 'var(--accent-glow)', color: 'var(--accent)', flexShrink: 0, fontSize: 10 },
+  codeCard: { borderRadius: 8, border: '1px solid #1d4ed8', background: '#0f172a', overflow: 'hidden' },
+  replyCodeHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', color: '#bfdbfe', fontSize: 11.5, borderBottom: '1px solid rgba(191,219,254,0.18)' },
+  codeCopyButton: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 8px', borderRadius: 7, border: '1px solid rgba(191,219,254,0.25)', background: 'rgba(15,23,42,0.72)', color: '#dbeafe', fontSize: 11, cursor: 'pointer' },
+  replyCode: { margin: 0, padding: 14, maxHeight: 320, overflow: 'auto', color: '#dbeafe', fontFamily: 'var(--font-mono)', fontSize: 12.5, lineHeight: 1.6 },
+  visualCard: { padding: 12, borderRadius: 8, border: '1px dashed var(--accent-soft)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 13, lineHeight: 1.55 },
+  checkpointCard: { display: 'grid', gap: 8, padding: 12, borderRadius: 8, border: '1px solid var(--accent-soft)', background: 'var(--accent-glow)', color: 'var(--fg-1)', fontSize: 13, lineHeight: 1.55 },
+  replyActions: { display: 'flex', gap: 7, flexWrap: 'wrap', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--line)' },
+  replyActionButton: { display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 9px', borderRadius: 999, border: '1px solid var(--line)', background: 'var(--bg-0)', color: 'var(--fg-1)', fontSize: 11.5, cursor: 'pointer' },
   scrollFab: {
     position: 'absolute',
     right: 'clamp(18px, 4vw, 56px)',
@@ -910,7 +1056,9 @@ const tc = {
   actionResultTitle: { fontSize: 11, color: 'var(--accent)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 },
   actionResultText: { fontSize: 12.5, lineHeight: 1.5, color: 'var(--fg-1)' },
   quizOptions: { display: 'grid', gap: 6, marginTop: 9 },
-  quizOption: { display: 'flex', gap: 8, alignItems: 'flex-start', padding: '7px 8px', borderRadius: 7, background: 'var(--bg-1)', border: '1px solid var(--line)', fontSize: 12.5 },
+  quizOption: { display: 'flex', gap: 8, alignItems: 'flex-start', padding: '7px 8px', borderRadius: 7, background: 'var(--bg-1)', border: '1px solid var(--line)', color: 'var(--fg-1)', fontSize: 12.5, textAlign: 'left' },
+  quizOptionCorrect: { borderColor: 'var(--ok)', background: 'color-mix(in srgb, var(--ok) 9%, var(--bg-1))' },
+  quizOptionWrong: { borderColor: 'var(--err)', background: 'color-mix(in srgb, var(--err) 9%, var(--bg-1))' },
   quizDetails: { marginTop: 9, color: 'var(--fg-1)', fontSize: 12.5, lineHeight: 1.5 },
   composerWrap: { padding: '14px clamp(18px, 4vw, 56px) 22px', background: 'linear-gradient(180deg, transparent, var(--bg-0) 24%)' },
   composer: { display: 'flex', alignItems: 'flex-end', gap: 8, padding: 8, background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 'var(--r-md)' },

@@ -9,6 +9,7 @@ const prompts = require('../utils/prompts');
 const { extractJson, parseJsonSafe } = require('../utils/jsonSafe');
 const diagrams = require('./diagram.service');
 const { findTopicNodes } = require('../utils/visual-templates');
+const codeWindow = require('../utils/code-window');
 
 const SECTION_TYPES = [
   'hook',
@@ -98,8 +99,12 @@ const VideoSceneSchema = z.object({
     language: z.string().optional().default('text'),
     content: z.string().optional().default(''),
     lineRange: z.string().optional().default(''),
+    visibleStartLine: z.number().optional(),
+    visibleEndLine: z.number().optional(),
     highlightLines: z.array(z.number()).optional().default([]),
     explanation: z.string().optional().default(''),
+    narrationFocus: z.string().optional().default(''),
+    pointers: z.array(z.any()).optional().default([]),
   }).optional(),
   focusTarget: z.string().optional().default(''),
   pointerLabel: z.string().optional().default(''),
@@ -1321,6 +1326,20 @@ function codeFocusScenes(lesson, codeSection) {
     const label = lineRangeLabel(item.lineRange) || `Step ${i + 1}`;
     const title = codeSceneTitle(item.lineRange, item.text, i);
     const focus = semanticLabel(item.text) || label;
+    const normalizedFocus = codeWindow.normalizeCodeWindow({
+      language: code.language || 'text',
+      content: code.content,
+      lineRange: item.lineRange || (highlights[0] ? String(highlights[0]) : '1'),
+      highlightLines: highlights.length ? highlights : [1],
+      explanation: item.text,
+      narrationFocus: item.text,
+      pointers: [{
+        from: 'explanation_card',
+        to: highlights.length ? `code_line_${highlights[0]}` : 'highlighted_code_lines',
+        style: 'arrow',
+        label: focus,
+      }],
+    }, { maxVisibleLines: 12, contextBefore: 2 });
     return scene('code_walkthrough', title, [
       `${label}: ${item.text}`,
       `The reason this part matters is that it connects syntax to the rule behind ${lesson.topic}.`,
@@ -1333,13 +1352,7 @@ function codeFocusScenes(lesson, codeSection) {
       topic: lesson.topic,
       kind: 'code',
       visual: { type: 'code', nodes: ['Code', label, 'Reason', 'Result'], edges: [['Code', label], [label, 'Reason'], ['Reason', 'Result']] },
-      codeFocus: {
-        language: code.language || 'text',
-        content: code.content,
-        lineRange: item.lineRange || (highlights[0] ? String(highlights[0]) : '1'),
-        highlightLines: highlights.length ? highlights : [1],
-        explanation: item.text,
-      },
+      codeFocus: normalizedFocus,
       durationTargetSec: 30,
       minChars: 260,
       textMax: 88,

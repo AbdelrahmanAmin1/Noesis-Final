@@ -129,4 +129,25 @@ describe('AI tutor routes', () => {
     expect(cont.body.feedback).toMatch(/Nice|keep going/i);
     expect(cont.body.stay).toBe(false);
   });
+
+  it('does not rate-limit normal rapid guided tutor turns with the generic AI limiter', async () => {
+    const start = await request(app)
+      .post('/api/tutor/sessions')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ material_id: materialId, concept: '15', mode: 'example' });
+
+    expect(start.status).toBe(202);
+    await waitForReady(app, token, start.body.session_id);
+
+    for (let i = 0; i < 20; i += 1) {
+      const res = await request(app)
+        .post(`/api/tutor/sessions/${start.body.session_id}/continue`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ action: 'give_example', mode: 'example' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.feedback).toMatch(/Shape s = new Circle|```java|Circle\.draw/i);
+      expect(JSON.stringify(res.body)).not.toContain('rate_limited_ai');
+    }
+  });
 });

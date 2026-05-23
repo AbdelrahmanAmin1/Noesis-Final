@@ -72,6 +72,12 @@ const visualStatusLabel = (validation, warnings) => {
 const visualStatusStyle = (validation, warnings) => (
   validation && validation.passed === true && !warnings.length ? sr.statusGood : sr.statusNeedsReview
 );
+const isCriticalStoryboardWarning = (code = '') => /^domain:missing_required_visual:/.test(String(code || '')) ||
+  /storyboard:too_few_scenes|domain:oop_missing_class_object_visual|domain:data_structure_missing_operation_visual|domain:algorithm_missing_flow_or_complexity_visual/.test(String(code || ''));
+const targetVisualTypeFromWarning = (code = '') => {
+  const match = String(code || '').match(/missing_required_visual:([a-z0-9_]+)/i);
+  return match ? match[1] : '';
+};
 
 const GenerationSummary = ({ record, board, scenes, warnings }) => {
   const Icon = window.Icon;
@@ -151,8 +157,89 @@ const GenerationSummary = ({ record, board, scenes, warnings }) => {
   );
 };
 
+const ApprovalPanel = ({ quality, busy, onFix, onGlobalFix, onRecheck, onApproveAnyway }) => {
+  const Icon = window.Icon;
+  const RotateIcon = Icon.RotateCcw || Icon.ArrowLeft || Icon.Sparkle;
+  if (!quality || !quality.classified) return null;
+  const { critical, warnings, info } = quality.classified;
+  const details = quality.warningDetails || [];
+  const detailMap = {};
+  for (const d of details) detailMap[d.code] = d;
+  const sceneIdFromWarning = (code) => {
+    const match = code.match(/^([^:]+?):/);
+    return match && !/^(domain|topic|storyboard|grounding|enrichment)$/.test(match[1]) ? match[1] : null;
+  };
+  const renderWarningItem = (code, severity) => {
+    const detail = detailMap[code] || { label: code.replace(/_/g, ' ') };
+    const sceneId = detail.sceneId || sceneIdFromWarning(code);
+    const canFix = severity === 'critical' && /missing_required_visual|missing_concrete_visual_payload|generic_visual_template|visual_type_payload_mismatch/.test(code);
+    const targetVisualType = targetVisualTypeFromWarning(code);
+    return (
+      <div key={code} style={sr.approvalItem}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={sr.approvalCode}>{sceneId ? `Scene ${sceneId}` : 'Global'}</div>
+          <div style={sr.approvalLabel}>{detail.label}</div>
+          {detail.fix && <div style={sr.approvalFix}>{detail.fix}</div>}
+        </div>
+        {canFix && (
+          <button className="btn btn-ghost" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+            disabled={!!busy} onClick={() => sceneId
+              ? onFix(sceneId, 'fix_auto', targetVisualType)
+              : onGlobalFix({ warningCode: code, targetVisualType, action: 'fix_auto' })}>
+            <Icon.Sparkle size={11}/> {sceneId ? 'Fix' : 'Fix automatically'}
+          </button>
+        )}
+      </div>
+    );
+  };
+  return (
+    <section style={sr.approvalPanel}>
+      <div style={sr.approvalHead}>
+        <Icon.Target size={15} style={{ color: critical.length ? 'var(--err, #ef4444)' : 'var(--warn)' }}/>
+        <div style={{ flex: 1 }}>
+          <div style={sr.approvalTitle}>
+            {critical.length ? `${critical.length} critical issue${critical.length > 1 ? 's' : ''} must be fixed` : 'Non-critical warnings remain'}
+          </div>
+          <div style={sr.approvalSub}>
+            {critical.length ? 'Fix critical issues before approval.' : 'You can approve anyway or fix these warnings.'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost" disabled={!!busy} onClick={onRecheck}>
+            <RotateIcon size={11}/> {busy === 'recheck' ? 'Checking...' : 'Re-check'}
+          </button>
+          {!critical.length && (
+            <button className="btn btn-accent" disabled={!!busy} onClick={onApproveAnyway}>
+              <Icon.Check size={11}/> Approve anyway
+            </button>
+          )}
+        </div>
+      </div>
+      {critical.length > 0 && (
+        <div style={sr.approvalSection}>
+          <div style={{ ...sr.approvalSectionTitle, color: 'var(--err, #ef4444)' }}>Critical blockers</div>
+          {critical.map(c => renderWarningItem(c, 'critical'))}
+        </div>
+      )}
+      {warnings.length > 0 && (
+        <div style={sr.approvalSection}>
+          <div style={{ ...sr.approvalSectionTitle, color: 'var(--warn)' }}>Warnings</div>
+          {warnings.map(w => renderWarningItem(w, 'warning'))}
+        </div>
+      )}
+      {info.length > 0 && (
+        <div style={sr.approvalSection}>
+          <div style={{ ...sr.approvalSectionTitle, color: 'var(--fg-3)' }}>Info</div>
+          {info.map(i => renderWarningItem(i, 'info'))}
+        </div>
+      )}
+    </section>
+  );
+};
+
 const StoryboardReview = ({ onNav }) => {
   const Icon = window.Icon;
+  const RotateIcon = Icon.RotateCcw || Icon.ArrowLeft || Icon.Sparkle;
   const [storyboard, setStoryboard] = React.useState(null);
   const [busy, setBusy] = React.useState('');
   const [status, setStatus] = React.useState('');
@@ -182,16 +269,69 @@ const StoryboardReview = ({ onNav }) => {
     }
   };
 
-  const approve = async () => {
+  const [qualityResult, setQualityResult] = React.useState(null);
+
+  const approve = async (force) => {
     setBusy('approve');
+    setQualityResult(null);
     try {
-      const d = await window.NoesisAPI.videos.approveStoryboard(id);
+      const d = await window.NoesisAPI.videos.approveStoryboard(id, force ? { force: true } : undefined);
       setStoryboard(d.storyboard);
       setStatus('Storyboard approved. Ready to render.');
     } catch (e) {
-      const details = e.data && e.data.details && e.data.details.warnings;
-      const detailText = Array.isArray(details) && details.length ? ` ${details.slice(0, 3).join(' | ')}` : '';
-      setStatus('Approval failed: ' + (e.message || 'error') + detailText);
+      const details = e.data && e.data.details;
+      if (details && details.classified) {
+        setQualityResult(details);
+        setStatus('');
+      } else {
+        const warns = details && details.warnings;
+        const detailText = Array.isArray(warns) && warns.length ? ` ${warns.slice(0, 3).join(' | ')}` : '';
+        setStatus('Approval failed: ' + (e.message || 'error') + detailText);
+      }
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const recheck = async () => {
+    setBusy('recheck');
+    try {
+      const d = await window.NoesisAPI.videos.recheckStoryboard(id);
+      setQualityResult(d.quality);
+      await load();
+      setStatus('Quality check complete.');
+    } catch (e) {
+      setStatus('Recheck failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doFixScene = async (sceneId, fixType, targetVisualType = '') => {
+    setBusy('fix-' + sceneId);
+    try {
+      const d = await window.NoesisAPI.videos.fixScene(id, { sceneId, fixType, targetVisualType });
+      setStoryboard(d.storyboard);
+      setQualityResult(null);
+      setStatus('Scene fixed. Re-run checks or approve.');
+    } catch (e) {
+      setStatus('Fix failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doFixIssue = async (payload) => {
+    setBusy('fix-global');
+    try {
+      const d = await window.NoesisAPI.videos.fixStoryboardIssue(id, payload);
+      setStoryboard(d.storyboard);
+      setQualityResult(d.quality || null);
+      setStatus(d.fixedSceneId
+        ? `Generated missing visual in ${d.fixedSceneId}. Re-check before approval.`
+        : 'Storyboard issue fixed. Re-check before approval.');
+    } catch (e) {
+      setStatus('Automatic fix failed: ' + (e.message || 'error'));
     } finally {
       setBusy('');
     }
@@ -213,9 +353,18 @@ const StoryboardReview = ({ onNav }) => {
       setVideo({ id: r.video_id, file });
       setStatus('Video ready.');
     } catch (e) {
-      const details = e.data && e.data.details && e.data.details.warnings;
-      const detailText = Array.isArray(details) && details.length ? ` ${details.slice(0, 3).join(' | ')}` : '';
-      setStatus('Render failed: ' + (e.message || 'error') + detailText);
+      const details = e.data && e.data.details;
+      if (details && details.classified) {
+        setQualityResult(details);
+        const critical = details.classified.critical || [];
+        const warnings = details.warnings || [];
+        setStatus(critical.length
+          ? 'Critical blockers must be fixed before rendering MP4.'
+          : 'Render needs approval for the remaining warnings: ' + warnings.slice(0, 3).join(' | '));
+      } else {
+        setStatus('Render failed: ' + (e.message || 'error'));
+      }
+      try { await load(); } catch (_) {}
     } finally {
       setBusy('');
     }
@@ -232,6 +381,17 @@ const StoryboardReview = ({ onNav }) => {
   const scenes = storyboard.scenes || [];
   const storyboardQuality = storyboard.quality && storyboard.quality.storyboard || {};
   const warnings = storyboardQuality.warnings || [];
+  const activeQuality = qualityResult || storyboardQuality;
+  const activeCritical = activeQuality && activeQuality.classified && activeQuality.classified.critical
+    ? activeQuality.classified.critical
+    : warnings.filter(isCriticalStoryboardWarning);
+  const hasCriticalBlockers = activeCritical.length > 0;
+  const hasApprovalOverride = !!(storyboard.quality && storyboard.quality.approvalOverride);
+  const canRenderStoryboard = !hasCriticalBlockers && (
+    storyboard.status === 'approved' ||
+    storyboard.status === 'rendering' ||
+    (storyboard.approved_at && hasApprovalOverride)
+  );
   const visualSceneResults = ((storyboardQuality.visual && storyboardQuality.visual.scenes) || []).reduce((acc, item) => {
     if (item && item.sceneId) acc[item.sceneId] = item;
     return acc;
@@ -241,8 +401,9 @@ const StoryboardReview = ({ onNav }) => {
       <window.Topbar title="Storyboard Review" crumbs={['Videos', board.topic || storyboard.topic || 'Storyboard']}
         right={<>
           <button className="btn btn-ghost" disabled={!!busy} onClick={() => onNav && onNav('material')}><Icon.ArrowLeft size={12}/> Material</button>
-          <button className="btn btn-ghost" disabled={!!busy} onClick={approve}><Icon.Check size={12}/> {busy === 'approve' ? 'Approving...' : 'Approve'}</button>
-          <button className="btn btn-accent" disabled={!!busy || storyboard.status !== 'approved'} onClick={render}><Icon.Play size={12}/> {busy === 'render' ? 'Rendering...' : 'Render MP4'}</button>
+          <button className="btn btn-ghost" disabled={!!busy} onClick={recheck}><RotateIcon size={12}/> {busy === 'recheck' ? 'Checking...' : 'Re-check'}</button>
+          <button className="btn btn-ghost" disabled={!!busy || hasCriticalBlockers} onClick={() => approve(false)} title={hasCriticalBlockers ? 'Fix critical blockers before approval' : 'Approve storyboard'}><Icon.Check size={12}/> {busy === 'approve' ? 'Approving...' : 'Approve'}</button>
+          <button className="btn btn-accent" disabled={!!busy || !canRenderStoryboard} onClick={render} title={hasCriticalBlockers ? 'Fix critical blockers before rendering' : 'Render approved storyboard'}><Icon.Play size={12}/> {busy === 'render' ? 'Rendering...' : 'Render MP4'}</button>
         </>}
       />
       <main style={sr.page}>
@@ -260,12 +421,13 @@ const StoryboardReview = ({ onNav }) => {
         </section>
 
         {status && <div style={sr.notice}>{status}</div>}
+        {qualityResult && <ApprovalPanel quality={qualityResult} busy={busy} onFix={doFixScene} onGlobalFix={doFixIssue} onRecheck={recheck} onApproveAnyway={() => approve(true)}/>}
         <GenerationSummary record={storyboard} board={board} scenes={scenes} warnings={warnings}/>
 
         <div style={sr.grid}>
           {scenes.map((row, index) => {
             const scene = row.scene || row;
-            return <SceneCard key={scene.id || row.scene_id} index={index} scene={scene} visualResult={visualSceneResults[scene.id || row.scene_id]} busy={busy === scene.id} onPatch={patchScene}/>;
+            return <SceneCard key={scene.id || row.scene_id} index={index} scene={scene} visualResult={visualSceneResults[scene.id || row.scene_id]} busy={busy === scene.id || busy === ('fix-' + scene.id)} onPatch={patchScene} onFix={doFixScene}/>;
           })}
         </div>
         {video && (
@@ -279,8 +441,9 @@ const StoryboardReview = ({ onNav }) => {
   );
 };
 
-const SceneCard = ({ scene, index, visualResult, busy, onPatch }) => {
+const SceneCard = ({ scene, index, visualResult, busy, onPatch, onFix }) => {
   const Icon = window.Icon;
+  const TopicVisual = window.TopicVisual || UnsupportedStoryboardVisual;
   const [open, setOpen] = React.useState(false);
   const [showMeta, setShowMeta] = React.useState(false);
   const [narration, setNarration] = React.useState(scene.narration || '');
@@ -311,6 +474,11 @@ const SceneCard = ({ scene, index, visualResult, busy, onPatch }) => {
           <div style={sr.sceneMeta}>{cleanValue(scene.type, 'scene')} / {visualType}</div>
         </div>
         <span style={{ ...sr.statusPill, ...visualStatusStyle(validation, split.visual) }}>{visualStatusLabel(validation, split.visual)}</span>
+        {split.visual.length > 0 && onFix && (
+          <button className="btn btn-ghost" style={{ fontSize: 11 }} disabled={busy} onClick={() => onFix(scene.id, 'fix_auto')}>
+            <Icon.Sparkle size={10}/> Fix visual
+          </button>
+        )}
         <button className="btn btn-bare" onClick={() => setOpen(v => !v)}>{open ? 'Close' : 'Edit'}</button>
       </div>
       {keyIdea && <div style={sr.keyIdea}>{keyIdea}</div>}
@@ -351,7 +519,7 @@ const SceneCard = ({ scene, index, visualResult, busy, onPatch }) => {
           </div>
         )}
       </div>
-      <window.TopicVisual template={visualType} data={visualData} code={code} compact />
+      <TopicVisual template={visualType} data={visualData} code={code} compact />
       {code && code.content && (
         <pre style={sr.code}>{code.content}</pre>
       )}
@@ -421,6 +589,13 @@ const VisualList = ({ label, items }) => (
     <div style={sr.visualChips}>
       {items.length ? items.slice(0, 8).map((item, i) => <span key={item + i} style={sr.visualChip}>{truncate(item, 48)}</span>) : <span style={sr.muted}>None reported</span>}
     </div>
+  </div>
+);
+
+const UnsupportedStoryboardVisual = ({ template, data = {}, compact }) => (
+  <div style={{ ...sr.unsupportedVisual, minHeight: compact ? 120 : 180 }}>
+    <div style={sr.metaLabel}>Visual preview unavailable</div>
+    <div style={sr.metaValue}>{cleanValue(template || data.type, 'Unknown visual type')}</div>
   </div>
 );
 
@@ -497,6 +672,17 @@ const sr = {
   textarea: { minHeight: 130, resize: 'vertical', border: '1px solid var(--line)', borderRadius: 8, padding: 12, background: 'var(--bg-0)', color: 'var(--fg-0)', font: 'inherit', lineHeight: 1.55 },
   videoBox: { marginTop: 18, border: '1px solid var(--line)', background: 'var(--bg-1)', borderRadius: 8, padding: 16 },
   cardTitle: { fontSize: 13, color: 'var(--fg-1)', fontWeight: 600 },
+  unsupportedVisual: { border: '1px dashed var(--line)', background: 'var(--bg-2)', borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4 },
+  approvalPanel: { border: '1px solid var(--warn)', background: 'color-mix(in srgb, var(--warn) 5%, var(--bg-1))', borderRadius: 8, padding: 16, marginBottom: 16 },
+  approvalHead: { display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
+  approvalTitle: { fontSize: 15, fontWeight: 600, color: 'var(--fg-0)' },
+  approvalSub: { fontSize: 12.5, color: 'var(--fg-2)', marginTop: 2 },
+  approvalSection: { marginTop: 10, padding: '10px 0 0', borderTop: '1px solid var(--line)' },
+  approvalSectionTitle: { fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 8 },
+  approvalItem: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-0)', marginBottom: 6 },
+  approvalCode: { fontSize: 10, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em' },
+  approvalLabel: { fontSize: 12.5, color: 'var(--fg-1)', lineHeight: 1.4, marginTop: 2 },
+  approvalFix: { fontSize: 11, color: 'var(--fg-3)', marginTop: 2 },
 };
 
 window.StoryboardReview = StoryboardReview;

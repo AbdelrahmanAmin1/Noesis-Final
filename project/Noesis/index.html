@@ -48,22 +48,31 @@
 </div>
 
 <script>
-window.addEventListener('error', function (event) {
-  var root = document.getElementById('root');
-  if (!root) return;
-  root.innerHTML = '<div class="boot-screen"><div class="boot-card"><div class="boot-title">Noesis failed to start</div><pre class="boot-sub" style="white-space:pre-wrap">' +
-    String(event.message || 'Unknown error') + '\\n' +
-    String(event.filename || '') + ':' + String(event.lineno || '') + ':' + String(event.colno || '') +
-    '</pre></div></div>';
-});
-window.addEventListener('unhandledrejection', function (event) {
-  var root = document.getElementById('root');
-  if (!root) return;
-  var reason = event.reason && (event.reason.stack || event.reason.message) || event.reason || 'Unknown promise rejection';
-  root.innerHTML = '<div class="boot-screen"><div class="boot-card"><div class="boot-title">Noesis async startup failed</div><pre class="boot-sub" style="white-space:pre-wrap">' +
-    String(reason) +
-    '</pre></div></div>';
-});
+(function () {
+  function showBootError(title, detail) {
+    if (window.__NOESIS_REACT_OWNS_ROOT) {
+      console.error('[noesis runtime error]', detail);
+      return;
+    }
+    var root = document.getElementById('root');
+    if (!root) return;
+    root.innerHTML = '<div class="boot-screen"><div class="boot-card"><div class="boot-title">' + title + '</div><pre class="boot-sub" style="white-space:pre-wrap">' +
+      String(detail) +
+      '</pre></div></div>';
+  }
+
+  window.addEventListener('error', function (event) {
+    showBootError(
+      'Noesis failed to start',
+      String(event.message || 'Unknown error') + '\\n' +
+        String(event.filename || '') + ':' + String(event.lineno || '') + ':' + String(event.colno || '')
+    );
+  });
+  window.addEventListener('unhandledrejection', function (event) {
+    var reason = event.reason && (event.reason.stack || event.reason.message) || event.reason || 'Unknown promise rejection';
+    showBootError('Noesis async startup failed', reason);
+  });
+})();
 </script>
 
 <script src="vendor/react.development.js"></script>
@@ -71,6 +80,6 @@ window.addEventListener('unhandledrejection', function (event) {
 <script src="vendor/three.min.js"></script>
 <script src="vendor/marked.min.js"></script>
 <script src="vendor/purify.min.js"></script>
-<script src="dist/app.bundle.js"></script>
+<script src="dist/app.bundle.js?v=storyboard-runtime-fix-20260523"></script>
 </body>
 </html>

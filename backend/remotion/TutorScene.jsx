@@ -1,6 +1,9 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import visualRegistry from '../utils/visual-registry.js';
+import codeWindow from '../utils/code-window.js';
+
+const { normalizeCodeWindow } = codeWindow;
 
 const theme = {
   bg: '#080b12',
@@ -62,7 +65,9 @@ export const TutorScene = ({ scene = {}, slide = {} }) => {
               </div>
             ))}
           </div>
-          {scene.code && scene.code.content ? <CodePanel code={scene.code} frame={frame} /> : null}
+          {(scene.code && scene.code.content) || (slide.code_focus && slide.code_focus.content)
+            ? <CodePanel code={scene.code || slide.code_focus} frame={frame} />
+            : null}
         </aside>
       </main>
     </AbsoluteFill>
@@ -423,31 +428,42 @@ const BigOVisual = ({ frame, scene, slide }) => {
 const CodeWalkthroughVisual = ({ frame, scene, slide }) => {
   const code = scene.code || slide.code_focus || { content: scene.codeSnippet || slide.example_code || '' };
   const data = getVisualData(scene, slide);
-  const lines = String(code.content || scene.codeSnippet || slide.example_code || 'Code appears here')
-    .split('\n')
-    .slice(0, 12);
-  const highlight = new Set((code.highlightLines || []).map(Number));
-  const phaseLine = lines.length ? (Math.floor(frame / 38) % lines.length) + 1 : 1;
+  const normalized = normalizeCodeWindow({
+    ...code,
+    content: code.content || scene.codeSnippet || slide.example_code || 'Code appears here',
+  }, { maxVisibleLines: 10, contextBefore: 2 });
+  const lines = normalized.displayLines;
+  const highlight = new Set((normalized.highlightLines || []).map(Number));
+  const activeHighlights = normalized.highlightLines && normalized.highlightLines.length ? normalized.highlightLines : [normalized.visibleStartLine];
+  const phaseLine = activeHighlights[Math.floor(frame / 38) % activeHighlights.length] || normalized.visibleStartLine;
   const explanation = safeLabel(
     (code.walkthrough && code.walkthrough[0] && code.walkthrough[0].text) ||
     code.explanation ||
+    code.narrationFocus ||
     data.caption ||
     operationLabels(data, ['read highlighted line'])[0],
-    110
+    220
   );
   return (
     <div style={styles.largeCodePanel}>
-      <div style={styles.cardLabel}>Code walkthrough</div>
-      {lines.map((line, i) => {
-        const n = i + 1;
+      <div style={styles.codeHeaderRow}>
+        <div style={styles.cardLabel}>Code walkthrough</div>
+        <div style={styles.lineWindowLabel}>Showing lines {normalized.visibleStartLine}-{normalized.visibleEndLine}</div>
+      </div>
+      {lines.map((line) => {
+        const n = line.number;
         const active = highlight.has(n) || n === phaseLine;
         return (
           <div key={n} style={{ ...styles.largeCodeLine, background: active ? 'rgba(96,165,250,0.20)' : 'transparent', borderColor: active ? theme.accent : 'transparent' }}>
             <span style={styles.largeCodeNo}>{n}</span>
-            <span>{safeLabel(line, 92)}</span>
+            <span style={styles.largeCodeText}>{safeLabel(line.text, 96)}</span>
           </div>
         );
       })}
+      <div style={styles.codeFocusHint}>
+        <span style={styles.focusDot} />
+        {safeLabel(code.pointerLabel || code.narrationFocus || code.lineRange || 'highlighted code', 58)}
+      </div>
       <div style={styles.codeExplanation}>{explanation}</div>
     </div>
   );
@@ -524,19 +540,24 @@ const UnsupportedVisual = ({ resolution, scene, slide }) => (
 );
 
 const CodePanel = ({ code, frame }) => {
-  const lines = String(code.content || '').split('\n').slice(0, 9);
-  const highlight = new Set((code.highlightLines || []).map(Number));
-  const phaseLine = lines.length ? (Math.floor(frame / 45) % lines.length) + 1 : 1;
+  const normalized = normalizeCodeWindow(code || {}, { maxVisibleLines: 9, contextBefore: 2 });
+  const lines = normalized.displayLines;
+  const highlight = new Set((normalized.highlightLines || []).map(Number));
+  const activeHighlights = normalized.highlightLines && normalized.highlightLines.length ? normalized.highlightLines : [normalized.visibleStartLine];
+  const phaseLine = activeHighlights[Math.floor(frame / 45) % activeHighlights.length] || normalized.visibleStartLine;
   return (
     <div style={styles.codePanel}>
-      <div style={styles.cardLabel}>Line focus</div>
-      {lines.map((line, i) => {
-        const n = i + 1;
+      <div style={styles.codeHeaderRow}>
+        <div style={styles.cardLabel}>Line focus</div>
+        <div style={styles.lineWindowLabel}>{normalized.visibleStartLine}-{normalized.visibleEndLine}</div>
+      </div>
+      {lines.map((line) => {
+        const n = line.number;
         const active = highlight.has(n) || n === phaseLine;
         return (
           <div key={n} style={{ ...styles.codeLine, background: active ? 'rgba(96,165,250,0.18)' : 'transparent' }}>
             <span style={styles.codeNo}>{n}</span>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'pre' }}>{safeLabel(line, 58)}</span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'pre' }}>{safeLabel(line.text, 64)}</span>
           </div>
         );
       })}
@@ -745,24 +766,28 @@ const styles = {
   },
   header: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', position: 'relative', zIndex: 2 },
   eyebrow: { color: theme.accent, fontSize: 15, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 8 },
-  title: { margin: 0, fontSize: 44, lineHeight: 1.08, letterSpacing: 0, fontWeight: 850, maxWidth: 760, overflowWrap: 'break-word' },
+  title: { margin: 0, fontSize: 42, lineHeight: 1.08, letterSpacing: 0, fontWeight: 850, maxWidth: 720, overflowWrap: 'break-word' },
   sceneType: { padding: '10px 16px', border: `1px solid ${theme.line}`, borderRadius: 999, color: theme.muted, background: 'rgba(15,23,42,0.68)', fontSize: 18, textTransform: 'capitalize' },
-  main: { display: 'grid', gridTemplateColumns: '1fr 350px', gap: 28, marginTop: 32, position: 'relative', zIndex: 2 },
+  main: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 430px', gap: 24, marginTop: 30, position: 'relative', zIndex: 2 },
   stage: { height: 505, border: `1px solid ${theme.line}`, borderRadius: 18, background: 'rgba(15,23,42,0.88)', boxShadow: '0 24px 64px rgba(0,0,0,0.28)', padding: 16 },
   side: { display: 'flex', flexDirection: 'column', gap: 16 },
   goalCard: { border: `1px solid ${theme.line}`, borderRadius: 22, background: 'rgba(15,23,42,0.78)', padding: 18 },
   cardLabel: { color: theme.accent, fontSize: 13, fontWeight: 800, letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 10 },
-  goalText: { margin: 0, color: theme.text, fontSize: 20, lineHeight: 1.42, fontWeight: 650 },
+  goalText: { margin: 0, color: theme.text, fontSize: 18, lineHeight: 1.42, fontWeight: 650 },
   focusList: { display: 'flex', flexWrap: 'wrap', gap: 10 },
-  focusChip: { display: 'inline-flex', alignItems: 'center', gap: 8, border: `1px solid ${theme.line}`, borderRadius: 999, background: 'rgba(15,23,42,0.82)', padding: '9px 13px', color: theme.text, fontSize: 16, fontWeight: 760, maxWidth: 330, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  focusChip: { display: 'inline-flex', alignItems: 'center', gap: 8, border: `1px solid ${theme.line}`, borderRadius: 999, background: 'rgba(15,23,42,0.82)', padding: '9px 13px', color: theme.text, fontSize: 15, fontWeight: 760, maxWidth: 404, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   focusDot: { width: 8, height: 8, borderRadius: 99, background: theme.accent, boxShadow: `0 0 18px ${theme.accent}` },
-  codePanel: { border: `1px solid ${theme.line}`, borderRadius: 22, background: '#020617', padding: 14, maxHeight: 250, overflow: 'hidden' },
-  codeLine: { display: 'grid', gridTemplateColumns: '28px 1fr', gap: 8, color: '#dbeafe', fontFamily: 'JetBrains Mono, Consolas, monospace', fontSize: 14, lineHeight: 1.5, padding: '3px 6px', borderRadius: 8 },
+  codePanel: { border: `1px solid ${theme.line}`, borderRadius: 22, background: '#020617', padding: 14, maxHeight: 300, overflow: 'hidden' },
+  codeHeaderRow: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10 },
+  lineWindowLabel: { color: theme.muted, fontSize: 13, fontWeight: 800, marginBottom: 10 },
+  codeLine: { display: 'grid', gridTemplateColumns: '32px 1fr', gap: 8, color: '#dbeafe', fontFamily: 'JetBrains Mono, Consolas, monospace', fontSize: 14, lineHeight: 1.5, padding: '3px 6px', borderRadius: 8 },
   codeNo: { color: theme.muted, textAlign: 'right' },
-  largeCodePanel: { width: '100%', height: '100%', boxSizing: 'border-box', border: `1px solid ${theme.line}`, borderRadius: 18, background: '#020617', padding: 22, overflow: 'hidden' },
-  largeCodeLine: { display: 'grid', gridTemplateColumns: '42px 1fr', gap: 12, color: '#dbeafe', fontFamily: 'JetBrains Mono, Consolas, monospace', fontSize: 22, lineHeight: 1.55, padding: '5px 10px', borderRadius: 10, border: '1px solid transparent' },
+  largeCodePanel: { width: '100%', height: '100%', boxSizing: 'border-box', border: `1px solid ${theme.line}`, borderRadius: 18, background: '#020617', padding: 22, overflow: 'hidden', position: 'relative' },
+  largeCodeLine: { display: 'grid', gridTemplateColumns: '48px 1fr', gap: 12, color: '#dbeafe', fontFamily: 'JetBrains Mono, Consolas, monospace', fontSize: 18, lineHeight: 1.42, padding: '4px 10px', borderRadius: 10, border: '1px solid transparent' },
   largeCodeNo: { color: theme.muted, textAlign: 'right' },
-  codeExplanation: { marginTop: 16, borderTop: `1px solid ${theme.line}`, paddingTop: 14, color: theme.text, fontSize: 20, lineHeight: 1.35, fontWeight: 750 },
+  largeCodeText: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'pre' },
+  codeFocusHint: { position: 'absolute', right: 24, bottom: 118, display: 'inline-flex', alignItems: 'center', gap: 8, maxWidth: 310, border: `1px solid ${theme.accent}`, borderRadius: 999, background: 'rgba(15,23,42,0.94)', color: theme.text, fontSize: 14, lineHeight: 1.25, fontWeight: 800, padding: '8px 12px', boxShadow: `0 0 24px rgba(96,165,250,0.28)` },
+  codeExplanation: { position: 'absolute', left: 22, right: 22, bottom: 22, minHeight: 74, borderTop: `1px solid ${theme.line}`, paddingTop: 12, color: theme.text, fontSize: 18, lineHeight: 1.32, fontWeight: 750, background: '#020617' },
   unsupported: { height: '100%', boxSizing: 'border-box', border: `2px solid ${theme.red}`, borderRadius: 18, background: 'rgba(63,23,32,0.30)', padding: 32, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
   unsupportedType: { color: theme.red, fontSize: 32, lineHeight: 1.1, fontWeight: 850, marginBottom: 14 },
   unsupportedText: { color: theme.text, fontSize: 22, lineHeight: 1.45, margin: 0, maxWidth: 660 },

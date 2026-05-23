@@ -62,8 +62,13 @@ router.patch('/storyboard/:id/scene/:sceneId', requireAuth, (req, res, next) => 
 
 router.post('/storyboard/:id/regenerate-scene', requireAuth, async (req, res, next) => {
   try {
-    const { scene_id, instructions } = req.body || {};
+    const { scene_id, instructions, fixType, targetVisualType } = req.body || {};
     if (!scene_id) throw new HttpError(400, 'missing_scene_id');
+    if (fixType) {
+      const out = storyboardSvc.fixScene(req.user.id, parseInt(req.params.id, 10), scene_id, fixType, { targetVisualType });
+      if (!out) throw new HttpError(404, 'storyboard_not_found');
+      return res.json({ storyboard: out });
+    }
     const patch = instructions
       ? { narration: String(instructions).slice(0, 1200) }
       : { teachingGoal: 'Explain this scene with a concrete visual and one learner action.' };
@@ -73,9 +78,37 @@ router.post('/storyboard/:id/regenerate-scene', requireAuth, async (req, res, ne
   } catch (e) { next(e); }
 });
 
+router.post('/storyboard/:id/fix-scene', requireAuth, (req, res, next) => {
+  try {
+    const { sceneId, fixType, targetVisualType } = req.body || {};
+    if (!sceneId) throw new HttpError(400, 'missing_scene_id');
+    if (!fixType) throw new HttpError(400, 'missing_fix_type');
+    const out = storyboardSvc.fixScene(req.user.id, parseInt(req.params.id, 10), sceneId, fixType, { targetVisualType });
+    if (!out) throw new HttpError(404, 'storyboard_not_found');
+    res.json({ storyboard: out });
+  } catch (e) { next(e); }
+});
+
+router.post('/storyboard/:id/fix', requireAuth, (req, res, next) => {
+  try {
+    const out = storyboardSvc.fixStoryboardIssue(req.user.id, parseInt(req.params.id, 10), req.body || {});
+    if (!out) throw new HttpError(404, 'storyboard_not_found');
+    res.json(out);
+  } catch (e) { next(e); }
+});
+
+router.post('/storyboard/:id/recheck', requireAuth, (req, res, next) => {
+  try {
+    const result = storyboardSvc.recheckStoryboard(req.user.id, parseInt(req.params.id, 10));
+    if (!result) throw new HttpError(404, 'storyboard_not_found');
+    res.json({ quality: result });
+  } catch (e) { next(e); }
+});
+
 router.post('/storyboard/:id/approve', requireAuth, (req, res, next) => {
   try {
-    const out = storyboardSvc.approveStoryboard(req.user.id, parseInt(req.params.id, 10));
+    const { force } = req.body || {};
+    const out = storyboardSvc.approveStoryboard(req.user.id, parseInt(req.params.id, 10), { force: !!force });
     if (!out) throw new HttpError(404, 'storyboard_not_found');
     res.json({ storyboard: out });
   } catch (e) { next(e); }

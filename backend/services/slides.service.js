@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const env = require('../config/env');
+const codeWindow = require('../utils/code-window');
 
 const W = 1280;
 const H = 720;
@@ -417,24 +418,19 @@ function parseHighlightLines(focus) {
 
 function drawCode(ctx, slide, bullets, region) {
   const focus = slide.code_focus || slide.codeFocus || null;
-  const rawLines = String(slide.example_code || (focus && focus.content) || bullets.join('\n'))
-    .split(/\r?\n/);
-  const codeLines = rawLines.map((line, i) => ({ number: i + 1, text: line.replace(/\t/g, '  ') })).filter(line => line.text.trim());
   const r = inset(region, 42);
   fillRoundRect(ctx, r.x, r.y, r.w, r.h, 14, '#111827', '#38bdf8', 2);
   const content = inset(r, 24);
-  const explanationH = focus && focus.explanation ? 56 : 0;
+  const explanationH = focus && focus.explanation ? Math.min(136, Math.max(94, Math.floor(content.h * 0.24))) : 0;
   const codeArea = { x: content.x, y: content.y, w: content.w, h: content.h - explanationH };
-  const highlights = parseHighlightLines(focus);
   const maxLines = Math.max(5, Math.floor(codeArea.h / 28));
-  let visible = codeLines;
-  if (highlights.length && codeLines.length > maxLines) {
-    const first = Math.max(1, Math.min(...highlights) - 2);
-    const startIdx = Math.max(0, Math.min(first - 1, codeLines.length - maxLines));
-    visible = codeLines.slice(startIdx, startIdx + maxLines);
-  } else {
-    visible = codeLines.slice(0, maxLines);
-  }
+  const normalized = codeWindow.normalizeCodeWindow({
+    ...(focus || {}),
+    content: (focus && focus.content) || slide.example_code || bullets.join('\n'),
+    highlightLines: focus && focus.highlightLines || parseHighlightLines(focus),
+  }, { maxVisibleLines: maxLines, contextBefore: 2 });
+  const visible = normalized.displayLines;
+  const highlights = normalized.highlightLines || [];
   let fontSize = 19;
   for (; fontSize >= 15; fontSize--) {
     setFont(ctx, fontSize, '500', 'Consolas, monospace');
@@ -455,10 +451,10 @@ function drawCode(ctx, slide, bullets, region) {
   if (focus && focus.explanation) {
     drawTextBox(ctx, focus.explanation, { x: content.x, y: content.y + content.h - explanationH + 6, w: content.w, h: explanationH - 8 }, {
       color: '#dbeafe',
-      startPx: 18,
-      minPx: 13,
+      startPx: 19,
+      minPx: 12,
       weight: '600',
-      maxLines: 2,
+      maxLines: 5,
     });
   }
 }
@@ -938,8 +934,13 @@ function drawAnimationOverlay(ctx, slide, layout, visual, progress = 1) {
   if (type === 'code') {
     const r = layout.visual;
     const focus = slide.code_focus || slide.codeFocus || {};
-    const line = Array.isArray(focus.highlightLines) && focus.highlightLines.length ? Math.min(...focus.highlightLines) : 1;
-    const y = r.y + 118 + Math.min(7, Math.max(0, line - 1)) * 31;
+    const normalized = codeWindow.normalizeCodeWindow({
+      ...focus,
+      content: focus.content || slide.example_code || '',
+    }, { maxVisibleLines: 12, contextBefore: 2 });
+    const line = normalized.highlightLines.length ? Math.min(...normalized.highlightLines) : normalized.visibleStartLine;
+    const visibleOffset = Math.max(0, Math.min(11, line - normalized.visibleStartLine));
+    const y = r.y + 76 + visibleOffset * 31;
     drawPointer(ctx, { x: r.x + r.w - 116, y: r.y + 76 }, { x: r.x + 188, y }, slide.pointerLabel || 'active line', phase);
     return drawFocusRing(ctx, { x: r.x + 132, y: y - 14, w: r.w - 260, h: 36 }, '#38bdf8', phase);
   }

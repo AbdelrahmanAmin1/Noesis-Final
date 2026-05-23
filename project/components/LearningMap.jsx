@@ -75,74 +75,112 @@ function collectVisible(node, expandedSet, depth, list) {
 
 function layoutTree(root, expandedSet, cfg) {
   if (!root) return { positions: new Map(), edges: [], bounds: { w: 0, h: 0 } };
-  var nw = cfg.nodeWidth, nh = cfg.nodeHeight, lg = cfg.levelGap, sg = cfg.siblingGap;
-  var leafNw = Math.round(nw * 0.82);
+  var canvasW = cfg.canvasWidth || 300;
+  var nh = cfg.nodeHeight;
+  var lg = cfg.levelGap;
+  var topPad = cfg.topPad || 28;
+  var rowGap = cfg.rowGap || 12;
+  var childRowGap = cfg.childRowGap || rowGap;
+  var leftPad = cfg.leftPad || 14;
+  var laneGap = cfg.laneGap || 10;
+  var branchW = cfg.branchWidth || Math.max(118, Math.floor(canvasW * 0.32));
+  var childW = cfg.childWidth || Math.max(104, Math.floor(canvasW * 0.22));
   var positions = new Map();
   var edges = [];
+  var maxY = 0;
 
-  function widthOf(node, depth) {
-    if (depth >= 2) return leafNw;
-    var ch = node.children || [];
-    var visibleCh = (depth === 0 || expandedSet[node.id]) ? ch : [];
-    if (!visibleCh.length) return nw;
-    var total = 0;
-    visibleCh.forEach(function(c) { total += widthOf(c, depth + 1) + sg; });
-    return Math.max(nw, total - sg);
+  function nodeId(node) {
+    return node.id || normalizeMapId(node.label);
   }
 
-  function place(node, depth, cx, topY) {
-    var w = depth >= 2 ? leafNw : nw;
-    var h = depth === 0 ? nh + 8 : (depth >= 2 ? nh - 8 : nh);
-    var x = cx - w / 2;
-    var y = topY;
-    positions.set(node.id, { x: x, y: y, w: w, h: h, cx: cx, depth: depth, node: node });
-
-    var ch = node.children || [];
-    var visibleCh = (depth === 0 || expandedSet[node.id]) ? ch : [];
-    if (!visibleCh.length) return;
-
-    var childTop = y + h + lg;
-    var totalW = 0;
-    var childWidths = visibleCh.map(function(c) { var cw = widthOf(c, depth + 1); totalW += cw; return cw; });
-    totalW += (visibleCh.length - 1) * sg;
-    var startX = cx - totalW / 2;
-    var runX = startX;
-
-    visibleCh.forEach(function(c, i) {
-      var cw = childWidths[i];
-      var childCx = runX + cw / 2;
-      place(c, depth + 1, childCx, childTop);
-      edges.push({ from: node.id, to: c.id });
-      runX += cw + sg;
-    });
+  function nodeHeight(depth) {
+    return depth === 0 ? nh + 10 : (depth >= 2 ? Math.max(34, nh - 6) : nh);
   }
 
-  var totalW = widthOf(root, 0);
-  var startCx = totalW / 2 + 40;
-  place(root, 0, startCx, 30);
+  function visibleChildren(node, depth) {
+    if (depth === 0) return node.children || [];
+    return expandedSet[nodeId(node)] ? (node.children || []) : [];
+  }
 
-  var minX = Infinity, maxX = -Infinity, maxY = -Infinity;
-  positions.forEach(function(p) {
-    if (p.x < minX) minX = p.x;
-    if (p.x + p.w > maxX) maxX = p.x + p.w;
-    if (p.y + p.h > maxY) maxY = p.y + p.h;
-  });
-  var pad = 30;
+  function collectLaneItems(node, depth, parentId, out) {
+    var children = visibleChildren(node, depth);
+    for (var i = 0; i < children.length; i++) {
+      var child = children[i];
+      var childId = nodeId(child);
+      out.push({ node: child, id: childId, depth: depth + 1, parentId: parentId });
+      collectLaneItems(child, depth + 1, childId, out);
+    }
+    return out;
+  }
+
+  function setPosition(node, depth, x, y, w, h, parentId) {
+    var id = nodeId(node);
+    positions.set(id, { x: x, y: y, w: w, h: h, cx: x + w / 2, depth: depth, node: node });
+    if (parentId) edges.push({ from: parentId, to: id });
+    maxY = Math.max(maxY, y + h);
+    return id;
+  }
+
+  function placeBranchRow(branch, y, rootId) {
+    var branchH = nodeHeight(1);
+    var branchId = setPosition(branch, 1, leftPad, y, branchW, branchH, rootId);
+    var lane = collectLaneItems(branch, 1, branchId, []);
+    var laneStartX = leftPad + branchW + laneGap;
+    var available = canvasW - laneStartX - leftPad;
+    var childH = nodeHeight(2);
+    if (available < childW) {
+      laneStartX = leftPad + 18;
+      available = canvasW - laneStartX - leftPad;
+      y += branchH + childRowGap;
+    }
+    var perRow = Math.max(1, Math.floor((available + laneGap) / (childW + laneGap)));
+    for (var i = 0; i < lane.length; i++) {
+      var item = lane[i];
+      var col = i % perRow;
+      var row = Math.floor(i / perRow);
+      var x = laneStartX + col * (childW + laneGap) + Math.max(0, item.depth - 2) * 8;
+      var childWidth = Math.min(childW, Math.max(82, canvasW - x - leftPad));
+      var childY = y + row * (childH + childRowGap);
+      setPosition(item.node, item.depth, x, childY, childWidth, childH, item.parentId);
+    }
+    var childRows = lane.length ? Math.ceil(lane.length / perRow) : 0;
+    var rowH = Math.max(branchH, childRows ? childRows * childH + (childRows - 1) * childRowGap : 0);
+    return y + rowH + rowGap;
+  }
+
+  var rootY = topPad;
+  var rootH = nodeHeight(0);
+  var rootId = setPosition(root, 0, leftPad, rootY, Math.max(100, canvasW - leftPad * 2), rootH, null);
+  var cursorY = rootY + rootH + lg;
+  var branches = visibleChildren(root, 0);
+  for (var i = 0; i < branches.length; i++) {
+    cursorY = placeBranchRow(branches[i], cursorY, rootId);
+  }
+
+  var pad = cfg.pad || 28;
   return {
     positions: positions,
     edges: edges,
-    bounds: { w: maxX - minX + pad * 2, h: maxY + pad, ox: minX - pad },
+    bounds: { w: canvasW, h: Math.max(maxY + pad, cursorY + pad), ox: 0 },
   };
 }
 
 function edgePath(pPos, cPos) {
-  var x1 = pPos.cx, y1 = pPos.y + pPos.h;
-  var x2 = cPos.cx, y2 = cPos.y;
-  var gap = Math.max(1, y2 - y1);
-  var tangent = Math.max(28, Math.min(96, gap * 0.58));
-  var c1y = y1 + tangent;
-  var c2y = y2 - tangent;
-  return 'M ' + x1 + ' ' + y1 + ' C ' + x1 + ' ' + c1y + ', ' + x2 + ' ' + c2y + ', ' + x2 + ' ' + y2;
+  var sameRow = Math.abs((pPos.y + pPos.h / 2) - (cPos.y + cPos.h / 2)) < Math.max(pPos.h, cPos.h) * 0.65;
+  if (sameRow && cPos.x > pPos.x) {
+    var startX = pPos.x + pPos.w;
+    var startY = pPos.y + pPos.h / 2;
+    var endX = cPos.x;
+    var endY = cPos.y + cPos.h / 2;
+    var midX = startX + Math.max(10, (endX - startX) * 0.48);
+    return 'M ' + startX + ' ' + startY + ' H ' + midX + ' V ' + endY + ' H ' + endX;
+  }
+  var sx = pPos.x + 12;
+  var sy = pPos.y + pPos.h;
+  var tx = cPos.x + 12;
+  var ty = cPos.y;
+  var midY = sy + Math.max(4, (ty - sy) * 0.45);
+  return 'M ' + sx + ' ' + sy + ' V ' + midY + ' H ' + tx + ' V ' + ty;
 }
 
 function isRecommendedEdge(fromId, toId, recSet) {
@@ -283,10 +321,10 @@ const LearningMap = ({ map, onNode, compact = false, highlightNode }) => {
   }, [highlightNode, tree]);
 
   var cfg = compact
-    ? { nodeWidth: 108, nodeHeight: 34, levelGap: 42, siblingGap: 10 }
-    : { nodeWidth: 160, nodeHeight: 44, levelGap: 70, siblingGap: 18 };
+    ? { nodeHeight: 36, levelGap: 18, rowGap: 12, childRowGap: 7, laneGap: 8, branchWidth: 120, childWidth: 104, leftPad: 8, topPad: 18, canvasWidth: 300, pad: 14 }
+    : { nodeHeight: 46, levelGap: 30, rowGap: 18, childRowGap: 10, laneGap: 12, branchWidth: 190, childWidth: 150, leftPad: 20, topPad: 28, canvasWidth: 700, pad: 28 };
 
-  var effectiveExpanded = compact ? {} : expanded;
+  var effectiveExpanded = expanded;
   var layout = React.useMemo(function() {
     return layoutTree(tree, effectiveExpanded, cfg);
   }, [tree, effectiveExpanded, compact]);
@@ -320,13 +358,10 @@ const LearningMap = ({ map, onNode, compact = false, highlightNode }) => {
   var pos = layout.positions;
   var edgeList = layout.edges;
   var bounds = layout.bounds;
-  var vbX = bounds.ox || 0;
-  var nodeOffsetX = -vbX;
-  var vbW = Math.max(bounds.w, compact ? 420 : 720);
-  var vbH = Math.max(bounds.h, compact ? 170 : 320);
-  var canvasW = Math.ceil(vbW);
-  var canvasContentH = Math.ceil(vbH);
-  var canvasViewportH = compact ? Math.min(230, canvasContentH) : Math.max(340, canvasContentH);
+  var nodeOffsetX = 0;
+  var canvasW = Math.ceil(bounds.w);
+  var canvasContentH = Math.ceil(Math.max(bounds.h, compact ? 170 : 320));
+  var canvasViewportH = compact ? Math.min(300, canvasContentH) : Math.max(360, Math.min(canvasContentH, 760));
   var svgViewBox = '0 0 ' + canvasW + ' ' + canvasContentH;
 
   var highlightId = highlightNode
@@ -342,9 +377,9 @@ const LearningMap = ({ map, onNode, compact = false, highlightNode }) => {
         </div>
         <div style={{ ...lm.startBadge, ...(compact ? lm.compactStartBadge : {}) }}>Start here: <b>{start}</b></div>
       </div>
-      {!compact && <div style={lm.path}>
-        {recPath.slice(0, 7).map(function(p, i) { return <span key={p + i} style={lm.pathChip}>{i + 1}. {p}</span>; })}
-      </div>}
+      <div style={{ ...lm.path, ...(compact ? lm.compactPath : {}) }}>
+        {recPath.slice(0, compact ? 4 : 7).map(function(p, i) { return <span key={p + i} style={{ ...lm.pathChip, ...(compact ? lm.compactPathChip : {}) }}>{i + 1}. {p}</span>; })}
+      </div>
       <div style={{ ...lm.canvas, ...(compact ? lm.compactCanvas : {}), height: canvasViewportH }}>
         <div style={{ ...lm.canvasInner, width: canvasW, height: canvasContentH }}>
           <svg viewBox={svgViewBox} preserveAspectRatio="xMidYMin meet"
@@ -383,7 +418,7 @@ const LearningMap = ({ map, onNode, compact = false, highlightNode }) => {
             var depth = p.depth;
             var color = nodeColor(n);
             var hasCh = (n.children || []).length > 0;
-            var isExp = effectiveExpanded[n.id];
+            var isExp = effectiveExpanded[nodeId];
             var isHighlighted = highlightId && highlightId === nodeId;
             var recIdx = recSet[nodeId];
             var isPathNode = !!recIdx;
@@ -432,8 +467,8 @@ const LearningMap = ({ map, onNode, compact = false, highlightNode }) => {
                     <span style={{ ...lm.dot, background: color }}/>
                     <span style={{ ...lm.branchTitle, fontSize: compact ? 11.5 : 13 }}>{n.label}</span>
                     {recIdx && <span style={lm.recBadge}>{recIdx}</span>}
-                    {!compact && hasCh && <span
-                      onClick={function(e) { toggleExpand(n.id, e); }}
+                    {hasCh && <span
+                      onClick={function(e) { toggleExpand(nodeId, e); }}
                       style={lm.chevron}
                       title={isExp ? 'Collapse branch' : 'Expand branch'}
                       aria-label={isExp ? 'Collapse branch' : 'Expand branch'}
@@ -662,7 +697,7 @@ const tv = {
 };
 
 const lm = {
-  shell: { border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)', padding: 18, overflow: 'hidden' },
+  shell: { border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)', padding: 18, overflow: 'visible' },
   compactShell: { padding: 12 },
   head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' },
   compactHead: { gap: 8 },
@@ -673,9 +708,11 @@ const lm = {
   compactStartBadge: { fontSize: 10.5, padding: '5px 8px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' },
   path: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 },
   pathChip: { fontSize: 11, color: 'var(--fg-1)', border: '1px solid var(--line)', borderRadius: 999, padding: '4px 8px', background: 'var(--bg-2)' },
-  canvas: { position: 'relative', marginTop: 10, overflow: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' },
+  compactPath: { gap: 4, marginTop: 8 },
+  compactPathChip: { fontSize: 10.5, padding: '3px 6px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  canvas: { position: 'relative', marginTop: 10, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' },
   compactCanvas: { marginTop: 8, borderTop: '1px solid var(--line-soft)', paddingTop: 6 },
-  canvasInner: { position: 'relative', minWidth: 360, minHeight: 170, margin: '0 auto' },
+  canvasInner: { position: 'relative', minWidth: 0, minHeight: 170, margin: '0 auto', maxWidth: 'none' },
   edgeSvg: { position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', pointerEvents: 'none', overflow: 'visible' },
   nodeLayer: { position: 'absolute', inset: 0, pointerEvents: 'none' },
   nodeWrap: { transition: 'left 220ms ease, top 220ms ease, opacity 180ms ease', willChange: 'left, top' },
@@ -731,7 +768,7 @@ const lm = {
   },
   leafTitle: {
     fontSize: 11.5, color: 'var(--fg-1)', fontWeight: 600, lineHeight: 1.2, minWidth: 0,
-    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+    overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
   },
 };
 
@@ -740,5 +777,6 @@ window.NoesisVisualRegistry = {
   supportedVisualTypes: () => Object.keys(TOPIC_VISUALS),
   isSupported: (value, context = '') => !!resolveTopicVisual(value, context),
 };
+window.NoesisLearningMapInternals = { layoutTree, edgePath, normalizeMapId };
 window.TopicVisual = TopicVisual;
 window.LearningMap = LearningMap;

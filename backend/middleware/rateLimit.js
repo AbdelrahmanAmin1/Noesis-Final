@@ -14,7 +14,21 @@ const aiLimiter = rateLimit({
   max: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'rate_limited_ai' },
+  message: {
+    error: 'rate_limited_ai',
+    message: 'Too many AI requests in a short time. Please wait a moment and try again.',
+  },
+});
+
+const tutorTurnLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Math.max(20, parseInt(process.env.TUTOR_TURN_RATE_LIMIT_PER_MIN || '90', 10) || 90),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    error: 'rate_limited_tutor_turn',
+    message: 'The tutor is catching up. Please wait a few seconds and try again.',
+  },
 });
 
 const videoLimiter = rateLimit({
@@ -49,4 +63,4 @@ const ttsLimiter = rateLimit({
   message: { error: 'rate_limited_tts' },
 });
 
-module.exports = { globalLimiter, aiLimiter, videoLimiter, authLimiter, uploadLimiter, ttsLimiter };
+module.exports = { globalLimiter, aiLimiter, tutorTurnLimiter, videoLimiter, authLimiter, uploadLimiter, ttsLimiter };

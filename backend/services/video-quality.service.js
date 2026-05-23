@@ -1,5 +1,7 @@
 'use strict';
 
+const codeWindow = require('../utils/code-window');
+
 const REQUIRED_SLIDE_TYPES = ['title', 'objectives', 'concept', 'analogy', 'diagram', 'mistakes', 'recap', 'quiz'];
 const PLACEHOLDER_RE = /(this is a document|definition goes here|example here|lorem ipsum|topic explanation|placeholder|todo\b|trace an example|define the idea|apply (?:the )?main rule|code sketch|avoid mistakes|useconcept|name the parts|follow one operation|identify its rules)/i;
 const GENERIC_ONLY_NODES = new Set(['definition', 'rule', 'example', 'boundary', 'visual model', 'mistakes', 'concept', 'start', 'practice']);
@@ -118,6 +120,37 @@ function likelyDataStructureTopic(concept, allText, visualTypes) {
   return signals.size >= 2;
 }
 
+function codeFocusDiagnostics(slide) {
+  const focus = slide && (slide.code_focus || slide.codeFocus);
+  if (!focus) {
+    return { basic: false, visible: false, titleMatch: false, explanationFits: false, pointerTargets: false };
+  }
+  const normalized = codeWindow.normalizeCodeWindow({
+    ...focus,
+    content: focus.content || slide.example_code || '',
+  }, { maxVisibleLines: 12, contextBefore: 2 });
+  const visible = new Set();
+  for (let n = normalized.visibleStartLine; n <= normalized.visibleEndLine; n += 1) visible.add(n);
+  const titleLines = codeWindow.parseLineRange(slide && slide.title);
+  const pointers = Array.isArray(focus.pointers) ? focus.pointers : [];
+  const explicitTargetsOk = pointers.every(pointer => {
+    const target = String(pointer && pointer.to || '');
+    if (!target || target === 'highlighted_code_lines') return normalized.highlightLines.length > 0;
+    const match = target.match(/code_line_(\d+)/i);
+    return !match || visible.has(Number(match[1]));
+  });
+  return {
+    basic: !!(String(normalized.content || '').trim() && String(normalized.lineRange || '').trim() && normalized.highlightLines.length),
+    visible: normalized.highlightLines.length > 0 &&
+      normalized.highlightLines.every(line => visible.has(line)) &&
+      !normalized.warnings.includes('code_line_range_outside_source') &&
+      !normalized.warnings.includes('highlight_lines_not_visible'),
+    titleMatch: !titleLines.length || titleLines.every(line => normalized.highlightLines.includes(line)),
+    explanationFits: String(focus.explanation || '').trim().length > 0 && String(focus.explanation || '').length <= 520,
+    pointerTargets: explicitTargetsOk && (pointers.length > 0 || normalized.highlightLines.length > 0),
+  };
+}
+
 function scoreVideoScript(script, opts = {}) {
   const concept = String(opts.concept || script && script.topic || '').trim();
   const chunks = asList(opts.chunks);
@@ -154,7 +187,11 @@ function scoreVideoScript(script, opts = {}) {
   const noVisibleTruncation = displayItems.every(isCompleteVisibleText);
   const shortFocusLabels = bulletLists.length > 0 && bulletLists.every(list => list.length >= 1 && list.length <= 2 && list.every(isShortFocusLabel));
   const walkthroughSlides = slides.filter(s => (s && s.sceneType === 'code_walkthrough') || (slideType(s) === 'step_by_step' && (s.example_code || s.code_focus)));
-  const walkthroughLineRanges = !walkthroughSlides.length || walkthroughSlides.every(s => s.code_focus && String(s.code_focus.lineRange || '').trim() && asList(s.code_focus.highlightLines).length);
+  const walkthroughDiagnostics = walkthroughSlides.map(codeFocusDiagnostics);
+  const walkthroughLineRanges = !walkthroughSlides.length || walkthroughDiagnostics.every(d => d.basic);
+  const walkthroughVisibleLines = !walkthroughSlides.length || walkthroughDiagnostics.every(d => d.visible && d.titleMatch);
+  const walkthroughExplanationFits = !walkthroughSlides.length || walkthroughDiagnostics.every(d => d.explanationFits);
+  const walkthroughPointerTargets = !walkthroughSlides.length || walkthroughDiagnostics.every(d => d.pointerTargets);
   const hasOopVisual = !likelyOop || visualTypes.some(t => OOP_VISUAL_TYPES.has(t));
   const hasDsOperationVisual = !likelyDs || visualTypes.some(t => DS_OPERATION_VISUAL_TYPES.has(t));
   const hasDsComplexity = !likelyDs || /o\(\s*1\s*\)|o\(\s*n\s*\)|o\(\s*log\s*n\s*\)|complexity|constant time|linear time/i.test(visibleText);
@@ -181,6 +218,9 @@ function scoreVideoScript(script, opts = {}) {
   addCriterion(criteria, 'no_visible_chunk_refs', noVisibleChunkRefs, 'Visible video text must not expose chunk references.', 1);
   addCriterion(criteria, 'no_forbidden_visible_terms', !visibleForbidden, 'Visible video text must not contain callout/source-note or placeholder labels.', 1.1);
   addCriterion(criteria, 'code_walkthrough_line_ranges', walkthroughLineRanges, 'Code walkthrough scenes must include code_focus.lineRange and highlightLines.', 1.2);
+  addCriterion(criteria, 'code_walkthrough_visible_lines', walkthroughVisibleLines, 'Code walkthrough highlighted/title lines must exist and be visible in the viewport.', 1.3);
+  addCriterion(criteria, 'code_walkthrough_explanation_fit', walkthroughExplanationFits, 'Code walkthrough explanation panels need readable, bounded explanation text.', 1);
+  addCriterion(criteria, 'code_walkthrough_pointer_targets', walkthroughPointerTargets, 'Code walkthrough visual pointers must target highlighted visible code lines.', 1);
   addCriterion(criteria, 'oop_class_visual', hasOopVisual, 'OOP videos need a UML/class relationship visual.', 1);
   addCriterion(criteria, 'ds_operation_visual', hasDsOperationVisual, 'Data-structure videos need an operation-state visual.', 1);
   addCriterion(criteria, 'ds_complexity', hasDsComplexity, 'Data-structure videos need complexity analysis.', 0.9);
@@ -256,6 +296,9 @@ function scoreVideoScript(script, opts = {}) {
     'no_visible_chunk_refs',
     'no_forbidden_visible_terms',
     'code_walkthrough_line_ranges',
+    'code_walkthrough_visible_lines',
+    'code_walkthrough_explanation_fit',
+    'code_walkthrough_pointer_targets',
     'no_placeholders',
     'inheritance_specifics',
     'polymorphism_specifics',

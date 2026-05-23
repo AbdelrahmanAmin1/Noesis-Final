@@ -18,6 +18,7 @@ const renderer = require('./renderer.service');
 const jobs = require('./jobs.service');
 const { scoreVideoScript } = require('./video-quality.service');
 const storyboards = require('./storyboard.service');
+const { HttpError } = require('../middleware/error');
 const log = require('../utils/logger');
 const {
   resolveBinary,
@@ -1397,6 +1398,82 @@ function storyboardGateFailureMessage(quality) {
   return `storyboard_quality_failed: ${warnings.slice(0, 5).join('; ') || 'storyboard gate did not pass'}`;
 }
 
+function storyboardQualityDetails(quality = {}) {
+  const storyboardQuality = quality && quality.storyboard || {};
+  const warnings = Array.isArray(storyboardQuality.warnings) ? storyboardQuality.warnings : [];
+  const classified = storyboardQuality.classified || storyboards.classifyWarnings(warnings);
+  return {
+    ...storyboardQuality,
+    warnings,
+    classified,
+  };
+}
+
+function hasApprovalOverride(quality = {}) {
+  return !!(quality && quality.approvalOverride);
+}
+
+function storyboardRenderEligibility(prepared) {
+  if (!prepared || !prepared.board) {
+    return {
+      ok: false,
+      status: 404,
+      code: 'storyboard_not_found',
+      message: 'Storyboard not found.',
+      details: null,
+    };
+  }
+  const board = prepared.board;
+  const quality = prepared.quality || {};
+  const details = storyboardQualityDetails(quality);
+  const critical = details.classified && Array.isArray(details.classified.critical)
+    ? details.classified.critical
+    : [];
+  const approvedByStatus = board.status === 'approved' || board.status === 'rendering';
+  const approvedByOverride = !!board.approved_at && hasApprovalOverride(quality);
+
+  if (!approvedByStatus && !approvedByOverride) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'storyboard_not_approved',
+      message: 'Approve the storyboard before rendering MP4.',
+      details,
+    };
+  }
+  if (critical.length > 0) {
+    return {
+      ok: false,
+      status: 422,
+      code: 'storyboard_critical_blockers',
+      message: 'Critical storyboard issues must be fixed before rendering MP4.',
+      details,
+    };
+  }
+  if (details.passed !== true && !hasApprovalOverride(quality)) {
+    return {
+      ok: false,
+      status: 422,
+      code: 'storyboard_quality_failed',
+      message: 'Approve anyway before rendering a storyboard with non-critical warnings.',
+      details,
+    };
+  }
+  return {
+    ok: true,
+    details,
+    approvedWithWarnings: details.passed !== true && hasApprovalOverride(quality),
+  };
+}
+
+function assertStoryboardRenderable(prepared) {
+  const eligibility = storyboardRenderEligibility(prepared);
+  if (!eligibility.ok) {
+    throw new HttpError(eligibility.status, eligibility.code, eligibility.message, eligibility.details);
+  }
+  return eligibility;
+}
+
 function isVisualValidationError(err) {
   const message = String(err && err.message || err || '');
   return !!(err && err.visualValidation)
@@ -1406,16 +1483,19 @@ function isVisualValidationError(err) {
 
 function storyboardFailureStatus(err) {
   const message = String(err && err.message || err || '');
-  return message.startsWith('storyboard_quality_failed') || isVisualValidationError(err)
+  const code = String(err && err.code || '');
+  return code === 'storyboard_quality_failed'
+    || code === 'storyboard_critical_blockers'
+    || message.startsWith('storyboard_quality_failed')
+    || message.startsWith('storyboard_video_quality_failed')
+    || isVisualValidationError(err)
     ? 'needs_review'
     : 'failed';
 }
 
 async function generateVideoFromStoryboard({ userId, storyboardId }) {
   const prepared = storyboards.scriptForRender(userId, storyboardId);
-  if (!prepared || !prepared.board) {
-    throw new Error('storyboard_not_found');
-  }
+  if (!prepared || !prepared.board) throw new HttpError(404, 'storyboard_not_found', 'Storyboard not found.');
   if ((prepared.board.status === 'rendering' || prepared.board.status === 'rendered') && prepared.board.video_id) {
     const activeJob = jobs.listFor(userId).find(j =>
       j.kind === 'video'
@@ -1427,16 +1507,15 @@ async function generateVideoFromStoryboard({ userId, storyboardId }) {
     const existing = getVideo(userId, prepared.board.video_id);
     if (existing && existing.status === 'ready') return { videoId: existing.id, jobId: null, status: 'ready' };
   }
-  if (prepared.board.status !== 'approved') {
-    throw new Error('storyboard_not_approved');
-  }
-  if (!prepared.quality || !prepared.quality.storyboard || prepared.quality.storyboard.passed !== true) {
-    const db = getDb();
-    db.prepare("UPDATE video_storyboards SET status='needs_review', quality_json=?, updated_at=? WHERE id=? AND user_id=?")
-      .run(JSON.stringify(prepared.quality || {}), nowIso(), storyboardId, userId);
-    throw new Error(storyboardGateFailureMessage(prepared.quality));
-  }
   const db = getDb();
+  const eligibility = storyboardRenderEligibility(prepared);
+  if (!eligibility.ok) {
+    if (eligibility.code === 'storyboard_critical_blockers' || eligibility.code === 'storyboard_quality_failed') {
+      db.prepare("UPDATE video_storyboards SET status='needs_review', quality_json=?, updated_at=? WHERE id=? AND user_id=?")
+        .run(JSON.stringify(prepared.quality || {}), nowIso(), storyboardId, userId);
+    }
+    throw new HttpError(eligibility.status, eligibility.code, eligibility.message, eligibility.details);
+  }
   const ins = db.prepare(`INSERT INTO videos (material_id, user_id, status, created_at, resolved_concept)
                           VALUES (?,?,?,?,?)`);
   const r = ins.run(prepared.board.material_id, userId, 'queued', nowIso(), prepared.board.topic);
@@ -1656,17 +1735,13 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
     setBoardStatus('rendering');
     jobs.update(jobId, { status: 'running', progress: 5, stage: 'Preparing approved storyboard...' });
     const prepared = storyboards.scriptForRender(userId, storyboardId);
-    if (!prepared || !prepared.board) throw new Error('storyboard_not_found');
-    if (prepared.board.status !== 'approved' && prepared.board.status !== 'rendering') throw new Error('storyboard_not_approved');
-    if (!prepared.quality || !prepared.quality.storyboard || prepared.quality.storyboard.passed !== true) {
-      throw new Error(storyboardGateFailureMessage(prepared.quality));
-    }
+    assertStoryboardRenderable(prepared);
     const script = normalizeScript(prepared.script, prepared.board.topic, [], false);
     const quality = scoreVideoScript(script, {
       concept: prepared.board.topic,
       chunks: [],
       lowGrounding: false,
-      threshold: env.STRICT_QUALITY_GATES ? 0.88 : env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
+      threshold: (env.STRICT_QUALITY_GATES || env.VIDEO_RENDER_STRICT) ? 0.88 : env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
     });
     if (!quality.passed) {
       throw new Error(`storyboard_video_quality_failed: ${(quality.reasons || []).slice(0, 3).join('; ')}`);
@@ -1859,5 +1934,6 @@ module.exports._internals = {
   scoreVideoScript,
   preferredDiagramVisualType,
   isVisualValidationError,
+  storyboardRenderEligibility,
   storyboardFailureStatus,
 };

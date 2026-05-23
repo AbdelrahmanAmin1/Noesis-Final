@@ -160,6 +160,8 @@ function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_chat_messages_conv ON tutor_chat_messages(conversation_id, created_at);
   `);
+  const noteAudioSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '003_note_audio.sql'), 'utf8');
+  db.exec(noteAudioSql);
   return db;
 }
 

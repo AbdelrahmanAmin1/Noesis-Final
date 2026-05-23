@@ -13,6 +13,7 @@ const { retrieveLessonContext, groundingTier: computeGroundingTier } = require('
 const { scoreVideoScript } = require('./video-quality.service');
 const renderer = require('./renderer.service');
 const visualRegistry = require('../utils/visual-registry');
+const codeWindow = require('../utils/code-window');
 const { HttpError } = require('../middleware/error');
 
 function nowIso() { return new Date().toISOString(); }
@@ -25,6 +26,60 @@ const SUPPORTED_DOMAINS = new Set([
 const MIN_TOPIC_CONFIDENCE = 0.65;
 const MIN_SOURCE_EVIDENCE_CHUNKS = 2;
 const MIN_KEY_CONCEPTS = 3;
+
+const CRITICAL_PATTERNS = [
+  /^domain:missing_required_visual:/,
+  /^storyboard:too_few_scenes$/,
+  /^domain:oop_missing_class_object_visual$/,
+  /^domain:data_structure_missing_operation_visual$/,
+  /^domain:algorithm_missing_flow_or_complexity_visual$/,
+];
+const INFO_PATTERNS = [
+  /^enrichment:/,
+  /^grounding:missing_topic_drift_risk$/,
+];
+
+function classifyWarnings(warnings) {
+  const critical = [];
+  const warn = [];
+  const info = [];
+  for (const w of (warnings || [])) {
+    if (CRITICAL_PATTERNS.some(p => p.test(w))) critical.push(w);
+    else if (INFO_PATTERNS.some(p => p.test(w))) info.push(w);
+    else warn.push(w);
+  }
+  return { critical, warnings: warn, info };
+}
+
+const WARNING_MESSAGES = {
+  'domain:missing_required_visual:class_object': { label: 'Missing required Class/Object diagram', fix: 'Generate class/object diagram' },
+  'domain:missing_required_visual:code_walkthrough': { label: 'Missing required code walkthrough visual', fix: 'Generate code walkthrough' },
+  'domain:missing_required_visual:encapsulation_boundary': { label: 'Missing required encapsulation boundary visual', fix: 'Generate encapsulation diagram' },
+  'domain:missing_required_visual:inheritance_uml': { label: 'Missing required inheritance UML visual', fix: 'Generate inheritance diagram' },
+  'domain:missing_required_visual:polymorphism_dispatch': { label: 'Missing required polymorphism dispatch visual', fix: 'Generate polymorphism diagram' },
+  'domain:missing_required_visual:linked_list_operation': { label: 'Missing linked list operation visual', fix: 'Generate linked list diagram' },
+  'domain:missing_required_visual:stack_operation': { label: 'Missing stack operation visual', fix: 'Generate stack diagram' },
+  'domain:missing_required_visual:queue_operation': { label: 'Missing queue operation visual', fix: 'Generate queue diagram' },
+  'domain:missing_required_visual:tree_visual': { label: 'Missing tree visual', fix: 'Generate tree diagram' },
+  'domain:missing_required_visual:big_o_growth': { label: 'Missing Big-O growth visual', fix: 'Generate Big-O chart' },
+  'storyboard:too_few_scenes': { label: 'Too few scenes (minimum 5)', fix: null },
+  'storyboard:insufficient_visual_variety': { label: 'Insufficient visual variety (need 4+ types)', fix: null },
+  'topic:low_confidence': { label: 'Material understanding confidence is low', fix: null },
+  'topic:generic_or_missing_topic': { label: 'Topic is generic or missing', fix: null },
+  'topic:unsupported_domain': { label: 'Domain is not fully supported', fix: null },
+  'topic:insufficient_key_concepts': { label: 'Too few key concepts detected', fix: null },
+  'topic:insufficient_source_evidence': { label: 'Insufficient source evidence chunks', fix: null },
+};
+
+function warningMessage(code) {
+  if (WARNING_MESSAGES[code]) return WARNING_MESSAGES[code];
+  const sceneMatch = code.match(/^([^:]+):(.+)$/);
+  if (sceneMatch) {
+    const inner = WARNING_MESSAGES[sceneMatch[2]] || { label: sceneMatch[2].replace(/_/g, ' '), fix: null };
+    return { ...inner, sceneId: sceneMatch[1] };
+  }
+  return { label: code.replace(/_/g, ' '), fix: null };
+}
 
 function parseJson(text, fallback) {
   try { return text ? JSON.parse(text) : fallback; } catch (_) { return fallback; }
@@ -585,7 +640,7 @@ function repairSceneVisualPayload(scene, topic) {
   const type = sceneTypeOf(scene);
   const inferred = visualTypeFromIntent({ ...scene, visualType: '', visualTemplate: '' }, topic, '', data);
   let canonicalType = current.canonical;
-  if ((type === 'deep_explanation' || type === 'analogy') && inferred && inferred !== canonicalType) {
+  if (canonicalType !== 'class_object' && (type === 'deep_explanation' || type === 'analogy') && inferred && inferred !== canonicalType) {
     canonicalType = inferred;
   }
 
@@ -886,8 +941,19 @@ function sceneWarnings(scene, topic = '') {
   if (!hasConcreteScenePayload(scene, topic)) addWarning(warnings, 'missing_concrete_visual_payload');
   if (DECORATIVE_VISUAL_RE.test(visualText) && !hasConcreteScenePayload(scene, topic)) addWarning(warnings, 'decorative_only_visual');
   for (const warning of visualValidation.warnings) addWarning(warnings, warning);
-  if (scene.type === 'code_walkthrough' && (!scene.code || !scene.code.highlightLines || !scene.code.highlightLines.length)) {
-    addWarning(warnings, 'missing_code_line_focus');
+  if (scene.type === 'code_walkthrough') {
+    if (!scene.code || !String(scene.code.content || '').trim()) {
+      addWarning(warnings, 'missing_code_payload');
+    } else {
+      const normalizedCode = codeWindow.normalizeCodeWindow(scene.code, { maxVisibleLines: 12, contextBefore: 2 });
+      if (!normalizedCode.highlightLines.length) addWarning(warnings, 'missing_code_line_focus');
+      if (normalizedCode.warnings.includes('code_line_range_outside_source')) addWarning(warnings, 'code_line_range_outside_source');
+      if (normalizedCode.warnings.includes('highlight_lines_not_visible')) addWarning(warnings, 'highlight_lines_not_visible');
+      const titleLines = codeWindow.parseLineRange(title);
+      if (titleLines.length && titleLines.some(line => !normalizedCode.highlightLines.includes(line))) {
+        addWarning(warnings, 'title_line_range_mismatch');
+      }
+    }
   }
   if (!scene.narration || scene.narration.length < 120) addWarning(warnings, 'thin_narration');
   const vagueText = [title, learningPoint, visualPurpose, visualRationale, viewerTakeaway, onScreenText.join(' '), scene.narration].filter(Boolean).join(' ');
@@ -1216,6 +1282,22 @@ function domainSpecificWarnings(storyboard, visualTypes) {
 function toStoryboardScene(scene, index, topic, slide) {
   const visual = scene.visual || {};
   const codeFocus = scene.codeFocus || scene.code_focus || null;
+  const normalizedCode = codeFocus ? codeWindow.normalizeCodeWindow({
+    language: codeFocus.language || 'text',
+    content: codeFocus.content || slide.example_code || '',
+    highlightLines: codeFocus.highlightLines || [],
+    lineRange: codeFocus.lineRange || '',
+    visibleStartLine: codeFocus.visibleStartLine,
+    visibleEndLine: codeFocus.visibleEndLine,
+    explanation: codeFocus.explanation || '',
+    narrationFocus: codeFocus.narrationFocus || codeFocus.explanation || '',
+    pointers: codeFocus.pointers || [{
+      from: 'explanation_card',
+      to: (codeFocus.highlightLines && codeFocus.highlightLines[0]) ? `code_line_${codeFocus.highlightLines[0]}` : 'highlighted_code_lines',
+      style: 'arrow',
+      label: codeFocus.explanation || codeFocus.lineRange || 'highlighted code',
+    }],
+  }, { maxVisibleLines: 12, contextBefore: 2 }) : null;
   const out = {
     id: cleanId(`${index + 1}-${scene.sceneType || scene.type}-${scene.title}`, `scene-${index + 1}`),
     type: scene.sceneType || scene.type || 'concept',
@@ -1232,12 +1314,16 @@ function toStoryboardScene(scene, index, topic, slide) {
       operations: visual.operations || slide.operations || [],
       caption: visual.caption || slide.caption || '',
     },
-    code: codeFocus ? {
-      language: codeFocus.language || 'text',
-      content: codeFocus.content || slide.example_code || '',
-      highlightLines: codeFocus.highlightLines || [],
-      lineRange: codeFocus.lineRange || '',
-      walkthrough: codeFocus.explanation ? [{ lineRange: codeFocus.lineRange || '', text: codeFocus.explanation }] : [],
+    code: normalizedCode ? {
+      language: normalizedCode.language || 'text',
+      content: normalizedCode.content || slide.example_code || '',
+      highlightLines: normalizedCode.highlightLines || [],
+      lineRange: normalizedCode.lineRange || '',
+      visibleStartLine: normalizedCode.visibleStartLine,
+      visibleEndLine: normalizedCode.visibleEndLine,
+      narrationFocus: normalizedCode.narrationFocus || normalizedCode.explanation || '',
+      pointers: normalizedCode.pointers || [],
+      walkthrough: normalizedCode.explanation ? [{ lineRange: normalizedCode.lineRange || '', text: normalizedCode.explanation }] : [],
     } : null,
     durationSec: scene.durationTargetSec || slide.durationTargetSec || 24,
     renderSlide: slide,
@@ -1406,13 +1492,23 @@ function scriptFromStoryboard(storyboard) {
       operations: scene.visualElements && scene.visualElements.operations || scene.visualData && scene.visualData.operations || slide.operations || [],
       caption: scene.visualElements && scene.visualElements.caption || scene.visualData && scene.visualData.caption || slide.caption || '',
       example_code: scene.codeSnippet || scene.code && scene.code.content || slide.example_code || '',
-      code_focus: scene.code ? {
-        language: scene.code.language || 'text',
-        content: scene.code.content || '',
-        lineRange: scene.code.lineRange || '',
-        highlightLines: scene.code.highlightLines || [],
-        explanation: (scene.code.walkthrough && scene.code.walkthrough[0] && scene.code.walkthrough[0].text) || slide.code_focus && slide.code_focus.explanation || '',
-      } : slide.code_focus || null,
+      code_focus: scene.code ? (() => {
+        const normalizedCode = codeWindow.normalizeCodeWindow({
+          ...scene.code,
+          explanation: (scene.code.walkthrough && scene.code.walkthrough[0] && scene.code.walkthrough[0].text) || scene.code.explanation || slide.code_focus && slide.code_focus.explanation || '',
+        }, { maxVisibleLines: 12, contextBefore: 2 });
+        return {
+          language: normalizedCode.language || 'text',
+          content: normalizedCode.content || '',
+          lineRange: normalizedCode.lineRange || '',
+          visibleStartLine: normalizedCode.visibleStartLine,
+          visibleEndLine: normalizedCode.visibleEndLine,
+          highlightLines: normalizedCode.highlightLines || [],
+          explanation: normalizedCode.explanation || '',
+          narrationFocus: normalizedCode.narrationFocus || normalizedCode.explanation || '',
+          pointers: normalizedCode.pointers || [],
+        };
+      })() : slide.code_focus || null,
       callouts: [],
     };
   });
@@ -1477,7 +1573,7 @@ async function generateStoryboard({ userId, materialId, concept }) {
     concept: generationTopic,
     chunks: rag.uploaded && rag.uploaded.chunks || [],
     lowGrounding: groundingTier === 'weak',
-    threshold: env.STRICT_QUALITY_GATES ? 0.88 : env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
+    threshold: (env.STRICT_QUALITY_GATES || env.VIDEO_RENDER_STRICT) ? 0.88 : env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
   });
   const boardQuality = storyboardQuality(storyboard);
   const quality = {
@@ -1569,10 +1665,24 @@ function updateScene(userId, id, sceneId, patch) {
   const sceneRow = board.scenes.find(s => s.scene_id === sceneId);
   if (!sceneRow) throw new HttpError(404, 'scene_not_found');
   const scene = { ...sceneRow.scene };
-  for (const key of ['title', 'teachingGoal', 'narration', 'visualTemplate', 'durationSec']) {
+  for (const key of [
+    'title',
+    'teachingGoal',
+    'narration',
+    'visualTemplate',
+    'visualType',
+    'visualPurpose',
+    'visualRationale',
+    'viewerTakeaway',
+    'durationSec',
+  ]) {
     if (patch[key] != null) scene[key] = patch[key];
   }
   if (patch.visualData && typeof patch.visualData === 'object') scene.visualData = { ...(scene.visualData || {}), ...patch.visualData };
+  if (patch.visualElements && typeof patch.visualElements === 'object') scene.visualElements = { ...(scene.visualElements || {}), ...patch.visualElements };
+  if (patch.visualGrounding && typeof patch.visualGrounding === 'object') scene.visualGrounding = { ...(scene.visualGrounding || {}), ...patch.visualGrounding };
+  if (Array.isArray(patch.onScreenText)) scene.onScreenText = patch.onScreenText;
+  if (Array.isArray(patch.motionInstructions)) scene.motionInstructions = patch.motionInstructions;
   if (patch.code && typeof patch.code === 'object') scene.code = { ...(scene.code || {}), ...patch.code };
   const storyboard = board.storyboard;
   scene.qualityWarnings = sceneWarnings(scene, storyboard.topic);
@@ -1586,7 +1696,32 @@ function updateScene(userId, id, sceneId, patch) {
   return getStoryboard(userId, id);
 }
 
-function approveStoryboard(userId, id) {
+function classifiedQuality(quality) {
+  const classified = classifyWarnings(quality.warnings || []);
+  return {
+    ...quality,
+    classified,
+    warningDetails: (quality.warnings || []).map(w => ({ code: w, ...warningMessage(w) })),
+  };
+}
+
+function persistStoryboardQuality(userId, id, storyboard, quality, currentStatus = '', existingQuality = {}) {
+  const db = getDb();
+  const nextStatus = quality.passed
+    ? (currentStatus === 'approved' || currentStatus === 'rendering' || currentStatus === 'rendered' ? currentStatus : 'draft')
+    : 'needs_review';
+  const updateSceneRow = db.prepare('UPDATE video_storyboard_scenes SET scene_json=?, quality_json=?, approved=0, updated_at=? WHERE storyboard_id=? AND scene_id=?');
+  db.transaction(() => {
+    db.prepare('UPDATE video_storyboards SET storyboard_json=?, quality_json=?, status=?, updated_at=? WHERE id=? AND user_id=?')
+      .run(JSON.stringify(storyboard), JSON.stringify({ ...existingQuality, storyboard: quality }), nextStatus, nowIso(), id, userId);
+    for (const scene of storyboard.scenes || []) {
+      updateSceneRow.run(JSON.stringify(scene), JSON.stringify({ warnings: scene.qualityWarnings || [] }), nowIso(), id, scene.id);
+    }
+  })();
+  return nextStatus;
+}
+
+function approveStoryboard(userId, id, opts = {}) {
   const db = getDb();
   const board = getStoryboard(userId, id);
   if (!board) return null;
@@ -1596,17 +1731,254 @@ function approveStoryboard(userId, id) {
   };
   const quality = { ...board.quality, storyboard: storyboardQuality(storyboard) };
   if (!quality.storyboard || quality.storyboard.passed !== true) {
-    throw new HttpError(422, 'storyboard_quality_failed', 'Fix storyboard quality issues before approval.', quality.storyboard);
+    const classified = classifyWarnings(quality.storyboard.warnings || []);
+    quality.storyboard.classified = classified;
+    quality.storyboard.warningDetails = (quality.storyboard.warnings || []).map(w => ({ code: w, ...warningMessage(w) }));
+    if (classified.critical.length > 0 || !opts.force) {
+      const err = new HttpError(
+        422,
+        classified.critical.length ? 'storyboard_critical_blockers' : 'storyboard_quality_failed',
+        classified.critical.length
+          ? 'Critical issues must be fixed before approval.'
+          : 'Fix storyboard quality issues before approval, or use "Approve anyway" for non-critical warnings.',
+        quality.storyboard,
+      );
+      throw err;
+    }
   }
+  const overrideNote = opts.force && quality.storyboard && !quality.storyboard.passed
+    ? JSON.stringify({ at: nowIso(), remainingWarnings: (quality.storyboard.warnings || []).length })
+    : null;
   const updateSceneRow = db.prepare('UPDATE video_storyboard_scenes SET scene_json=?, quality_json=?, approved=1, updated_at=? WHERE storyboard_id=? AND scene_id=?');
   db.transaction(() => {
     db.prepare("UPDATE video_storyboards SET status='approved', approved_at=?, updated_at=?, quality_json=?, storyboard_json=? WHERE id=? AND user_id=?")
-      .run(nowIso(), nowIso(), JSON.stringify(quality), JSON.stringify(storyboard), id, userId);
+      .run(nowIso(), nowIso(), JSON.stringify({ ...quality, approvalOverride: overrideNote }), JSON.stringify(storyboard), id, userId);
     for (const scene of storyboard.scenes) {
       updateSceneRow.run(JSON.stringify(scene), JSON.stringify({ warnings: scene.qualityWarnings || [] }), nowIso(), id, scene.id);
     }
   })();
   return getStoryboard(userId, id);
+}
+
+function recheckStoryboard(userId, id) {
+  const board = getStoryboard(userId, id);
+  if (!board) return null;
+  const storyboard = {
+    ...board.storyboard,
+    scenes: (board.storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, board.storyboard.topic)),
+  };
+  const quality = storyboardQuality(storyboard);
+  persistStoryboardQuality(userId, id, storyboard, quality, board.status, board.quality);
+  return classifiedQuality(quality);
+}
+
+function targetVisualTypeFromWarning(code = '') {
+  const match = String(code || '').match(/missing_required_visual:([a-z0-9_]+)/i);
+  return match ? match[1] : null;
+}
+
+function targetVisualTypeFromPayload(payload = {}, topic = '') {
+  return payload.targetVisualType ||
+    payload.visualType ||
+    payload.targetType ||
+    targetVisualTypeFromWarning(payload.warningCode || payload.code || '') ||
+    inferVisualTypeFromTopic(topic) ||
+    'process_flow';
+}
+
+function classObjectNodes(topic = '') {
+  const nodes = [
+    'Class blueprint',
+    'Object instance',
+    'Field / state',
+    'Method / behavior',
+  ];
+  if (/polymorphism|inheritance|override|dispatch|extends/i.test(String(topic || ''))) {
+    nodes.push('Shape superclass', 'Circle subclass', 'Runtime object');
+  }
+  return nodes;
+}
+
+function visualPatchForScene(scene, topic, targetType) {
+  const canonicalType = targetType || inferVisualTypeFromTopic(topic) || 'process_flow';
+  const nodes = canonicalType === 'class_object'
+    ? classObjectNodes(topic)
+    : topicSpecificVisualNodes(scene, topic, canonicalType);
+  const edges = canonicalType === 'class_object'
+    ? [
+      ['Class blueprint', 'Object instance', 'creates'],
+      ['Field / state', 'Object instance', 'stored in'],
+      ['Method / behavior', 'Object instance', 'acts on'],
+      ...(/polymorphism|inheritance|override|dispatch|extends/i.test(String(topic || ''))
+        ? [['Shape superclass', 'Circle subclass', 'extends'], ['Shape superclass', 'Runtime object', 'reference can point to']]
+        : []),
+    ]
+    : topicSpecificEdges(nodes);
+  const operations = topicSpecificVisualOperations(canonicalType);
+  const label = canonicalType.replace(/_/g, ' ');
+  const visualData = {
+    type: canonicalType,
+    nodes,
+    edges,
+    operations,
+    caption: `${scene.sceneTitle || scene.title || topic} - ${label} diagram.`,
+  };
+  return {
+    visualTemplate: canonicalType,
+    visualType: canonicalType,
+    visualData,
+    visualElements: visualData,
+    visualPurpose: `Show the concrete ${label} required to understand ${topic}.`,
+    visualRationale: `This visual directly fixes the missing ${label} requirement and uses concrete source-backed labels.`,
+    viewerTakeaway: canonicalType === 'class_object'
+      ? 'A class is the blueprint; objects are runtime instances with fields/state and methods/behavior.'
+      : `The ${label} connects the scene narration to a concrete CS structure.`,
+    visualGrounding: {
+      sceneIntent: scene.teachingGoal || scene.learningPoint || scene.narration || '',
+      selectedVisualReason: `Generated to satisfy storyboard quality blocker for ${canonicalType}.`,
+      requiredVisualEvidence: nodes,
+    },
+    onScreenText: [
+      canonicalType === 'class_object' ? 'Class blueprint -> object instance' : `${label} visual`,
+      ...nodes.slice(0, 4),
+    ],
+    motionInstructions: [
+      `Reveal the ${label} title.`,
+      'Highlight each concrete label before drawing the relationship.',
+      'End on the learner-facing takeaway.',
+    ],
+  };
+}
+
+function scoreSceneForVisual(scene, topic, targetType, preferredSceneId = '') {
+  if (preferredSceneId && scene.id === preferredSceneId) return 999;
+  const text = [
+    scene.id,
+    scene.type,
+    scene.sceneTitle,
+    scene.title,
+    scene.teachingGoal,
+    scene.learningPoint,
+    scene.studentFacingGoal,
+    scene.narration,
+    scene.visualPurpose,
+    scene.visualType,
+    scene.visualTemplate,
+  ].filter(Boolean).join(' ').toLowerCase();
+  let score = 0;
+  if (/definition|concept|deep_explanation|diagram|code|walkthrough/.test(text)) score += 10;
+  if (/deep_explanation|definition|concept/.test(text)) score += 6;
+  if (/class|object|instance|blueprint|field|method|state|behavior/.test(text)) score += 8;
+  if (/polymorphism|inheritance|superclass|subclass|override|dispatch/.test(text)) score += 5;
+  if (/generic|concept_map|missing/.test(String(scene.visualType || scene.visualTemplate || '').toLowerCase())) score += 3;
+  if (targetType && String(scene.visualType || scene.visualTemplate || '').toLowerCase() === String(targetType).toLowerCase()) score += 4;
+  if (targetType === 'class_object' && /code_walkthrough/.test(String(scene.type || scene.visualType || scene.visualTemplate || '').toLowerCase())) score -= 8;
+  if (String(topic || '').toLowerCase().includes('polymorphism') && /polymorphism|dispatch|override/.test(text)) score += 4;
+  return score;
+}
+
+function chooseSceneForVisual(storyboard, targetType, preferredSceneId = '') {
+  const scenes = storyboard.scenes || [];
+  if (!scenes.length) return null;
+  const sorted = [...scenes].sort((a, b) =>
+    scoreSceneForVisual(b, storyboard.topic, targetType, preferredSceneId) -
+    scoreSceneForVisual(a, storyboard.topic, targetType, preferredSceneId)
+  );
+  return sorted[0] || scenes[0];
+}
+
+function fixStoryboardIssue(userId, storyboardId, payload = {}) {
+  const board = getStoryboard(userId, storyboardId);
+  if (!board) return null;
+  const storyboard = {
+    ...board.storyboard,
+    scenes: (board.storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, board.storyboard.topic)),
+  };
+  const topic = storyboard.topic || board.topic || '';
+  const targetType = targetVisualTypeFromPayload(payload, topic);
+  const scene = chooseSceneForVisual(storyboard, targetType, payload.sceneId || payload.scene_id || '');
+  if (!scene) throw new HttpError(422, 'storyboard_has_no_scenes', 'Generate storyboard scenes before applying an automatic fix.');
+  const updated = updateScene(userId, storyboardId, scene.id, visualPatchForScene(scene, topic, targetType));
+  const quality = updated && updated.quality && updated.quality.storyboard;
+  return {
+    storyboard: updated,
+    fixedSceneId: scene.id,
+    targetVisualType: targetType,
+    quality: quality ? classifiedQuality(quality) : null,
+  };
+}
+
+function fixScene(userId, storyboardId, sceneId, fixType, opts = {}) {
+  const board = getStoryboard(userId, storyboardId);
+  if (!board) return null;
+  const sceneRow = board.scenes.find(s => s.scene_id === sceneId);
+  if (!sceneRow) throw new HttpError(404, 'scene_not_found');
+  const scene = sceneRow.scene;
+  const topic = board.storyboard.topic;
+  const warnings = scene.qualityWarnings || [];
+
+  if (fixType === 'fix_auto' || fixType === 'regenerate_visual') {
+    const missingVisual = warnings.find(w => /missing_required_visual|missing_concrete_visual_payload|generic_visual_template|visual_type_payload_mismatch/.test(w));
+    let targetType = opts.targetVisualType || opts.visualType || scene.visualType || scene.visualTemplate;
+    if (missingVisual) {
+      const match = missingVisual.match(/missing_required_visual:(\w+)/);
+      if (match) targetType = match[1];
+    }
+    if (!targetType || targetType === 'concept_map' || targetType === 'missing') {
+      targetType = inferVisualTypeFromTopic(topic) || 'process_flow';
+    }
+    const nodes = topicSpecificVisualNodes(scene, topic, targetType);
+    const edges = topicSpecificEdges(nodes);
+    const operations = topicSpecificVisualOperations(targetType);
+    const caption = `${scene.sceneTitle || scene.title || topic} — ${targetType.replace(/_/g, ' ')} diagram.`;
+    const patch = {
+      visualTemplate: targetType,
+      visualData: {
+        type: targetType,
+        nodes,
+        edges,
+        operations,
+        caption,
+      },
+    };
+    return updateScene(userId, storyboardId, sceneId, visualPatchForScene(scene, topic, targetType));
+  }
+
+  if (fixType === 'regenerate_full') {
+    const targetType = opts.targetVisualType || opts.visualType || inferVisualTypeFromTopic(topic) || scene.visualType || 'process_flow';
+    const nodes = topicSpecificVisualNodes(scene, topic, targetType);
+    const patch = {
+      ...visualPatchForScene(scene, topic, targetType),
+      visualTemplate: targetType,
+      teachingGoal: `Explain ${topic} using a clear ${targetType.replace(/_/g, ' ')} visual with concrete examples.`,
+      visualData: {
+        type: targetType,
+        nodes,
+        edges: topicSpecificEdges(nodes),
+        operations: topicSpecificVisualOperations(targetType),
+        caption: `${topic} — ${targetType.replace(/_/g, ' ')} walkthrough.`,
+      },
+    };
+    return updateScene(userId, storyboardId, sceneId, patch);
+  }
+
+  throw new HttpError(400, 'invalid_fix_type', 'fixType must be fix_auto, regenerate_visual, or regenerate_full');
+}
+
+function inferVisualTypeFromTopic(topic) {
+  const lower = String(topic || '').toLowerCase();
+  if (/encapsulation/.test(lower)) return 'encapsulation_boundary';
+  if (/class|object|blueprint|instance/.test(lower)) return 'class_object';
+  if (/inheritance|superclass|subclass|extends/.test(lower)) return 'inheritance_uml';
+  if (/polymorphism|override|dispatch/.test(lower)) return 'polymorphism_dispatch';
+  if (/linked.?list/.test(lower)) return 'linked_list_operation';
+  if (/stack/.test(lower)) return 'stack_operation';
+  if (/queue/.test(lower)) return 'queue_operation';
+  if (/hash/.test(lower)) return 'hash_table_operation';
+  if (/tree|bst|binary/.test(lower)) return 'tree_visual';
+  if (/big.?o|complexity|growth/.test(lower)) return 'big_o_growth';
+  if (/sort|search|algorithm/.test(lower)) return 'process_flow';
+  return null;
 }
 
 async function renderScenePreview(userId, id, sceneId) {
@@ -1642,6 +2014,10 @@ module.exports = {
   listStoryboards,
   updateScene,
   approveStoryboard,
+  recheckStoryboard,
+  fixStoryboardIssue,
+  fixScene,
+  classifyWarnings,
   renderScenePreview,
   scriptForRender,
   scriptFromStoryboard,
@@ -1656,5 +2032,7 @@ module.exports = {
     storyboardVisualValidation,
     conceptMapAllowedForScene,
     conceptMapNodesAreSourceBacked,
+    visualPatchForScene,
+    scoreSceneForVisual,
   },
 };

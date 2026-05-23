@@ -51,14 +51,17 @@ app.get('/api/health', async (req, res) => {
       enabled: env.NOESIS_DEMO_MODE,
       renderer: env.VIDEO_RENDERER,
       storyboardReviewRequired: env.NOESIS_DEMO_MODE || env.STORYBOARD_REVIEW_REQUIRED,
-      strictQualityGates: env.NOESIS_DEMO_MODE || env.STRICT_QUALITY_GATES,
+      strictQualityGates: env.NOESIS_DEMO_MODE || env.STRICT_QUALITY_GATES || env.VIDEO_RENDER_STRICT,
       groqReady: !!env.GROQ_API_KEY && env.NOTES_PROVIDER === 'groq' && env.VIDEO_SCRIPT_PROVIDER === 'groq',
       piperReady: ttsStatus && ttsStatus.configured_engine === 'piper' && ttsStatus.active_engine === 'piper',
       rendererReady: renderer.ok,
       tutorProvider: env.TUTOR_PROVIDER,
+      tutorFallbackProvider: env.TUTOR_FALLBACK_PROVIDER,
       tutorGroqReady: env.TUTOR_PROVIDER !== 'groq' || !!env.GROQ_API_KEY,
       tutorStrictQuality: env.TUTOR_STRICT_QUALITY,
       tutorAsyncStart: env.TUTOR_ASYNC_START,
+      tutorVoiceDefault: env.TUTOR_VOICE_DEFAULT,
+      learningMapLayout: env.LEARNING_MAP_LAYOUT,
     };
     demo.ok = !demo.enabled || (demo.groqReady && demo.piperReady && demo.rendererReady && demo.storyboardReviewRequired && demo.tutorGroqReady);
     _healthCache = { at: now, data: { ai: aiHealth, tts: ttsStatus, renderer, demo } };

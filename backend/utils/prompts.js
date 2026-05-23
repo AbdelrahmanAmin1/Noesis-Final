@@ -163,6 +163,12 @@ Student question:
 
 Rules:
 - Give a clear, helpful answer in markdown.
+- Do not output JSON unless it is inside an explicitly requested [QUIZ] or [FLASHCARDS] action block.
+- Use this compact layout for normal replies:
+  ### Answer
+  ### Why it matters
+  ### Example
+  ### Check yourself
 - Cite source details naturally using [Source 1], [Source 2], etc. only when that exact excerpt supports the claim.
 - Do not cite general CS knowledge or conversation memory as a source.
 - If Grounding tier is weak, begin with: "I could not find strong support for this in your uploaded material." Then clearly label any extra help as general CS explanation.
@@ -199,6 +205,8 @@ Student request:
 
 Rules:
 - Use the uploaded material excerpts as the primary source of truth.
+- Do not output JSON unless it is inside an explicitly requested [QUIZ] or [FLASHCARDS] action block.
+- Use this compact markdown layout for the visible answer: ### Answer, ### Why it matters, ### Example, ### Check yourself.
 - Cite source details naturally using [Source 1], [Source 2], etc. only when that exact excerpt supports the claim.
 - Do not cite general CS knowledge or conversation memory as a source.
 - If Grounding tier is weak, begin with: "I could not find strong support for this in your uploaded material." Then clearly label any extra help as general CS explanation.

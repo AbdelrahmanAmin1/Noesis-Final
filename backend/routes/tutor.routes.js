@@ -5,7 +5,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { requireAuth } = require('../middleware/auth');
-const { aiLimiter, ttsLimiter } = require('../middleware/rateLimit');
+const { aiLimiter, tutorTurnLimiter, ttsLimiter } = require('../middleware/rateLimit');
 const { getDb } = require('../config/db');
 const env = require('../config/env');
 const { HttpError } = require('../middleware/error');
@@ -154,13 +154,13 @@ router.patch('/sessions/:id/mode', requireAuth, (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post('/sessions/:id/continue', requireAuth, aiLimiter, async (req, res, next) => {
+router.post('/sessions/:id/continue', requireAuth, tutorTurnLimiter, async (req, res, next) => {
   try {
     res.json(await tutor.continueSession(req.user.id, parseInt(req.params.id, 10), req.body || {}));
   } catch (e) { next(e); }
 });
 
-router.post('/sessions/:id/step/:idx/answer', requireAuth, aiLimiter, async (req, res, next) => {
+router.post('/sessions/:id/step/:idx/answer', requireAuth, tutorTurnLimiter, async (req, res, next) => {
   try {
     const result = await tutor.continueSession(req.user.id, parseInt(req.params.id, 10), req.body || {});
     res.json({
