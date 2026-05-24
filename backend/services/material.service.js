@@ -14,6 +14,7 @@ const log = require('../utils/logger');
 const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
 const topicResolver = require('./topic-resolver.service');
+const gamification = require('./gamification.service');
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -202,6 +203,11 @@ async function processMaterial(materialId, jobId) {
     setStatus('ready', 100);
     db.prepare(`INSERT INTO study_events (user_id, kind, ref_id, duration_s, occurred_at) VALUES (?,?,?,?,?)`)
       .run(m.user_id, 'reading', materialId, 0, nowIso());
+    if (m.user_id > 0) {
+      gamification.award(m.user_id, 'material_uploaded', 'material', materialId, {
+        metadata: { title: m.title, type: m.type },
+      });
+    }
     if (jobId) jobs.update(jobId, { status: 'completed', progress: 100, result: { material_id: materialId } });
   } catch (e) {
     log.error('processMaterial', e.message || e);

@@ -12,6 +12,7 @@ const { parseJsonSafe } = require('../utils/jsonSafe');
 const { retrieve } = require('../services/rag.service');
 const srs = require('../services/srs.service');
 const log = require('../utils/logger');
+const gamification = require('../services/gamification.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -188,7 +189,15 @@ router.post('/:id/review', requireAuth, (req, res, next) => {
       .run(cardId, req.user.id, rating, sched.ease, sched.interval_days, sched.reps, sched.due_at, nowIso());
     db.prepare(`INSERT INTO study_events (user_id, kind, ref_id, duration_s, occurred_at) VALUES (?,?,?,?,?)`)
       .run(req.user.id, 'flashcard', cardId, 30, nowIso());
-    res.json({ review_id: r.lastInsertRowid, ...sched });
+    const reward = gamification.award(req.user.id, 'flashcard_reviewed', 'flashcard_review', r.lastInsertRowid, {
+      metadata: { card_id: cardId, rating },
+    });
+    res.json({
+      review_id: r.lastInsertRowid,
+      ...sched,
+      reward: reward.awarded ? { points: reward.points, event_type: 'flashcard_reviewed', unlocked: reward.unlocked || [] } : null,
+      gamification: reward.summary || null,
+    });
   } catch (e) { next(e); }
 });
 

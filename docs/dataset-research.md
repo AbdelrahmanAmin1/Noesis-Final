@@ -2,6 +2,14 @@
 
 This document is a planning inventory only. Do not download large datasets or train models until licenses, attribution requirements, and demo needs are reviewed.
 
+Current recommendation for the graduation demo:
+
+```text
+RAG + curated OOP/DS corpus + Groq/Ollama provider strategy
+```
+
+Fine-tuning remains postponed. The next implementation work here is research, license verification from primary sources, cleaning policy, and evaluation design.
+
 | Name | URL | License | Format | Size | OOP relevance | Data Structures relevance | Best use | Risks | Recommendation |
 |---|---|---|---|---|---|---|---|---|---|
 | OpenDSA | https://github.com/OpenDSA/OpenDSA | MIT | ReStructuredText, JS exercises, configs | Large open textbook/exercise repo | Medium | High | RAG, examples, diagrams, quizzes, evaluation | Content structure requires conversion; exercise assets need filtering | Strong first curated-corpus source for DS/algorithms |
@@ -28,3 +36,19 @@ This document is a planning inventory only. Do not download large datasets or tr
 ## Recommended Demo Choice
 
 Use curated local OOP/DS topic files plus selected uploaded chunks and Groq generation for notes/video. Fine-tuning is not needed for the demo and would add risk before the lesson pipeline is stable.
+
+## Future Training Workspace
+
+The intended root-level layout is:
+
+```text
+training/
+  raw/
+  cleaned/
+  generated/
+  eval/
+  scripts/
+  README.md
+```
+
+No dataset should enter `training/raw/` until the source license, attribution rules, redistribution limits, and allowed ML use are recorded in this document.

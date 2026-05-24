@@ -12,6 +12,7 @@ const { parseJsonSafe } = require('../utils/jsonSafe');
 const { retrieve } = require('../services/rag.service');
 const { recordConceptOutcome } = require('../services/mastery.service');
 const log = require('../utils/logger');
+const gamification = require('../services/gamification.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -198,8 +199,9 @@ router.post('/attempts/:id/finish', requireAuth, (req, res, next) => {
   try {
     const attemptId = parseInt(req.params.id, 10);
     const db = getDb();
-    const at = db.prepare('SELECT id FROM quiz_attempts WHERE id=? AND user_id=?').get(attemptId, req.user.id);
+    const at = db.prepare('SELECT id, finished_at FROM quiz_attempts WHERE id=? AND user_id=?').get(attemptId, req.user.id);
     if (!at) throw new HttpError(404, 'attempt_not_found');
+    if (at.finished_at) throw new HttpError(409, 'attempt_already_finished');
     const stats = db.prepare(`
       SELECT COUNT(*) AS total, COALESCE(SUM(is_correct), 0) AS correct
       FROM quiz_answers
@@ -220,7 +222,26 @@ router.post('/attempts/:id/finish', requireAuth, (req, res, next) => {
     for (const o of outcomes) {
       if (o.concept) recordConceptOutcome(req.user.id, o.concept, !!o.is_correct, { correctDelta: 8, incorrectDelta: -6 });
     }
-    res.json({ score, total: stats.total, correct: stats.correct, wrong: wrong.map(w => ({ ...w, options: JSON.parse(w.options_json) })) });
+    const finishReward = gamification.award(req.user.id, 'quiz_finished', 'quiz_attempt', attemptId, {
+      metadata: { score, total: stats.total, correct: stats.correct },
+    });
+    const highReward = score >= 80
+      ? gamification.award(req.user.id, 'quiz_high_score', 'quiz_attempt', attemptId, {
+        metadata: { score, total: stats.total, correct: stats.correct },
+      })
+      : null;
+    res.json({
+      score,
+      total: stats.total,
+      correct: stats.correct,
+      wrong: wrong.map(w => ({ ...w, options: JSON.parse(w.options_json) })),
+      reward: {
+        points: (finishReward.awarded ? finishReward.points : 0) + (highReward && highReward.awarded ? highReward.points : 0),
+        events: [finishReward, highReward].filter(r => r && r.awarded).map(r => r.event.event_type),
+        unlocked: [...(finishReward.unlocked || []), ...((highReward && highReward.unlocked) || [])],
+      },
+      gamification: (highReward && highReward.summary) || finishReward.summary || null,
+    });
   } catch (e) { next(e); }
 });
 

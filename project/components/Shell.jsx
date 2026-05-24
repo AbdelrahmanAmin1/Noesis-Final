@@ -41,6 +41,7 @@ const SIDEBAR = [
   { key: 'flashcards', label: 'Flashcards', icon: 'Cards' },
   { key: 'quiz', label: 'Quizzes', icon: 'Target' },
   { key: 'progress', label: 'Progress', icon: 'Chart' },
+  { key: 'community', label: 'Community', icon: 'Users' },
 ];
 
 const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {

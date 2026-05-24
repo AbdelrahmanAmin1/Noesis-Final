@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { getDb } = require('../config/db');
 const { signToken } = require('../middleware/auth');
 const { HttpError } = require('../middleware/error');
+const gamification = require('./gamification.service');
 
 const TIMING_SAFE_BCRYPT_HASH = '$2a$12$C0sGEj9xD2l2i4uE8.n1uO4m8XsOQ0vlX61e/1kvT2uVdxV.NgUKG';
 const MAX_PASSWORD_LENGTH = 256;
@@ -36,6 +37,7 @@ async function signup({ email, password, name }) {
     for (const c of SEED_CONCEPTS) insConcept.run(info.lastInsertRowid, c);
   })();
   const user = db.prepare('SELECT id, email, name, major FROM users WHERE id=?').get(info.lastInsertRowid);
+  gamification.ensureUser(user.id);
   return { user, token: signToken(user) };
 }
 
@@ -126,6 +128,7 @@ function updateProfile(userId, patch) {
   if (name !== null && name.length > 120) throw new HttpError(400, 'name_too_long');
   db.prepare('UPDATE users SET name=COALESCE(?, name), major=COALESCE(?, major) WHERE id=?')
     .run(name || null, major || null, userId);
+  if (name) gamification.syncProfileName(userId, name);
   return me(userId);
 }
 
@@ -170,6 +173,15 @@ function exportData(userId) {
     tutor_sessions: get('SELECT id, concept, mode, started_at, ended_at FROM tutor_sessions WHERE user_id=?'),
     concepts: get('SELECT * FROM concepts WHERE user_id=?'),
     study_events: get('SELECT * FROM study_events WHERE user_id=?'),
+    user_profile: db.prepare('SELECT * FROM user_profiles WHERE user_id=?').get(userId),
+    user_xp: db.prepare('SELECT * FROM user_xp WHERE user_id=?').get(userId),
+    xp_events: get('SELECT * FROM xp_events WHERE user_id=?'),
+    user_achievements: get('SELECT * FROM user_achievements WHERE user_id=?'),
+    user_streak: db.prepare('SELECT * FROM user_streaks WHERE user_id=?').get(userId),
+    daily_goals: get('SELECT * FROM daily_goals WHERE user_id=?'),
+    friendships: get('SELECT * FROM friendships WHERE user_id=?'),
+    friend_requests_sent: get('SELECT * FROM friend_requests WHERE requester_id=?'),
+    friend_requests_received: get('SELECT * FROM friend_requests WHERE recipient_id=?'),
   };
 }
 

@@ -21,6 +21,7 @@ function getDb() {
   _db = new Database(env.DB_PATH);
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
+  _db.pragma('busy_timeout = 15000');
   migrate();
   return _db;
 }
@@ -29,6 +30,7 @@ function migrate() {
   ensureDirs();
   const db = _db || new Database(env.DB_PATH);
   if (!_db) _db = db;
+  db.pragma('busy_timeout = 15000');
   const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '001_init.sql'), 'utf8');
   db.exec(sql);
   ensureColumn(db, 'flashcard_reviews', 'reps', 'INTEGER NOT NULL DEFAULT 0');
@@ -162,6 +164,8 @@ function migrate() {
   `);
   const noteAudioSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '003_note_audio.sql'), 'utf8');
   db.exec(noteAudioSql);
+  const gamificationSocialSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '004_gamification_social.sql'), 'utf8');
+  db.exec(gamificationSocialSql);
   return db;
 }
 

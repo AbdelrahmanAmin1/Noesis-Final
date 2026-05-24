@@ -39,7 +39,7 @@ const RouteErrorFallback = ({ route, error, onBack }) => (
 );
 
 const App = () => {
-  const APP_ROUTES = ['dashboard','materials','material','storyboard','study-plan','tutor','notes','flashcards','quiz','progress','settings'];
+  const APP_ROUTES = ['dashboard','materials','material','storyboard','study-plan','tutor','notes','flashcards','quiz','progress','community','room','settings'];
   const [route, setRoute] = useState(localStorage.getItem('noesis.route') || 'landing');
   const [prevRoute, setPrevRoute] = useState(null);
   const [authMode, setAuthMode] = useState('signin');
@@ -151,6 +151,8 @@ const App = () => {
     flashcards: <window.Flashcards onNav={goto}/>,
     quiz: <window.Quiz onNav={goto}/>,
     progress: <window.Progress onNav={goto}/>,
+    community: <window.Community onNav={goto}/>,
+    room: <window.RoomDetail onNav={goto}/>,
     settings: <window.Settings theme={theme} setTheme={setTheme} onLogout={logout}/>,
   };
   const activeScreen = screens[route] || screens.dashboard;
@@ -247,7 +249,7 @@ const TweaksPanel = ({ theme, setTheme, route, setRoute, onClose }) => {
           {['auth','onboarding'].map(r => <option key={r} value={r}>{r}</option>)}
         </optgroup>
         <optgroup label="App">
-          {['dashboard','materials','material','storyboard','study-plan','tutor','notes','flashcards','quiz','progress','settings'].map(r => <option key={r} value={r}>{r}</option>)}
+          {['dashboard','materials','material','storyboard','study-plan','tutor','notes','flashcards','quiz','progress','community','room','settings'].map(r => <option key={r} value={r}>{r}</option>)}
         </optgroup>
       </select>
 

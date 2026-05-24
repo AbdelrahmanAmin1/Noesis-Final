@@ -5,6 +5,8 @@ const { requireAuth } = require('../middleware/auth');
 const { getDb } = require('../config/db');
 const learningMaps = require('../services/learning-map.service');
 const studyPlans = require('../services/study-plan.service');
+const gamification = require('../services/gamification.service');
+const leaderboards = require('../services/leaderboard.service');
 
 const router = express.Router();
 
@@ -148,6 +150,8 @@ router.get('/', requireAuth, (req, res, next) => {
     const nextRecommendedAction = activePlan
       ? { title: `Continue ${nextFocus}`, route: 'study-plan', reason: 'Your active plan is ready for today.' }
       : { title: `Start with ${nextFocus}`, route: 'study-plan', reason: 'Build a plan from your weak topics and available time.' };
+    const gamificationSummary = gamification.getSummary(userId);
+    const leaderboardPreview = leaderboards.weekly(userId, 5).leaderboard;
 
     res.json({
       greeting: { name: (u && u.name) || 'there' },
@@ -175,6 +179,8 @@ router.get('/', requireAuth, (req, res, next) => {
         average_score: averageScore,
         weak_topics: weakTopics,
       },
+      gamification: gamificationSummary,
+      leaderboard_preview: leaderboardPreview,
       recent_activity: recentActivity,
       insights,
     });
@@ -225,12 +231,14 @@ router.get('/progress', requireAuth, (req, res, next) => {
       { l: 'Streak', v: `${streak(events)}d`, d: 'current', t: '', c: 'var(--warn)' },
     ];
 
+    const gamificationSummary = gamification.getSummary(userId);
     res.json({
       stats: top4,
       mastery_curve,
       retention_curve,
       concept_breakdown,
       heatmap_12w: norm,
+      gamification: gamificationSummary,
       weekly_review: {
         working: events.length
           ? `${events.length} study action${events.length === 1 ? '' : 's'} logged in the last 30 days.`

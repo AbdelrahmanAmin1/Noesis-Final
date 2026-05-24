@@ -185,6 +185,48 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
       completeTask: (id) => req('POST', '/study/tasks/' + id + '/complete'),
     },
 
+    gamification: {
+      summary: () => req('GET', '/gamification/summary'),
+      events: (limit) => req('GET', '/gamification/events' + (limit ? '?limit=' + encodeURIComponent(limit) : '')),
+      achievements: () => req('GET', '/gamification/achievements'),
+    },
+
+    leaderboards: {
+      global: () => req('GET', '/leaderboards/global'),
+      weekly: () => req('GET', '/leaderboards/weekly'),
+      friends: () => req('GET', '/leaderboards/friends'),
+    },
+
+    users: {
+      search: (q) => req('GET', '/users/search?q=' + encodeURIComponent(q || '')),
+    },
+
+    friends: {
+      list: () => req('GET', '/friends'),
+      requests: () => req('GET', '/friends/requests'),
+      request: (recipientId) => req('POST', '/friends/request', { recipient_id: recipientId }),
+      accept: (id) => req('POST', '/friends/requests/' + id + '/accept'),
+      reject: (id) => req('POST', '/friends/requests/' + id + '/reject'),
+      remove: (friendId) => req('DELETE', '/friends/' + friendId),
+    },
+
+    rooms: {
+      list: () => req('GET', '/rooms'),
+      create: (b) => req('POST', '/rooms', b),
+      get: (id) => req('GET', '/rooms/' + id),
+      join: (id) => req('POST', '/rooms/' + id + '/join'),
+      joinByCode: (code) => req('POST', '/rooms/join-by-code', { code }),
+      leave: (id) => req('POST', '/rooms/' + id + '/leave'),
+      members: (id) => req('GET', '/rooms/' + id + '/members'),
+      activity: (id) => req('GET', '/rooms/' + id + '/activity'),
+      messages: (id) => req('GET', '/rooms/' + id + '/messages'),
+      postMessage: (id, body) => req('POST', '/rooms/' + id + '/messages', { body }),
+      shareNote: (id, noteId) => req('POST', '/rooms/' + id + '/share-note', { note_id: noteId }),
+      shareQuiz: (id, quizId) => req('POST', '/rooms/' + id + '/share-quiz', { quiz_id: quizId }),
+      startSharedQuiz: (id, shareId) => req('POST', '/rooms/' + id + '/shared-quizzes/' + shareId + '/start'),
+      leaderboard: (id) => req('GET', '/rooms/' + id + '/leaderboard'),
+    },
+
     jobs: {
       get: (id) => req('GET', '/jobs/' + id),
     },
@@ -646,6 +688,10 @@ const SIDEBAR = [{
   key: 'progress',
   label: 'Progress',
   icon: 'Chart'
+}, {
+  key: 'community',
+  label: 'Community',
+  icon: 'Users'
 }];
 const Sidebar = ({
   current,
@@ -3196,6 +3242,11 @@ const Dashboard = ({
   const summary = data && data.summary || {};
   const recentActivity = data && data.recent_activity || [];
   const nextAction = data && data.next_recommended_action;
+  const game = data && data.gamification;
+  const xp = game && game.xp ? game.xp : {};
+  const dailyGoal = game && game.daily_goal ? game.daily_goal : null;
+  const recentBadges = game && game.achievements ? game.achievements.recent || [] : [];
+  const leaderboardPreview = data && data.leaderboard_preview || [];
   return React.createElement("div", {
     style: {
       background: 'var(--bg-0)',
@@ -3293,6 +3344,12 @@ const Dashboard = ({
     style: ds.metrics,
     className: "reveal"
   }, [{
+    l: 'Level',
+    v: xp.level || 1
+  }, {
+    l: 'XP',
+    v: xp.total_xp || 0
+  }, {
     l: 'Materials',
     v: summary.materials || 0
   }, {
@@ -3316,6 +3373,135 @@ const Dashboard = ({
   }, m.v), React.createElement("div", {
     style: ds.metricLabel
   }, m.l)))), React.createElement("section", {
+    style: ds.grid,
+    className: "reveal"
+  }, React.createElement("div", {
+    className: "card",
+    style: {
+      padding: 22
+    }
+  }, React.createElement("div", {
+    style: ds.cardHead
+  }, React.createElement("span", {
+    style: ds.cardTitle
+  }, "Level progress"), React.createElement("span", {
+    className: "chip chip-accent"
+  }, xp.weekly_xp || 0, " XP this week")), React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'baseline',
+      gap: 8,
+      marginTop: 14
+    }
+  }, React.createElement("span", {
+    style: {
+      fontFamily: 'var(--font-display)',
+      fontSize: 44,
+      fontWeight: 300
+    }
+  }, xp.level || 1), React.createElement("span", {
+    style: {
+      fontSize: 12,
+      color: 'var(--fg-2)'
+    }
+  }, "level")), React.createElement("div", {
+    style: ds.progress
+  }, React.createElement("div", {
+    style: {
+      ...ds.progressFill,
+      width: (xp.progress_pct || 0) + '%'
+    }
+  })), React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontSize: 11.5,
+      color: 'var(--fg-3)'
+    }
+  }, xp.xp_to_next_level || 0, " XP to next level")), React.createElement("div", {
+    className: "card",
+    style: {
+      padding: 22
+    }
+  }, React.createElement("div", {
+    style: ds.cardHead
+  }, React.createElement("span", {
+    style: ds.cardTitle
+  }, "Daily goal"), React.createElement(Icon.Bolt, {
+    size: 14,
+    style: {
+      color: 'var(--accent)'
+    }
+  })), React.createElement("div", {
+    style: {
+      fontFamily: 'var(--font-display)',
+      fontSize: 36,
+      fontWeight: 300,
+      marginTop: 14
+    }
+  }, dailyGoal ? dailyGoal.completed_xp : 0, "/", dailyGoal ? dailyGoal.target_xp : 50), React.createElement("div", {
+    style: ds.progress
+  }, React.createElement("div", {
+    style: {
+      ...ds.progressFill,
+      width: (dailyGoal ? dailyGoal.xp_progress_pct : 0) + '%'
+    }
+  })), React.createElement("div", {
+    style: {
+      marginTop: 10,
+      fontSize: 11.5,
+      color: 'var(--fg-3)'
+    }
+  }, dailyGoal && dailyGoal.status === 'completed' ? 'Goal complete' : 'XP target for today')), React.createElement("div", {
+    className: "card",
+    style: {
+      padding: 22
+    }
+  }, React.createElement("div", {
+    style: ds.cardHead
+  }, React.createElement("span", {
+    style: ds.cardTitle
+  }, "Weekly leaderboard"), React.createElement("button", {
+    className: "btn btn-bare",
+    onClick: () => onNav('community'),
+    style: {
+      fontSize: 11.5
+    }
+  }, "Open ", React.createElement(Icon.ArrowRight, {
+    size: 11
+  }))), React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 8,
+      marginTop: 14
+    }
+  }, (leaderboardPreview.length ? leaderboardPreview : [{
+    rank: '-',
+    display_name: 'No XP yet',
+    xp: 0
+  }]).slice(0, 4).map((row, i) => React.createElement("div", {
+    key: row.user_id || i,
+    style: ds.leaderRow
+  }, React.createElement("span", {
+    className: "mono",
+    style: {
+      color: 'var(--accent)',
+      width: 28
+    }
+  }, "#", row.rank), React.createElement("span", {
+    style: {
+      flex: 1,
+      color: 'var(--fg-1)',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'nowrap'
+    }
+  }, row.display_name), React.createElement("span", {
+    className: "mono",
+    style: {
+      color: 'var(--fg-3)'
+    }
+  }, row.xp, " XP")))))), React.createElement("section", {
     style: ds.grid,
     className: "reveal"
   }, React.createElement("div", {
@@ -3689,7 +3875,56 @@ const Dashboard = ({
       textOverflow: 'ellipsis',
       whiteSpace: 'nowrap'
     }
-  }, a.title || 'Activity')))))));
+  }, a.title || 'Activity'))))), recentBadges.length > 0 && React.createElement("section", {
+    className: "card",
+    style: {
+      padding: 22,
+      marginBottom: 40
+    }
+  }, React.createElement("div", {
+    style: ds.cardHead
+  }, React.createElement("span", {
+    style: ds.cardTitle
+  }, "Recent achievements"), React.createElement("button", {
+    className: "btn btn-bare",
+    onClick: () => onNav('community'),
+    style: {
+      fontSize: 11.5
+    }
+  }, "Community ", React.createElement(Icon.ArrowRight, {
+    size: 11
+  }))), React.createElement("div", {
+    style: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(5, 1fr)',
+      gap: 10,
+      marginTop: 14
+    }
+  }, recentBadges.slice(0, 5).map(b => {
+    const C = Icon[b.icon] || Icon.Star;
+    return React.createElement("div", {
+      key: b.code,
+      style: ds.badgeCard
+    }, React.createElement(C, {
+      size: 15,
+      style: {
+        color: 'var(--accent)'
+      }
+    }), React.createElement("div", {
+      style: {
+        fontSize: 12.5,
+        color: 'var(--fg-0)',
+        marginTop: 8,
+        fontWeight: 500
+      }
+    }, b.name), React.createElement("div", {
+      style: {
+        fontSize: 11,
+        color: 'var(--fg-3)',
+        marginTop: 4
+      }
+    }, b.description));
+  })))));
 };
 const FocusRing = ({
   value = 0
@@ -3910,7 +4145,7 @@ const ds = {
   },
   metrics: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(5, 1fr)',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
     gap: 10,
     marginBottom: 14
   },
@@ -4032,6 +4267,20 @@ const ds = {
     background: 'var(--bg-1)'
   },
   insight: {
+    padding: 14,
+    borderRadius: 'var(--r-md)',
+    background: 'var(--bg-2)',
+    border: '1px solid var(--line)'
+  },
+  leaderRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '8px 0',
+    borderBottom: '1px solid var(--line-soft)',
+    fontSize: 12
+  },
+  badgeCard: {
     padding: 14,
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)',
@@ -12318,7 +12567,8 @@ const StudyPlan = ({
     try {
       const res = await window.NoesisAPI.study.completeTask(taskId);
       setPlan(res.study_plan || null);
-      setStatus('Task marked complete.');
+      const reward = res.study_plan && res.study_plan.reward;
+      setStatus(reward && reward.points ? `Task marked complete. +${reward.points} XP` : 'Task marked complete.');
     } catch (e) {
       setStatus('Could not update task: ' + (e.message || 'error'));
     } finally {
@@ -12530,6 +12780,11 @@ const StudyPlan = ({
         textAlign: 'left'
       }
     }, t.title), React.createElement("span", {
+      className: "chip chip-accent",
+      style: {
+        fontSize: 10
+      }
+    }, "+20 XP"), React.createElement("span", {
       className: "mono",
       style: {
         fontSize: 10,
@@ -15176,7 +15431,7 @@ const Quiz = ({
       color: 'var(--fg-1)',
       lineHeight: 1.6
     }
-  }, "Score saved: ", finalScore.score, "% with ", finalScore.correct, "/", finalScore.total, " correct.", finalScore.wrong && finalScore.wrong.length ? ` ${finalScore.wrong.length} wrong answer${finalScore.wrong.length === 1 ? '' : 's'} stored for review.` : ' No wrong answers to review.')), React.createElement("div", {
+  }, "Score saved: ", finalScore.score, "% with ", finalScore.correct, "/", finalScore.total, " correct.", finalScore.wrong && finalScore.wrong.length ? ` ${finalScore.wrong.length} wrong answer${finalScore.wrong.length === 1 ? '' : 's'} stored for review.` : ' No wrong answers to review.', finalScore.reward && finalScore.reward.points ? ` +${finalScore.reward.points} XP earned.` : '')), React.createElement("div", {
     style: {
       display: 'flex',
       justifyContent: 'space-between',
@@ -15327,7 +15582,8 @@ const Progress = ({
       setError('');
     }).catch(e => setError(e.message || 'Failed to load progress'));
   }, []);
-  const stats = data && data.stats || [{
+  const game = data && data.gamification;
+  const baseStats = data && data.stats || [{
     l: 'Mastery',
     v: '-',
     d: '',
@@ -15352,6 +15608,19 @@ const Progress = ({
     t: '',
     c: 'var(--warn)'
   }];
+  const stats = game && game.xp ? [{
+    l: 'Level',
+    v: game.xp.level || 1,
+    d: `${game.xp.total_xp || 0} total XP`,
+    t: '',
+    c: 'var(--accent)'
+  }, {
+    l: 'Weekly XP',
+    v: game.xp.weekly_xp || 0,
+    d: 'earned this week',
+    t: '',
+    c: 'var(--parchment)'
+  }, ...baseStats] : baseStats;
   const conceptBreakdown = data && data.concept_breakdown || [];
   return React.createElement("div", null, React.createElement(window.Topbar, {
     title: "Progress",
@@ -15668,7 +15937,7 @@ const pg = {
   },
   statsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
     gap: 14,
     marginBottom: 20
   },
@@ -16409,6 +16678,1057 @@ window.Settings = Settings;
 })();
 
 
+// ---- components/Community.jsx ----
+(function () {
+  window.__NOESIS_BOOT.files.push("components/Community.jsx");
+const Community = ({
+  onNav
+}) => {
+  const Icon = window.Icon;
+  const [tab, setTab] = React.useState('leaderboard');
+  const tabs = [{
+    id: 'leaderboard',
+    label: 'Leaderboard',
+    icon: 'Chart'
+  }, {
+    id: 'friends',
+    label: 'Friends',
+    icon: 'Users'
+  }, {
+    id: 'rooms',
+    label: 'Study Rooms',
+    icon: 'Globe'
+  }];
+  return React.createElement("div", null, React.createElement(window.Topbar, {
+    title: "Community",
+    crumbs: ['Social learning']
+  }), React.createElement("div", {
+    style: cm.page
+  }, React.createElement("section", {
+    style: cm.hero
+  }, React.createElement("div", null, React.createElement("div", {
+    style: cm.eyebrow
+  }, "Gamified study"), React.createElement("h1", {
+    style: cm.title
+  }, "Study together, keep momentum, and make progress visible.")), React.createElement("div", {
+    style: cm.tabBar
+  }, tabs.map(t => {
+    const C = Icon[t.icon];
+    const active = tab === t.id;
+    return React.createElement("button", {
+      key: t.id,
+      onClick: () => setTab(t.id),
+      style: {
+        ...cm.tab,
+        ...(active ? cm.tabActive : {})
+      }
+    }, React.createElement(C, {
+      size: 13
+    }), " ", t.label);
+  }))), tab === 'leaderboard' && React.createElement(LeaderboardPanel, null), tab === 'friends' && React.createElement(FriendsPanel, null), tab === 'rooms' && React.createElement(StudyRoomsPanel, {
+    onNav: onNav
+  })));
+};
+function communityErrorMessage(error, fallback) {
+  const code = error && (error.code || error.message);
+  const routeMissing = error && error.status === 404 && error.code === 'not_found' && error.data && error.data.path;
+  if (routeMissing) return 'Community backend routes are not available. Restart the backend server.';
+  if (code === 'room_not_found') return 'Room not found. Check the invite code or refresh rooms.';
+  if (code === 'user_not_found') return 'Student not found.';
+  if (code === 'already_friends') return 'You are already friends.';
+  if (code === 'friend_request_already_pending') return 'A friend request is already pending.';
+  if (code === 'room_membership_required') return 'Join this room before viewing or sharing inside it.';
+  if (code === 'note_not_found') return 'That note could not be found.';
+  if (code === 'quiz_not_found') return 'That quiz could not be found.';
+  return error && error.message || fallback;
+}
+const LeaderboardPanel = () => {
+  const [scope, setScope] = React.useState('weekly');
+  const [rows, setRows] = React.useState([]);
+  const [status, setStatus] = React.useState('');
+  const load = React.useCallback(async () => {
+    setStatus('Loading leaderboard...');
+    try {
+      const res = scope === 'global' ? await window.NoesisAPI.leaderboards.global() : scope === 'friends' ? await window.NoesisAPI.leaderboards.friends() : await window.NoesisAPI.leaderboards.weekly();
+      setRows(res.leaderboard || []);
+      setStatus('');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not load leaderboard.'));
+    }
+  }, [scope]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  return React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardHead
+  }, React.createElement("div", null, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Leaderboard"), React.createElement("div", {
+    style: cm.muted
+  }, "Ranked by XP, with display names only.")), React.createElement(SegmentedCommunity, {
+    options: ['Weekly', 'Global', 'Friends'],
+    value: ['weekly', 'global', 'friends'].indexOf(scope),
+    onChange: i => setScope(['weekly', 'global', 'friends'][i])
+  })), status && React.createElement("div", {
+    style: cm.status
+  }, status), React.createElement("div", {
+    style: cm.table
+  }, (rows.length ? rows : []).map(row => React.createElement("div", {
+    key: row.user_id,
+    style: {
+      ...cm.rankRow,
+      ...(row.is_current_user ? cm.rankCurrent : {})
+    }
+  }, React.createElement("div", {
+    className: "mono",
+    style: cm.rank
+  }, "#", row.rank), React.createElement("div", {
+    style: cm.avatar
+  }, String(row.display_name || 'N').slice(0, 1).toUpperCase()), React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, React.createElement("div", {
+    style: cm.name
+  }, row.display_name), React.createElement("div", {
+    style: cm.muted
+  }, "Level ", row.level, " | ", row.badges_count, " badge", row.badges_count === 1 ? '' : 's', " | ", row.streak, "d streak")), React.createElement("div", {
+    className: "mono",
+    style: cm.xp
+  }, row.xp, " XP"))), !rows.length && !status && React.createElement(EmptyCommunity, {
+    text: "No leaderboard XP yet. Finish a quiz, review cards, or complete a study task."
+  })));
+};
+const FriendsPanel = () => {
+  const Icon = window.Icon;
+  const [friends, setFriends] = React.useState([]);
+  const [requests, setRequests] = React.useState({
+    incoming: [],
+    outgoing: []
+  });
+  const [q, setQ] = React.useState('');
+  const [results, setResults] = React.useState([]);
+  const [status, setStatus] = React.useState('');
+  const load = React.useCallback(async () => {
+    try {
+      const [f, r] = await Promise.all([window.NoesisAPI.friends.list(), window.NoesisAPI.friends.requests()]);
+      setFriends(f.friends || []);
+      setRequests(r || {
+        incoming: [],
+        outgoing: []
+      });
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not load friends.'));
+    }
+  }, []);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  const search = async () => {
+    if (q.trim().length < 2) return;
+    setStatus('Searching...');
+    try {
+      const res = await window.NoesisAPI.users.search(q.trim());
+      setResults(res.users || []);
+      setStatus('');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Search failed.'));
+    }
+  };
+  const send = async id => {
+    setStatus('Sending request...');
+    try {
+      await window.NoesisAPI.friends.request(id);
+      await load();
+      await search();
+      setStatus('Friend request sent.');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not send request.'));
+    }
+  };
+  const respond = async (id, accept) => {
+    setStatus(accept ? 'Accepting request...' : 'Rejecting request...');
+    try {
+      if (accept) await window.NoesisAPI.friends.accept(id);else await window.NoesisAPI.friends.reject(id);
+      await load();
+      setStatus('');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not update request.'));
+    }
+  };
+  return React.createElement("div", {
+    style: cm.twoCol
+  }, React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardHead
+  }, React.createElement("div", null, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Find classmates"), React.createElement("div", {
+    style: cm.muted
+  }, "Search by display name or email. Emails stay private in results."))), React.createElement("div", {
+    style: cm.searchRow
+  }, React.createElement("input", {
+    className: "input",
+    value: q,
+    onChange: e => setQ(e.target.value),
+    onKeyDown: e => {
+      if (e.key === 'Enter') search();
+    },
+    placeholder: "Search students",
+    style: {
+      flex: 1
+    }
+  }), React.createElement("button", {
+    className: "btn btn-accent",
+    onClick: search
+  }, React.createElement(Icon.Search, {
+    size: 12
+  }), " Search")), status && React.createElement("div", {
+    style: cm.status
+  }, status), React.createElement("div", {
+    style: cm.list
+  }, results.map(user => React.createElement("div", {
+    key: user.user_id,
+    style: cm.personRow
+  }, React.createElement("div", {
+    style: cm.avatar
+  }, String(user.display_name || 'N').slice(0, 1).toUpperCase()), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, React.createElement("div", {
+    style: cm.name
+  }, user.display_name), React.createElement("div", {
+    style: cm.muted
+  }, "Level ", user.level, " | ", user.relationship || 'none')), React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: user.relationship !== 'none',
+    onClick: () => send(user.user_id)
+  }, user.relationship === 'none' ? 'Add' : user.relationship))), !results.length && React.createElement(EmptyCommunity, {
+    text: "Search for a classmate to send a friend request."
+  }))), React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Friend requests"), React.createElement("div", {
+    style: cm.list
+  }, (requests.incoming || []).map(req => React.createElement("div", {
+    key: req.id,
+    style: cm.personRow
+  }, React.createElement("div", {
+    style: cm.avatar
+  }, String(req.requester.display_name || 'N').slice(0, 1).toUpperCase()), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, React.createElement("div", {
+    style: cm.name
+  }, req.requester.display_name), React.createElement("div", {
+    style: cm.muted
+  }, "Wants to study with you")), React.createElement("button", {
+    className: "btn btn-accent",
+    onClick: () => respond(req.id, true)
+  }, "Accept"), React.createElement("button", {
+    className: "btn btn-bare",
+    onClick: () => respond(req.id, false)
+  }, "Reject"))), !(requests.incoming || []).length && React.createElement(EmptyCommunity, {
+    text: "No incoming requests."
+  })), React.createElement("div", {
+    style: {
+      ...cm.cardTitle,
+      marginTop: 18
+    }
+  }, "Friends"), React.createElement("div", {
+    style: cm.list
+  }, friends.map(f => React.createElement("div", {
+    key: f.user_id,
+    style: cm.personRow
+  }, React.createElement("div", {
+    style: cm.avatar
+  }, String(f.display_name || 'N').slice(0, 1).toUpperCase()), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, React.createElement("div", {
+    style: cm.name
+  }, f.display_name), React.createElement("div", {
+    style: cm.muted
+  }, "Level ", f.level, " | ", f.badges_count, " badge", f.badges_count === 1 ? '' : 's')))), !friends.length && React.createElement(EmptyCommunity, {
+    text: "Friends will appear here after requests are accepted."
+  }))));
+};
+const StudyRoomsPanel = ({
+  onNav
+}) => {
+  const Icon = window.Icon;
+  const [rooms, setRooms] = React.useState([]);
+  const [form, setForm] = React.useState({
+    name: '',
+    subject: '',
+    room_type: 'public'
+  });
+  const [code, setCode] = React.useState('');
+  const [status, setStatus] = React.useState('');
+  const load = React.useCallback(async () => {
+    try {
+      const res = await window.NoesisAPI.rooms.list();
+      setRooms(res.rooms || []);
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not load rooms.'));
+    }
+  }, []);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  const openRoom = room => {
+    sessionStorage.setItem('noesis.roomId', String(room.id));
+    onNav && onNav('room');
+  };
+  const create = async () => {
+    if (!form.name.trim()) return;
+    setStatus('Creating room...');
+    try {
+      const res = await window.NoesisAPI.rooms.create(form);
+      const room = res.room || (res && res.id ? res : null);
+      await load();
+      if (room) openRoom(room);
+      setStatus('');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not create room.'));
+    }
+  };
+  const joinCode = async () => {
+    if (!code.trim()) return;
+    setStatus('Joining room...');
+    try {
+      const res = await window.NoesisAPI.rooms.joinByCode(code.trim());
+      await load();
+      openRoom(res.room);
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not join room.'));
+    }
+  };
+  const joinPublic = async room => {
+    setStatus('Joining room...');
+    try {
+      const res = await window.NoesisAPI.rooms.join(room.id);
+      await load();
+      openRoom(res.room || room);
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not join room.'));
+    }
+  };
+  return React.createElement("div", {
+    style: cm.twoCol
+  }, React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Create a study room"), React.createElement("div", {
+    style: cm.formGrid
+  }, React.createElement("input", {
+    className: "input",
+    value: form.name,
+    onChange: e => setForm({
+      ...form,
+      name: e.target.value
+    }),
+    placeholder: "Room name"
+  }), React.createElement("input", {
+    className: "input",
+    value: form.subject,
+    onChange: e => setForm({
+      ...form,
+      subject: e.target.value
+    }),
+    placeholder: "Subject, e.g. Data Structures"
+  }), React.createElement("select", {
+    className: "input",
+    value: form.room_type,
+    onChange: e => setForm({
+      ...form,
+      room_type: e.target.value
+    })
+  }, React.createElement("option", {
+    value: "public"
+  }, "Public"), React.createElement("option", {
+    value: "invite-only"
+  }, "Invite-only"), React.createElement("option", {
+    value: "private"
+  }, "Private")), React.createElement("button", {
+    className: "btn btn-accent",
+    onClick: create
+  }, React.createElement(Icon.Plus, {
+    size: 12
+  }), " Create room")), React.createElement("div", {
+    style: {
+      ...cm.cardTitle,
+      marginTop: 22
+    }
+  }, "Join by code"), React.createElement("div", {
+    style: cm.searchRow
+  }, React.createElement("input", {
+    className: "input mono",
+    value: code,
+    onChange: e => setCode(e.target.value),
+    placeholder: "Invite code",
+    style: {
+      flex: 1
+    }
+  }), React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: joinCode
+  }, "Join")), status && React.createElement("div", {
+    style: cm.status
+  }, status)), React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardHead
+  }, React.createElement("div", null, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Rooms"), React.createElement("div", {
+    style: cm.muted
+  }, "Public rooms and rooms you belong to.")), React.createElement("button", {
+    className: "btn btn-bare",
+    onClick: load
+  }, "Refresh")), React.createElement("div", {
+    style: cm.list
+  }, rooms.map(room => React.createElement("div", {
+    key: room.id,
+    style: cm.roomRow
+  }, React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, React.createElement("div", {
+    style: cm.name
+  }, room.name), React.createElement("div", {
+    style: cm.muted
+  }, room.subject || 'General', " | ", room.member_count, " member", room.member_count === 1 ? '' : 's', " | ", room.room_type), room.user_role && React.createElement("span", {
+    className: "chip chip-accent",
+    style: {
+      marginTop: 8
+    }
+  }, room.user_role)), room.user_role ? React.createElement("button", {
+    className: "btn btn-accent",
+    onClick: () => openRoom(room)
+  }, "Open") : React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => joinPublic(room)
+  }, "Join"))), !rooms.length && React.createElement(EmptyCommunity, {
+    text: "Create a room or join one by invite code."
+  }))));
+};
+const RoomDetail = ({
+  onNav
+}) => {
+  const Icon = window.Icon;
+  const roomId = parseInt(sessionStorage.getItem('noesis.roomId') || '0', 10);
+  const [data, setData] = React.useState(null);
+  const [leaderboard, setLeaderboard] = React.useState([]);
+  const [notes, setNotes] = React.useState([]);
+  const [quizzes, setQuizzes] = React.useState([]);
+  const [message, setMessage] = React.useState('');
+  const [messageRefresh, setMessageRefresh] = React.useState(0);
+  const [status, setStatus] = React.useState('');
+  const load = React.useCallback(async () => {
+    if (!roomId) {
+      onNav && onNav('community');
+      return;
+    }
+    try {
+      const [roomRes, boardRes, notesRes, quizzesRes] = await Promise.all([window.NoesisAPI.rooms.get(roomId), window.NoesisAPI.rooms.leaderboard(roomId).catch(() => ({
+        leaderboard: []
+      })), window.NoesisAPI.notes.list().catch(() => ({
+        notes: []
+      })), window.NoesisAPI.quizzes.list().catch(() => ({
+        quizzes: []
+      }))]);
+      setData(roomRes);
+      setLeaderboard(boardRes.leaderboard || []);
+      setNotes(notesRes.notes || []);
+      setQuizzes(quizzesRes.quizzes || []);
+      setStatus('');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not load room.'));
+    }
+  }, [roomId]);
+  React.useEffect(() => {
+    load();
+  }, [load]);
+  const shareNote = async id => {
+    setStatus('Sharing note...');
+    try {
+      await window.NoesisAPI.rooms.shareNote(roomId, id);
+      await load();
+      setStatus('Note shared.');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not share note.'));
+    }
+  };
+  const shareQuiz = async id => {
+    setStatus('Sharing quiz...');
+    try {
+      await window.NoesisAPI.rooms.shareQuiz(roomId, id);
+      await load();
+      setStatus('Quiz shared.');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not share quiz.'));
+    }
+  };
+  const startQuiz = async shareId => {
+    setStatus('Starting challenge...');
+    try {
+      const res = await window.NoesisAPI.rooms.startSharedQuiz(roomId, shareId);
+      sessionStorage.setItem('noesis.quizId', String(res.quiz_id));
+      onNav && onNav('quiz');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not start challenge.'));
+    }
+  };
+  const sendMessage = async () => {
+    if (!message.trim()) return;
+    setStatus('Posting...');
+    try {
+      await window.NoesisAPI.rooms.postMessage(roomId, message.trim());
+      setMessage('');
+      await load();
+      setMessageRefresh(v => v + 1);
+      setStatus('');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not post message.'));
+    }
+  };
+  const leave = async () => {
+    if (!window.confirm('Leave this study room?')) return;
+    try {
+      await window.NoesisAPI.rooms.leave(roomId);
+      sessionStorage.removeItem('noesis.roomId');
+      onNav && onNav('community');
+    } catch (e) {
+      setStatus(communityErrorMessage(e, 'Could not leave room.'));
+    }
+  };
+  const room = data && data.room;
+  return React.createElement("div", null, React.createElement(window.Topbar, {
+    title: room ? room.name : 'Study Room',
+    crumbs: ['Community'],
+    right: React.createElement(React.Fragment, null, React.createElement("button", {
+      className: "btn btn-ghost",
+      onClick: () => onNav && onNav('community')
+    }, React.createElement(Icon.ArrowLeft, {
+      size: 12
+    }), " Community"), room && React.createElement("button", {
+      className: "btn btn-bare",
+      onClick: leave
+    }, "Leave"))
+  }), React.createElement("div", {
+    style: cm.page
+  }, status && React.createElement("div", {
+    style: cm.status
+  }, status), !room ? React.createElement(EmptyCommunity, {
+    text: "Loading room..."
+  }) : React.createElement(React.Fragment, null, React.createElement("section", {
+    style: cm.roomHero
+  }, React.createElement("div", null, React.createElement("div", {
+    style: cm.eyebrow
+  }, room.subject || 'Study room', " | ", room.room_type), React.createElement("h1", {
+    style: cm.title
+  }, room.name), React.createElement("div", {
+    style: cm.muted
+  }, room.description || 'A shared space for studying together.')), React.createElement("div", {
+    style: cm.inviteBox
+  }, React.createElement("div", {
+    style: cm.muted
+  }, "Invite code"), React.createElement("div", {
+    className: "mono",
+    style: cm.inviteCode
+  }, room.invite_code))), React.createElement("div", {
+    style: cm.threeCol
+  }, React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Room leaderboard"), React.createElement("div", {
+    style: cm.list
+  }, leaderboard.map(row => React.createElement("div", {
+    key: row.user_id,
+    style: {
+      ...cm.rankRow,
+      ...(row.is_current_user ? cm.rankCurrent : {})
+    }
+  }, React.createElement("div", {
+    className: "mono",
+    style: cm.rank
+  }, "#", row.rank), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, React.createElement("div", {
+    style: cm.name
+  }, row.display_name), React.createElement("div", {
+    style: cm.muted
+  }, "Level ", row.level, " | ", row.streak, "d streak")), React.createElement("div", {
+    className: "mono",
+    style: cm.xp
+  }, row.xp, " XP"))))), React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Members"), React.createElement("div", {
+    style: cm.list
+  }, (data.members || []).map(m => React.createElement("div", {
+    key: m.user_id,
+    style: cm.personRow
+  }, React.createElement("div", {
+    style: cm.avatar
+  }, String(m.display_name || 'N').slice(0, 1).toUpperCase()), React.createElement("div", {
+    style: {
+      flex: 1
+    }
+  }, React.createElement("div", {
+    style: cm.name
+  }, m.display_name), React.createElement("div", {
+    style: cm.muted
+  }, m.role, " | Level ", m.level)))))), React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Activity"), React.createElement("div", {
+    style: cm.list
+  }, (data.activity || []).map(a => React.createElement("div", {
+    key: a.id,
+    style: cm.activityRow
+  }, React.createElement("div", {
+    style: cm.name
+  }, a.summary), React.createElement("div", {
+    style: cm.muted
+  }, a.display_name, " | ", new Date(a.created_at).toLocaleString()))), !(data.activity || []).length && React.createElement(EmptyCommunity, {
+    text: "Room activity will appear here."
+  })))), React.createElement("div", {
+    style: cm.twoCol
+  }, React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Shared notes"), React.createElement(ShareSelect, {
+    label: "Share note",
+    items: notes,
+    getLabel: n => n.title,
+    onShare: shareNote
+  }), React.createElement("div", {
+    style: cm.list
+  }, (data.shared_notes || []).map(n => React.createElement("div", {
+    key: n.id,
+    style: cm.sharedRow
+  }, React.createElement("div", {
+    style: cm.name
+  }, n.title_snapshot), React.createElement("div", {
+    style: cm.muted
+  }, "Shared by ", n.display_name), React.createElement("div", {
+    style: cm.preview
+  }, String(n.body_md_snapshot || '').slice(0, 160)))))), React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Shared quizzes"), React.createElement(ShareSelect, {
+    label: "Share quiz",
+    items: quizzes,
+    getLabel: q => q.title,
+    onShare: shareQuiz
+  }), React.createElement("div", {
+    style: cm.list
+  }, (data.shared_quizzes || []).map(q => React.createElement("div", {
+    key: q.id,
+    style: cm.sharedRow
+  }, React.createElement("div", {
+    style: cm.name
+  }, q.title_snapshot), React.createElement("div", {
+    style: cm.muted
+  }, "Shared by ", q.display_name, " | ", q.metadata && q.metadata.question_count || 0, " questions"), React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => startQuiz(q.id),
+    style: {
+      marginTop: 8
+    }
+  }, "Start challenge")))))), React.createElement("section", {
+    className: "card",
+    style: cm.card
+  }, React.createElement("div", {
+    style: cm.cardHead
+  }, React.createElement("div", null, React.createElement("div", {
+    style: cm.cardTitle
+  }, "Room chat"), React.createElement("div", {
+    style: cm.muted
+  }, "Polling-friendly MVP messages.")), React.createElement("button", {
+    className: "btn btn-bare",
+    onClick: () => {
+      load();
+      setMessageRefresh(v => v + 1);
+    }
+  }, "Refresh")), React.createElement(RoomMessages, {
+    roomId: roomId,
+    refreshKey: messageRefresh
+  }), React.createElement("div", {
+    style: cm.searchRow
+  }, React.createElement("input", {
+    className: "input",
+    value: message,
+    onChange: e => setMessage(e.target.value),
+    onKeyDown: e => {
+      if (e.key === 'Enter') sendMessage();
+    },
+    placeholder: "Post a short study update",
+    style: {
+      flex: 1
+    }
+  }), React.createElement("button", {
+    className: "btn btn-accent",
+    onClick: sendMessage
+  }, React.createElement(Icon.Send, {
+    size: 12
+  }), " Send"))))));
+};
+const RoomMessages = ({
+  roomId,
+  refreshKey
+}) => {
+  const [messages, setMessages] = React.useState([]);
+  React.useEffect(() => {
+    let alive = true;
+    window.NoesisAPI.rooms.messages(roomId).then(res => {
+      if (alive) setMessages(res.messages || []);
+    }).catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [roomId, refreshKey]);
+  return React.createElement("div", {
+    style: cm.messages
+  }, messages.map(m => React.createElement("div", {
+    key: m.id,
+    style: cm.messageBubble
+  }, React.createElement("div", {
+    style: cm.muted
+  }, m.display_name, " | ", new Date(m.created_at).toLocaleTimeString()), React.createElement("div", {
+    style: {
+      fontSize: 13,
+      color: 'var(--fg-0)',
+      marginTop: 4
+    }
+  }, m.body))), !messages.length && React.createElement(EmptyCommunity, {
+    text: "No messages yet."
+  }));
+};
+const ShareSelect = ({
+  label,
+  items,
+  getLabel,
+  onShare
+}) => {
+  const [selected, setSelected] = React.useState('');
+  return React.createElement("div", {
+    style: cm.searchRow
+  }, React.createElement("select", {
+    className: "input",
+    value: selected,
+    onChange: e => setSelected(e.target.value),
+    style: {
+      flex: 1
+    }
+  }, React.createElement("option", {
+    value: ""
+  }, label), (items || []).map(item => React.createElement("option", {
+    key: item.id,
+    value: item.id
+  }, getLabel(item)))), React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: !selected,
+    onClick: () => onShare && onShare(parseInt(selected, 10))
+  }, "Share"));
+};
+const SegmentedCommunity = ({
+  options,
+  value,
+  onChange
+}) => React.createElement("div", {
+  style: cm.segmented
+}, options.map((opt, i) => React.createElement("button", {
+  key: opt,
+  onClick: () => onChange && onChange(i),
+  style: {
+    ...cm.segment,
+    ...(i === value ? cm.segmentActive : {})
+  }
+}, opt)));
+const EmptyCommunity = ({
+  text
+}) => React.createElement("div", {
+  style: cm.empty
+}, text);
+const cm = {
+  page: {
+    padding: 28,
+    maxWidth: 1440,
+    margin: '0 auto'
+  },
+  hero: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 18,
+    marginBottom: 18
+  },
+  roomHero: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(0, 1fr) 220px',
+    gap: 18,
+    alignItems: 'stretch',
+    marginBottom: 14
+  },
+  eyebrow: {
+    fontSize: 11,
+    color: 'var(--accent)',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    marginBottom: 8
+  },
+  title: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 40,
+    fontWeight: 300,
+    letterSpacing: 0,
+    margin: 0,
+    maxWidth: 780
+  },
+  tabBar: {
+    display: 'flex',
+    gap: 5,
+    padding: 3,
+    borderRadius: 'var(--r-md)',
+    border: '1px solid var(--line)',
+    background: 'var(--bg-1)'
+  },
+  tab: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 7,
+    padding: '8px 11px',
+    borderRadius: 7,
+    color: 'var(--fg-2)',
+    fontSize: 12.5
+  },
+  tabActive: {
+    background: 'var(--bg-2)',
+    color: 'var(--fg-0)'
+  },
+  card: {
+    padding: 20,
+    marginBottom: 14
+  },
+  cardHead: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 14,
+    marginBottom: 14
+  },
+  cardTitle: {
+    fontSize: 13,
+    color: 'var(--fg-0)',
+    fontWeight: 500
+  },
+  muted: {
+    fontSize: 11.5,
+    color: 'var(--fg-3)',
+    lineHeight: 1.5
+  },
+  status: {
+    margin: '10px 0',
+    fontSize: 12,
+    color: 'var(--fg-2)',
+    padding: 10,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
+  table: {
+    display: 'grid',
+    gap: 7
+  },
+  rankRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
+  rankCurrent: {
+    borderColor: 'var(--accent-soft)',
+    background: 'var(--accent-glow)'
+  },
+  rank: {
+    width: 42,
+    color: 'var(--accent)',
+    fontSize: 12
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'linear-gradient(135deg, var(--accent), var(--parchment))',
+    color: 'var(--bg-0)',
+    fontFamily: 'var(--font-display)'
+  },
+  name: {
+    fontSize: 13.5,
+    color: 'var(--fg-0)',
+    fontWeight: 500
+  },
+  xp: {
+    color: 'var(--accent)',
+    fontSize: 12,
+    whiteSpace: 'nowrap'
+  },
+  twoCol: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    gap: 14
+  },
+  threeCol: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+    gap: 14
+  },
+  searchRow: {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'center',
+    marginTop: 12
+  },
+  list: {
+    display: 'grid',
+    gap: 8,
+    marginTop: 14
+  },
+  personRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: 11,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
+  roomRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
+  activityRow: {
+    padding: 11,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
+  sharedRow: {
+    padding: 12,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
+  preview: {
+    marginTop: 8,
+    fontSize: 12,
+    color: 'var(--fg-2)',
+    lineHeight: 1.5
+  },
+  formGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: 9,
+    marginTop: 12
+  },
+  segmented: {
+    display: 'flex',
+    gap: 4,
+    padding: 2,
+    background: 'var(--bg-2)',
+    borderRadius: 8,
+    border: '1px solid var(--line)'
+  },
+  segment: {
+    padding: '6px 10px',
+    borderRadius: 6,
+    fontSize: 12,
+    color: 'var(--fg-2)'
+  },
+  segmentActive: {
+    background: 'var(--bg-0)',
+    color: 'var(--fg-0)'
+  },
+  empty: {
+    padding: 16,
+    border: '1px dashed var(--line-strong)',
+    borderRadius: 8,
+    color: 'var(--fg-3)',
+    fontSize: 12.5,
+    textAlign: 'center'
+  },
+  inviteBox: {
+    padding: 18,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
+  inviteCode: {
+    marginTop: 8,
+    fontSize: 24,
+    color: 'var(--accent)'
+  },
+  messages: {
+    display: 'grid',
+    gap: 8,
+    margin: '12px 0',
+    maxHeight: 260,
+    overflow: 'auto'
+  },
+  messageBubble: {
+    padding: 11,
+    borderRadius: 8,
+    background: 'var(--bg-1)',
+    border: '1px solid var(--line)'
+  }
+};
+window.Community = Community;
+window.RoomDetail = RoomDetail;
+})();
+
+
 // ---- components/App.jsx ----
 (function () {
   window.__NOESIS_BOOT.files.push("components/App.jsx");
@@ -16466,7 +17786,7 @@ const RouteErrorFallback = ({
   onClick: onBack
 }, "Back to materials"));
 const App = () => {
-  const APP_ROUTES = ['dashboard', 'materials', 'material', 'storyboard', 'study-plan', 'tutor', 'notes', 'flashcards', 'quiz', 'progress', 'settings'];
+  const APP_ROUTES = ['dashboard', 'materials', 'material', 'storyboard', 'study-plan', 'tutor', 'notes', 'flashcards', 'quiz', 'progress', 'community', 'room', 'settings'];
   const [route, setRoute] = useState(localStorage.getItem('noesis.route') || 'landing');
   const [prevRoute, setPrevRoute] = useState(null);
   const [authMode, setAuthMode] = useState('signin');
@@ -16608,6 +17928,12 @@ const App = () => {
       onNav: goto
     }),
     progress: React.createElement(window.Progress, {
+      onNav: goto
+    }),
+    community: React.createElement(window.Community, {
+      onNav: goto
+    }),
+    room: React.createElement(window.RoomDetail, {
       onNav: goto
     }),
     settings: React.createElement(window.Settings, {
@@ -16851,7 +18177,7 @@ const TweaksPanel = ({
     value: r
   }, r))), React.createElement("optgroup", {
     label: "App"
-  }, ['dashboard', 'materials', 'material', 'storyboard', 'study-plan', 'tutor', 'notes', 'flashcards', 'quiz', 'progress', 'settings'].map(r => React.createElement("option", {
+  }, ['dashboard', 'materials', 'material', 'storyboard', 'study-plan', 'tutor', 'notes', 'flashcards', 'quiz', 'progress', 'community', 'room', 'settings'].map(r => React.createElement("option", {
     key: r,
     value: r
   }, r)))), React.createElement("button", {

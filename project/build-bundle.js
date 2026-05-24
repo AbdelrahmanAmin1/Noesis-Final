@@ -27,6 +27,7 @@ const sources = [
   'components/LessonRenderer.jsx',
   'components/Study.jsx',
   'components/Other.jsx',
+  'components/Community.jsx',
   'components/App.jsx',
 ];
 

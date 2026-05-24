@@ -81,6 +81,11 @@ app.use('/api/quizzes', require('./routes/quiz.routes'));
 app.use('/api/tutor', require('./routes/tutor.routes'));
 app.use('/api/dashboard', require('./routes/dashboard.routes'));
 app.use('/api/study', require('./routes/study.routes'));
+app.use('/api/gamification', require('./routes/gamification.routes'));
+app.use('/api/leaderboards', require('./routes/leaderboard.routes'));
+app.use('/api/users', require('./routes/user-search.routes'));
+app.use('/api/friends', require('./routes/friend.routes'));
+app.use('/api/rooms', require('./routes/room.routes'));
 app.use('/api/videos', require('./routes/video.routes'));
 app.use('/api/jobs', require('./routes/jobs.routes'));
 

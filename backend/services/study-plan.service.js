@@ -2,6 +2,7 @@
 
 const { getDb } = require('../config/db');
 const learningMaps = require('./learning-map.service');
+const gamification = require('./gamification.service');
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -96,13 +97,26 @@ function approvePlan(userId, id) {
 function completeTask(userId, taskId) {
   const db = getDb();
   const row = db.prepare(`
-    SELECT t.id, t.plan_id FROM study_plan_tasks t
+    SELECT t.id, t.plan_id, t.status, t.task_json FROM study_plan_tasks t
     JOIN study_plans p ON p.id=t.plan_id
     WHERE t.id=? AND p.user_id=?
   `).get(taskId, userId);
   if (!row) return null;
-  db.prepare("UPDATE study_plan_tasks SET status='completed', completed_at=? WHERE id=?").run(nowIso(), taskId);
-  return getPlan(userId, row.plan_id);
+  if (row.status !== 'completed') {
+    db.prepare("UPDATE study_plan_tasks SET status='completed', completed_at=? WHERE id=?").run(nowIso(), taskId);
+    const taskData = parseJson(row.task_json, {});
+    const reward = gamification.award(userId, 'study_task_completed', 'study_plan_task', taskId, {
+      metadata: { plan_id: row.plan_id, task_type: taskData.type || '', title: taskData.title || '' },
+    });
+    const plan = getPlan(userId, row.plan_id);
+    plan.reward = reward.awarded ? { points: reward.points, event_type: 'study_task_completed', unlocked: reward.unlocked || [] } : null;
+    plan.gamification = reward.summary || null;
+    return plan;
+  }
+  const plan = getPlan(userId, row.plan_id);
+  plan.reward = null;
+  plan.gamification = gamification.getSummary(userId);
+  return plan;
 }
 
 module.exports = { buildPlan, createPlan, getPlan, approvePlan, completeTask };

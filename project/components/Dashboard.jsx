@@ -25,6 +25,11 @@ const Dashboard = ({ onNav }) => {
   const summary = (data && data.summary) || {};
   const recentActivity = (data && data.recent_activity) || [];
   const nextAction = data && data.next_recommended_action;
+  const game = data && data.gamification;
+  const xp = game && game.xp ? game.xp : {};
+  const dailyGoal = game && game.daily_goal ? game.daily_goal : null;
+  const recentBadges = game && game.achievements ? (game.achievements.recent || []) : [];
+  const leaderboardPreview = (data && data.leaderboard_preview) || [];
 
   return (
     <div style={{ background: 'var(--bg-0)', minHeight: '100vh', position: 'relative' }}>
@@ -82,6 +87,8 @@ const Dashboard = ({ onNav }) => {
 
         <section style={ds.metrics} className="reveal">
           {[
+            { l: 'Level', v: xp.level || 1 },
+            { l: 'XP', v: xp.total_xp || 0 },
             { l: 'Materials', v: summary.materials || 0 },
             { l: 'Notes', v: summary.notes || 0 },
             { l: 'Flashcards', v: summary.flashcards || 0 },
@@ -93,6 +100,51 @@ const Dashboard = ({ onNav }) => {
               <div style={ds.metricLabel}>{m.l}</div>
             </div>
           ))}
+        </section>
+
+        <section style={ds.grid} className="reveal">
+          <div className="card" style={{ padding: 22 }}>
+            <div style={ds.cardHead}>
+              <span style={ds.cardTitle}>Level progress</span>
+              <span className="chip chip-accent">{xp.weekly_xp || 0} XP this week</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 14 }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 44, fontWeight: 300 }}>{xp.level || 1}</span>
+              <span style={{ fontSize: 12, color: 'var(--fg-2)' }}>level</span>
+            </div>
+            <div style={ds.progress}>
+              <div style={{ ...ds.progressFill, width: (xp.progress_pct || 0) + '%' }} />
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--fg-3)' }}>{xp.xp_to_next_level || 0} XP to next level</div>
+          </div>
+
+          <div className="card" style={{ padding: 22 }}>
+            <div style={ds.cardHead}>
+              <span style={ds.cardTitle}>Daily goal</span>
+              <Icon.Bolt size={14} style={{ color: 'var(--accent)' }}/>
+            </div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 300, marginTop: 14 }}>{dailyGoal ? dailyGoal.completed_xp : 0}/{dailyGoal ? dailyGoal.target_xp : 50}</div>
+            <div style={ds.progress}>
+              <div style={{ ...ds.progressFill, width: (dailyGoal ? dailyGoal.xp_progress_pct : 0) + '%' }} />
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--fg-3)' }}>{dailyGoal && dailyGoal.status === 'completed' ? 'Goal complete' : 'XP target for today'}</div>
+          </div>
+
+          <div className="card" style={{ padding: 22 }}>
+            <div style={ds.cardHead}>
+              <span style={ds.cardTitle}>Weekly leaderboard</span>
+              <button className="btn btn-bare" onClick={() => onNav('community')} style={{ fontSize: 11.5 }}>Open <Icon.ArrowRight size={11}/></button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+              {(leaderboardPreview.length ? leaderboardPreview : [{ rank: '-', display_name: 'No XP yet', xp: 0 }]).slice(0, 4).map((row, i) => (
+                <div key={row.user_id || i} style={ds.leaderRow}>
+                  <span className="mono" style={{ color: 'var(--accent)', width: 28 }}>#{row.rank}</span>
+                  <span style={{ flex: 1, color: 'var(--fg-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.display_name}</span>
+                  <span className="mono" style={{ color: 'var(--fg-3)' }}>{row.xp} XP</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </section>
 
         {/* Three-column work grid */}
@@ -240,6 +292,27 @@ const Dashboard = ({ onNav }) => {
             </div>
           )}
         </section>
+
+        {recentBadges.length > 0 && (
+          <section className="card" style={{ padding: 22, marginBottom: 40 }}>
+            <div style={ds.cardHead}>
+              <span style={ds.cardTitle}>Recent achievements</span>
+              <button className="btn btn-bare" onClick={() => onNav('community')} style={{ fontSize: 11.5 }}>Community <Icon.ArrowRight size={11}/></button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginTop: 14 }}>
+              {recentBadges.slice(0, 5).map(b => {
+                const C = Icon[b.icon] || Icon.Star;
+                return (
+                  <div key={b.code} style={ds.badgeCard}>
+                    <C size={15} style={{ color: 'var(--accent)' }}/>
+                    <div style={{ fontSize: 12.5, color: 'var(--fg-0)', marginTop: 8, fontWeight: 500 }}>{b.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 4 }}>{b.description}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -322,7 +395,7 @@ const ds = {
     gap: 40, alignItems: 'center',
     padding: '24px 0 32px',
   },
-  metrics: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginBottom: 14 },
+  metrics: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 14 },
   metricCard: { padding: '14px 16px' },
   metricValue: { fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 300, color: 'var(--fg-0)' },
   metricLabel: { fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 4 },
@@ -355,6 +428,8 @@ const ds = {
     padding: 14, borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)', border: '1px solid var(--line)',
   },
+  leaderRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--line-soft)', fontSize: 12 },
+  badgeCard: { padding: 14, borderRadius: 'var(--r-md)', background: 'var(--bg-2)', border: '1px solid var(--line)' },
 };
 
 window.Dashboard = Dashboard;

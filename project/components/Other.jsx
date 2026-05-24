@@ -11,12 +11,18 @@ const Progress = ({ onNav }) => {
       .catch(e => setError(e.message || 'Failed to load progress'));
   }, []);
 
-  const stats = (data && data.stats) || [
+  const game = data && data.gamification;
+  const baseStats = (data && data.stats) || [
     { l: 'Mastery', v: '-', d: '', t: '', c: 'var(--ok)' },
     { l: 'Retention', v: '-', d: '', t: '', c: 'var(--accent)' },
     { l: 'Focus time', v: '-', d: '', t: '', c: 'var(--parchment)' },
     { l: 'Streak', v: '-', d: '', t: '', c: 'var(--warn)' },
   ];
+  const stats = game && game.xp ? [
+    { l: 'Level', v: game.xp.level || 1, d: `${game.xp.total_xp || 0} total XP`, t: '', c: 'var(--accent)' },
+    { l: 'Weekly XP', v: game.xp.weekly_xp || 0, d: 'earned this week', t: '', c: 'var(--parchment)' },
+    ...baseStats,
+  ] : baseStats;
   const conceptBreakdown = (data && data.concept_breakdown) || [];
 
   return (
@@ -152,7 +158,7 @@ const pg = {
   eyebrow: { fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 },
   title: { fontFamily: 'var(--font-display)', fontSize: 38, fontWeight: 300, letterSpacing: '-0.02em', margin: 0, maxWidth: 780 },
   error: { marginTop: 12, color: 'var(--err)', fontSize: 12 },
-  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 },
+  statsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 20 },
   statLabel: { fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12 },
   cardHead: { display: 'flex', justifyContent: 'space-between', marginBottom: 20 },
   cardTitle: { fontSize: 13, color: 'var(--fg-0)', fontWeight: 500 },

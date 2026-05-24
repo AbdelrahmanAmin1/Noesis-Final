@@ -12,6 +12,7 @@ const lessons = require('../services/lesson.service');
 const topicResolver = require('../services/topic-resolver.service');
 const learningMaps = require('../services/learning-map.service');
 const notesAudio = require('../services/notes-audio.service');
+const gamification = require('../services/gamification.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -203,6 +204,10 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     );
     db.prepare(`INSERT INTO study_events (user_id, kind, ref_id, duration_s, occurred_at) VALUES (?,?,?,?,?)`)
       .run(req.user.id, 'reading', r.lastInsertRowid, 60, nowIso());
+    const reward = gamification.award(req.user.id, 'notes_generated', 'note', r.lastInsertRowid, {
+      idempotencyKey: `${req.user.id}:notes_generated:material:${material_id}:chapter:${chapter_id || 'all'}`,
+      metadata: { material_id, chapter_id: chapter_id || null, title: resolvedTopic },
+    });
     res.json({
       id: r.lastInsertRowid,
       title: resolvedTopic,
@@ -213,6 +218,8 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       topic_confidence: topicInfo.confidence,
       topic_source: topicInfo.topic_source || topicInfo.source,
       source_title: chapterTitle || m.title,
+      gamification: reward.summary || null,
+      reward: reward.awarded ? { points: reward.points, event_type: 'notes_generated', unlocked: reward.unlocked || [] } : null,
       learning_map: learningMaps.buildLearningMap(req.user.id, { materialId: material_id, rootTopic: resolvedTopic, persist: true }),
     });
   } catch (e) { next(e); }

@@ -55,7 +55,8 @@ const StudyPlan = ({ onNav }) => {
     try {
       const res = await window.NoesisAPI.study.completeTask(taskId);
       setPlan(res.study_plan || null);
-      setStatus('Task marked complete.');
+      const reward = res.study_plan && res.study_plan.reward;
+      setStatus(reward && reward.points ? `Task marked complete. +${reward.points} XP` : 'Task marked complete.');
     } catch (e) {
       setStatus('Could not update task: ' + (e.message || 'error'));
     } finally {
@@ -176,6 +177,7 @@ const StudyPlan = ({ onNav }) => {
                         <button key={row.id} disabled={busy || done} onClick={() => completeTask(row.id)} style={{ ...sp.task, ...(done ? sp.taskDone : {}) }}>
                           <span style={sp.taskDot}>{done ? <Icon.Check size={9}/> : taskIcon(t.type, Icon)}</span>
                           <span style={{ flex: 1, textAlign: 'left' }}>{t.title}</span>
+                          <span className="chip chip-accent" style={{ fontSize: 10 }}>+20 XP</span>
                           <span className="mono" style={{ fontSize: 10, color: 'var(--fg-3)' }}>{t.estimatedMinutes || 0}m</span>
                         </button>
                       );

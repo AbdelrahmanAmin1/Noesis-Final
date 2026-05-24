@@ -12,6 +12,7 @@ const { HttpError } = require('../middleware/error');
 const tutor = require('../services/tutor.service');
 const tutorChat = require('../services/tutor-chat.service');
 const tts = require('../services/tts.service');
+const gamification = require('../services/gamification.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -204,13 +205,22 @@ router.post('/sessions/:id/finish', requireAuth, (req, res, next) => {
   try {
     const sessionId = parseInt(req.params.id, 10);
     const db = getDb();
-    const s = db.prepare('SELECT id, started_at FROM tutor_sessions WHERE id=? AND user_id=?').get(sessionId, req.user.id);
+    const s = db.prepare('SELECT id, started_at, ended_at FROM tutor_sessions WHERE id=? AND user_id=?').get(sessionId, req.user.id);
     if (!s) throw new HttpError(404, 'session_not_found');
+    if (s.ended_at) throw new HttpError(409, 'session_already_finished');
     db.prepare('UPDATE tutor_sessions SET ended_at=?, status=?, updated_at=? WHERE id=?').run(nowIso(), 'completed', nowIso(), sessionId);
     const dur = Math.max(60, Math.floor((Date.now() - new Date(s.started_at).getTime()) / 1000));
     db.prepare(`INSERT INTO study_events (user_id, kind, ref_id, duration_s, occurred_at) VALUES (?,?,?,?,?)`)
       .run(req.user.id, 'tutor', sessionId, dur, nowIso());
-    res.json({ ok: true, duration_s: dur });
+    const reward = gamification.award(req.user.id, 'ai_tutor_session_completed', 'tutor_session', sessionId, {
+      metadata: { duration_s: dur },
+    });
+    res.json({
+      ok: true,
+      duration_s: dur,
+      reward: reward.awarded ? { points: reward.points, event_type: 'ai_tutor_session_completed', unlocked: reward.unlocked || [] } : null,
+      gamification: reward.summary || null,
+    });
   } catch (e) { next(e); }
 });
 

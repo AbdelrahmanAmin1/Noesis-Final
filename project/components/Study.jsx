@@ -730,6 +730,7 @@ const Quiz = ({ onNav }) => {
             <div style={{ fontSize: 13.5, color: 'var(--fg-1)', lineHeight: 1.6 }}>
               Score saved: {finalScore.score}% with {finalScore.correct}/{finalScore.total} correct.
               {finalScore.wrong && finalScore.wrong.length ? ` ${finalScore.wrong.length} wrong answer${finalScore.wrong.length === 1 ? '' : 's'} stored for review.` : ' No wrong answers to review.'}
+              {finalScore.reward && finalScore.reward.points ? ` +${finalScore.reward.points} XP earned.` : ''}
             </div>
           </div>
         )}

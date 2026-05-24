@@ -179,6 +179,48 @@
       completeTask: (id) => req('POST', '/study/tasks/' + id + '/complete'),
     },
 
+    gamification: {
+      summary: () => req('GET', '/gamification/summary'),
+      events: (limit) => req('GET', '/gamification/events' + (limit ? '?limit=' + encodeURIComponent(limit) : '')),
+      achievements: () => req('GET', '/gamification/achievements'),
+    },
+
+    leaderboards: {
+      global: () => req('GET', '/leaderboards/global'),
+      weekly: () => req('GET', '/leaderboards/weekly'),
+      friends: () => req('GET', '/leaderboards/friends'),
+    },
+
+    users: {
+      search: (q) => req('GET', '/users/search?q=' + encodeURIComponent(q || '')),
+    },
+
+    friends: {
+      list: () => req('GET', '/friends'),
+      requests: () => req('GET', '/friends/requests'),
+      request: (recipientId) => req('POST', '/friends/request', { recipient_id: recipientId }),
+      accept: (id) => req('POST', '/friends/requests/' + id + '/accept'),
+      reject: (id) => req('POST', '/friends/requests/' + id + '/reject'),
+      remove: (friendId) => req('DELETE', '/friends/' + friendId),
+    },
+
+    rooms: {
+      list: () => req('GET', '/rooms'),
+      create: (b) => req('POST', '/rooms', b),
+      get: (id) => req('GET', '/rooms/' + id),
+      join: (id) => req('POST', '/rooms/' + id + '/join'),
+      joinByCode: (code) => req('POST', '/rooms/join-by-code', { code }),
+      leave: (id) => req('POST', '/rooms/' + id + '/leave'),
+      members: (id) => req('GET', '/rooms/' + id + '/members'),
+      activity: (id) => req('GET', '/rooms/' + id + '/activity'),
+      messages: (id) => req('GET', '/rooms/' + id + '/messages'),
+      postMessage: (id, body) => req('POST', '/rooms/' + id + '/messages', { body }),
+      shareNote: (id, noteId) => req('POST', '/rooms/' + id + '/share-note', { note_id: noteId }),
+      shareQuiz: (id, quizId) => req('POST', '/rooms/' + id + '/share-quiz', { quiz_id: quizId }),
+      startSharedQuiz: (id, shareId) => req('POST', '/rooms/' + id + '/shared-quizzes/' + shareId + '/start'),
+      leaderboard: (id) => req('GET', '/rooms/' + id + '/leaderboard'),
+    },
+
     jobs: {
       get: (id) => req('GET', '/jobs/' + id),
     },
