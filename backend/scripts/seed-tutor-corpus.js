@@ -154,8 +154,12 @@ async function runIfNeeded() {
   const db = getDb();
   ensureSystemUser(db);
   seedMisconceptions(db);
-  const row = db.prepare('SELECT COUNT(*) AS c FROM materials WHERE user_id=?').get(SYSTEM_USER_ID);
-  if (row && row.c > 0) return { processed: 0, skipped: row.c };
+  const items = listSeedFiles();
+  if (!items.length) return { processed: 0, skipped: 0 };
+  const titles = items.map(item => item.title);
+  const placeholders = titles.map(() => '?').join(',');
+  const row = db.prepare(`SELECT COUNT(*) AS c FROM materials WHERE user_id=? AND title IN (${placeholders})`).get(SYSTEM_USER_ID, ...titles);
+  if (row && row.c >= titles.length) return { processed: 0, skipped: row.c };
   return run();
 }
 
@@ -166,4 +170,4 @@ if (require.main === module) {
     .catch(err => { log.error('seed failed', err); process.exit(1); });
 }
 
-module.exports = { run, runIfNeeded, SYSTEM_USER_ID };
+module.exports = { run, runIfNeeded, ensureSystemUser, SYSTEM_USER_ID };

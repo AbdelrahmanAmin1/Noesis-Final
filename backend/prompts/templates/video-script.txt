@@ -1,26 +1,28 @@
 {{SYSTEM_BASE}}
 
-Task: Write a structured AI tutor video script on "{{CONCEPT}}" for a beginner CS student.
+Task: Write a structured AI tutor video script on "{{CONCEPT}}" for a beginner learner.
 
 Grounding status: {{GROUNDING_STATUS}}
 {{GROUNDING_INSTRUCTION}}
 
-Required slide sequence, exactly 8-10 slides:
+Required slide sequence, 8-10 slides:
 1. title
 2. objectives
 3. concept
 4. analogy
-5. diagram
-6. code
+5. diagram or source-backed visual only when useful
+6. example
 7. step_by_step
 8. mistakes
 9. recap
 10. quiz
 
-Each video must teach the concept, not merely label it. Include a clear definition, why it matters, a simple analogy, a code example when relevant, a step-by-step explanation, a visual diagram or mindmap, a common mistake, a recap, and a mini quiz.
+Each video must teach the concept, not merely label it. Include a clear definition, why it matters, a simple analogy, a concrete example or case, a step-by-step explanation, a common mistake, a recap, and a mini quiz. Use diagrams only when educationally useful; otherwise use comparison, flow, checklist, summary, or text-card visuals. Include code only when the source is actually about programming.
 
 Source excerpts:
 {{SOURCE_EXCERPTS}}
+
+{{EDUCATIONAL_CONTEXT_BLOCK}}
 
 Output STRICT JSON only:
 {
@@ -49,8 +51,11 @@ Rules:
 - Produce 8-10 slides.
 - Every slide must have meaningful narration, 2-4 sentences, spoken like a tutor.
 - Use 2-5 short bullets per slide. Keep each bullet under 70 characters.
-- Use retrieved source chunks when available and cite chunk ids as [chunk:ID] in narration or callouts.
+- Use retrieved source chunks when available, but refer to them naturally as "the uploaded material" instead of showing raw chunk IDs.
 - Do not claim unsupported details are from the uploaded material.
-- If grounding is LOW, the first slide narration and a callout must say the uploaded material did not contain enough specific information, then continue using general CS knowledge.
-- Code slides should include compact Java or pseudocode when relevant.
+- Use uploaded source excerpts as course-specific truth. Use curated educational context only when it matches the uploaded subject.
+- Do not expose raw internal JSON, source chunk IDs, debug trace, or internal metadata in learner-facing slide text.
+- Never use vague placeholder output such as "Trace example", "Code sketch", "Apply main rule", "We will define", "Definition goes here", or "Example here".
+- If grounding is LOW, the first slide narration and a callout must say the uploaded material did not contain enough specific information, then continue with general subject knowledge.
+- Code slides should include compact Java or pseudocode only when relevant to programming material.
 - Quiz slide should include one question and the answer in bullets or callouts.

@@ -1,36 +1,146 @@
 {
+  "id": "oop_abstraction",
+  "schemaVersion": 1,
+  "domain": "oop",
   "topic": "Abstraction",
-  "aliases": ["abstract class", "interface", "essential behavior", "implementation hiding"],
-  "definition": "Abstraction focuses on what an object can do while hiding unnecessary implementation details.",
-  "deepExplanation": "Abstraction lets code depend on a promise instead of a concrete implementation. An interface says which behavior exists, while each class decides how to perform it. This reduces coupling because the caller can use the operation without knowing the internal fields or algorithm.",
+  "aliases": ["Abstract Class", "Interface", "Essential Behavior", "Implementation Hiding", "Public Contract"],
+  "difficulty": "beginner",
+  "prerequisites": ["Class", "Object", "Encapsulation", "Method"],
+  "nextTopics": ["Interface vs Abstract Class", "Polymorphism", "SOLID Basics"],
+  "definition": "Abstraction is the OOP practice of focusing on what something can do while hiding unnecessary implementation details.",
+  "deepExplanation": "Abstraction lets code depend on a promise instead of a specific implementation. An interface or abstract class can describe behavior such as pay, draw, or save without exposing exactly how that behavior works. Each concrete class supplies its own implementation. This reduces coupling because the caller only needs the public contract, not the internal fields, helper methods, or algorithm behind the contract.",
+  "whyItMatters": "Abstraction keeps larger programs understandable by separating what a component promises from how it fulfills that promise.",
+  "analogy": "When you drive a car, the steering wheel is an abstraction. You know what turning the wheel does, but you do not need to understand every gear and linkage underneath to drive safely.",
   "codeExamples": [
     {
       "language": "java",
-      "title": "Payment abstraction",
-      "code": "interface PaymentMethod {\n  boolean pay(double amount);\n}\n\nclass CreditCardPayment implements PaymentMethod {\n  public boolean pay(double amount) {\n    return amount > 0;\n  }\n}\n\nclass Checkout {\n  void complete(PaymentMethod method, double total) {\n    if (!method.pay(total)) throw new IllegalStateException(\"payment failed\");\n  }\n}"
+      "title": "Payment abstraction with an interface",
+      "code": "interface PaymentMethod {\n  boolean pay(double amount);\n}\n\nclass CreditCardPayment implements PaymentMethod {\n  @Override\n  public boolean pay(double amount) {\n    return amount > 0;\n  }\n}\n\nclass Checkout {\n  void complete(PaymentMethod method, double total) {\n    if (!method.pay(total)) {\n      throw new IllegalStateException(\"payment failed\");\n    }\n  }\n}",
+      "walkthrough": [
+        {
+          "lineRange": "1-3",
+          "text": "PaymentMethod is the abstraction. It says that payment behavior exists without saying how payment works."
+        },
+        {
+          "lineRange": "5-10",
+          "text": "CreditCardPayment is one concrete implementation of the PaymentMethod promise."
+        },
+        {
+          "lineRange": "12-17",
+          "text": "Checkout depends on PaymentMethod, so it can work with any future payment type that implements the same interface."
+        },
+        {
+          "lineRange": "14-16",
+          "text": "Checkout calls pay without knowing the internal details of credit-card processing."
+        }
+      ]
+    },
+    {
+      "language": "java",
+      "title": "Concrete class without useful abstraction",
+      "code": "class Checkout {\n  void complete(CreditCardPayment method, double total) {\n    method.pay(total);\n  }\n}",
+      "walkthrough": [
+        {
+          "lineRange": "2",
+          "text": "Checkout is tied directly to CreditCardPayment, so adding PayPalPayment or CashPayment requires changing Checkout."
+        },
+        {
+          "lineRange": "2-3",
+          "text": "The caller depends on a concrete detail instead of the general behavior it actually needs."
+        }
+      ]
     }
   ],
   "diagrams": [
     {
       "type": "uml_class",
+      "title": "Checkout Depends on PaymentMethod",
       "nodes": [
-        { "id": "PaymentMethod", "label": "PaymentMethod", "kind": "interface", "fields": [], "methods": ["pay(amount)"] },
-        { "id": "CreditCardPayment", "label": "CreditCardPayment", "fields": [], "methods": ["pay(amount)"] },
-        { "id": "Checkout", "label": "Checkout", "fields": [], "methods": ["complete(method,total)"] }
+        {
+          "id": "PaymentMethod",
+          "label": "PaymentMethod",
+          "kind": "interface",
+          "fields": [],
+          "methods": ["pay(amount)"]
+        },
+        {
+          "id": "CreditCardPayment",
+          "label": "CreditCardPayment",
+          "fields": [],
+          "methods": ["pay(amount)"]
+        },
+        {
+          "id": "Checkout",
+          "label": "Checkout",
+          "fields": [],
+          "methods": ["complete(method, total)"]
+        }
       ],
-      "edges": [["CreditCardPayment", "PaymentMethod", "implements"], ["Checkout", "PaymentMethod", "uses"]],
-      "caption": "Checkout depends on the PaymentMethod abstraction instead of a specific payment class."
+      "edges": [
+        ["CreditCardPayment", "PaymentMethod", "implements"],
+        ["Checkout", "PaymentMethod", "depends on"]
+      ],
+      "caption": "Checkout depends on the PaymentMethod abstraction, while concrete payment classes provide the hidden implementation."
     }
   ],
   "commonMistakes": [
-    "Confusing abstraction with inheritance; abstraction is about the public promise.",
-    "Exposing implementation details through the interface.",
-    "Creating abstractions before there is a real variation to hide."
+    {
+      "mistake": "Confusing abstraction with inheritance.",
+      "whyItHappens": "Both can involve abstract classes or interfaces, so the vocabulary overlaps.",
+      "correction": "Abstraction is about the public promise; inheritance is one way classes can share or specialize behavior."
+    },
+    {
+      "mistake": "Exposing implementation details through the abstraction.",
+      "whyItHappens": "Beginners often include every helper method in the interface.",
+      "correction": "Keep abstractions focused on behavior callers genuinely need."
+    },
+    {
+      "mistake": "Creating abstractions before there is real variation.",
+      "whyItHappens": "Abstraction sounds professional, so students may over-design.",
+      "correction": "Introduce an abstraction when it hides meaningful implementation differences or reduces coupling."
+    }
   ],
-  "complexity": {},
-  "practiceQuestions": [
-    "Why should Checkout accept PaymentMethod instead of CreditCardPayment?",
-    "What detail does the PaymentMethod interface hide?"
+  "bestPractices": [
+    "Name abstractions after behavior or capability, not implementation details.",
+    "Keep interfaces small and focused.",
+    "Depend on abstractions at boundaries where multiple implementations are likely.",
+    "Pair abstraction with clear examples so the hidden details remain understandable."
   ],
-  "visualTemplates": ["uml_class", "interface_comparison", "dependency_diagram"]
+  "complexity": null,
+  "miniQuiz": [
+    {
+      "question": "Why should Checkout accept PaymentMethod instead of CreditCardPayment?",
+      "options": ["To make payment slower", "To depend on a general behavior instead of one concrete class", "To prevent overriding", "To avoid constructors"],
+      "answer": "To depend on a general behavior instead of one concrete class",
+      "explanation": "Checkout only needs something that can pay. The interface hides which concrete payment method is used."
+    },
+    {
+      "question": "What does an abstraction hide?",
+      "options": ["All method names", "Unnecessary implementation details", "The public contract", "Every possible class"],
+      "answer": "Unnecessary implementation details",
+      "explanation": "Abstraction keeps the important behavior visible while hiding how the behavior is internally performed."
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "What is abstraction in OOP?",
+      "back": "Abstraction focuses on what an object or component can do while hiding unnecessary implementation details.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "How is abstraction different from encapsulation?",
+      "back": "Abstraction hides unnecessary details behind a useful contract; encapsulation protects object state and controls access.",
+      "difficulty": "medium"
+    },
+    {
+      "front": "Why are interfaces useful for abstraction?",
+      "back": "They define behavior that multiple classes can implement without exposing each class's internals.",
+      "difficulty": "medium"
+    }
+  ],
+  "visualTemplates": ["uml_class", "interface_comparison", "dependency_diagram"],
+  "source": {
+    "type": "curated",
+    "license": "project-authored"
+  }
 }

@@ -19,12 +19,11 @@ const summarizeStatus = (record, quality) => {
   return 'Needs review';
 };
 const evidenceLabel = (item, index) => {
-  const parts = [];
-  if (item && item.chunkId != null) parts.push(`Chunk ${item.chunkId}`);
+  const parts = [`Evidence ${index + 1}`];
   if (item && item.slideNumber != null) parts.push(`Slide ${item.slideNumber}`);
   if (item && item.sourcePage != null) parts.push(`Page ${item.sourcePage}`);
   if (item && item.chapterTitle) parts.push(item.chapterTitle);
-  return parts.length ? parts.join(' / ') : `Evidence ${index + 1}`;
+  return parts.join(' / ');
 };
 const evidenceScoreLabel = (item) => {
   const score = Number(item && item.score);
@@ -46,7 +45,7 @@ const visualWarningKeys = new Set([
   'missing_visual_purpose',
   'missing_visual_grounding',
 ]);
-const normalizeWarning = (warning = '') => String(warning).split(':').pop() || String(warning);
+const normalizeWarning = (warning = '') => String(warning).split(':').pop().replace(/_/g, ' ') || String(warning);
 const isVisualWarning = (warning = '') => {
   const text = String(warning || '');
   return [...visualWarningKeys].some(key => text.includes(key));
@@ -73,7 +72,7 @@ const visualStatusStyle = (validation, warnings) => (
   validation && validation.passed === true && !warnings.length ? sr.statusGood : sr.statusNeedsReview
 );
 const isCriticalStoryboardWarning = (code = '') => /^domain:missing_required_visual:/.test(String(code || '')) ||
-  /storyboard:too_few_scenes|domain:oop_missing_class_object_visual|domain:data_structure_missing_operation_visual|domain:algorithm_missing_flow_or_complexity_visual/.test(String(code || ''));
+  /storyboard:too_few_scenes|domain:oop_missing_class_object_visual|domain:data_structure_missing_operation_visual|domain:algorithm_missing_flow_or_complexity_visual|domain:missing_code_scene|domain:unrelated_cs_injection/.test(String(code || ''));
 const targetVisualTypeFromWarning = (code = '') => {
   const match = String(code || '').match(/missing_required_visual:([a-z0-9_]+)/i);
   return match ? match[1] : '';
@@ -172,7 +171,7 @@ const ApprovalPanel = ({ quality, busy, onFix, onGlobalFix, onRecheck, onApprove
   const renderWarningItem = (code, severity) => {
     const detail = detailMap[code] || { label: code.replace(/_/g, ' ') };
     const sceneId = detail.sceneId || sceneIdFromWarning(code);
-    const canFix = severity === 'critical' && /missing_required_visual|missing_concrete_visual_payload|generic_visual_template|visual_type_payload_mismatch/.test(code);
+    const canFix = (severity === 'critical' || isVisualWarning(code)) && /missing_required_visual|missing_concrete_visual_payload|generic_visual_template|visual_type_payload_mismatch|generic_fallback_not_allowed|missing_visual_elements|vague_visual|narration_visual_mismatch/.test(code);
     const targetVisualType = targetVisualTypeFromWarning(code);
     return (
       <div key={code} style={sr.approvalItem}>
@@ -182,7 +181,7 @@ const ApprovalPanel = ({ quality, busy, onFix, onGlobalFix, onRecheck, onApprove
           {detail.fix && <div style={sr.approvalFix}>{detail.fix}</div>}
         </div>
         {canFix && (
-          <button className="btn btn-ghost" style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+          <button className="btn btn-ghost" style={{ fontSize: 'calc(11px * var(--app-font-scale))', whiteSpace: 'nowrap' }}
             disabled={!!busy} onClick={() => sceneId
               ? onFix(sceneId, 'fix_auto', targetVisualType)
               : onGlobalFix({ warningCode: code, targetVisualType, action: 'fix_auto' })}>
@@ -204,7 +203,7 @@ const ApprovalPanel = ({ quality, busy, onFix, onGlobalFix, onRecheck, onApprove
             {critical.length ? 'Fix critical issues before approval.' : 'You can approve anyway or fix these warnings.'}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 'calc(8px * var(--app-density-scale))' }}>
           <button className="btn btn-ghost" disabled={!!busy} onClick={onRecheck}>
             <RotateIcon size={11}/> {busy === 'recheck' ? 'Checking...' : 'Re-check'}
           </button>
@@ -411,7 +410,7 @@ const StoryboardReview = ({ onNav }) => {
           <div>
             <div style={sr.eyebrow}>Review before rendering</div>
             <h1 style={sr.title}>{board.topic || storyboard.topic}</h1>
-            <p style={sr.sub}>Check the teaching goal, narration, code, and visual for each scene before spending time on MP4 rendering.</p>
+            <p style={sr.sub}>Check the learning point, narration, code, and visual for each scene before spending time on MP4 rendering.</p>
           </div>
           <div style={sr.statusBox}>
             <span className="chip chip-accent">{storyboard.status}</span>
@@ -433,7 +432,7 @@ const StoryboardReview = ({ onNav }) => {
         {video && (
           <section style={sr.videoBox}>
             <div style={sr.cardTitle}>Rendered video</div>
-            <video src={video.file} controls crossOrigin="use-credentials" style={{ width: '100%', borderRadius: 8, marginTop: 10 }}/>
+            <video src={video.file} controls crossOrigin="use-credentials" style={{ width: '100%', borderRadius: 8, marginTop: 'calc(10px * var(--app-density-scale))' }}/>
           </section>
         )}
       </main>
@@ -451,7 +450,7 @@ const SceneCard = ({ scene, index, visualResult, busy, onPatch, onFix }) => {
   const validation = scene.visualValidation || visualResult || {};
   const warn = [...new Set([...(scene.qualityWarnings || []), ...(validation.warnings || [])])];
   const split = splitWarnings(warn);
-  const keyIdea = scene.learningPoint || scene.studentFacingGoal || scene.teachingGoal || scene.title || '';
+  const keyIdea = scene.learningPoint || scene.studentFacingGoal || scene.title || '';
   const title = scene.sceneTitle || scene.title || `Scene ${index + 1}`;
   const visualType = scene.visualType || scene.visualTemplate || 'missing';
   const visualData = scene.visualElements || scene.visualData || {};
@@ -461,6 +460,7 @@ const SceneCard = ({ scene, index, visualResult, busy, onPatch, onFix }) => {
   const edges = visualEdgeLabels(visualData);
   const operations = visualOperationLabels(visualData);
   const code = scene.code || (scene.codeSnippet ? { content: scene.codeSnippet } : null);
+  const hasVisualPreview = visualType && !['none', 'no_visual'].includes(String(visualType).toLowerCase()) && (nodes.length || edges.length || operations.length || (code && code.content));
   const evidence = safeArray(scene.sourceEvidence);
   const enrichment = scene.enrichment || { used: false };
   const onScreenText = safeArray(scene.onScreenText);
@@ -475,7 +475,7 @@ const SceneCard = ({ scene, index, visualResult, busy, onPatch, onFix }) => {
         </div>
         <span style={{ ...sr.statusPill, ...visualStatusStyle(validation, split.visual) }}>{visualStatusLabel(validation, split.visual)}</span>
         {split.visual.length > 0 && onFix && (
-          <button className="btn btn-ghost" style={{ fontSize: 11 }} disabled={busy} onClick={() => onFix(scene.id, 'fix_auto')}>
+          <button className="btn btn-ghost" style={{ fontSize: 'calc(11px * var(--app-font-scale))' }} disabled={busy} onClick={() => onFix(scene.id, 'fix_auto')}>
             <Icon.Sparkle size={10}/> Fix visual
           </button>
         )}
@@ -519,12 +519,12 @@ const SceneCard = ({ scene, index, visualResult, busy, onPatch, onFix }) => {
           </div>
         )}
       </div>
-      <TopicVisual template={visualType} data={visualData} code={code} compact />
+      {hasVisualPreview && <TopicVisual template={visualType} data={visualData} code={code} compact />}
       {code && code.content && (
         <pre style={sr.code}>{code.content}</pre>
       )}
       <p style={sr.narration}>{scene.narration}</p>
-      {split.content.length > 0 && <div style={sr.sceneWarn}>Content warnings: {split.content.join(', ')}</div>}
+      {split.content.length > 0 && <div style={sr.sceneWarn}>Content warnings: {split.content.map(normalizeWarning).join(', ')}</div>}
       <div style={sr.metaToggle}>
         <button className="btn btn-bare" style={sr.metaBtn} onClick={() => setShowMeta(v => !v)}>
           <Icon.ChevronRight size={10} style={{ transform: showMeta ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}/> Scene grounding
@@ -555,18 +555,12 @@ const SceneCard = ({ scene, index, visualResult, busy, onPatch, onFix }) => {
                 <div style={sr.metaValue}>{truncate(enrichment.content, 240)}</div>
               </div>
             ) : <div style={sr.metaValue}>No enrichment used for this scene.</div>}
-            {scene.teachingGoal && (
-              <>
-                <div style={sr.metaLabel}>Teaching goal</div>
-                <div style={sr.metaValue}>{scene.teachingGoal}</div>
-              </>
-            )}
             {scene.qualityWarnings && scene.qualityWarnings.length > 0 && (
               <>
                 <div style={sr.metaLabel}>Quality warnings</div>
-                <div style={sr.metaValue}>{split.content.length ? split.content.join(', ') : 'No content warnings.'}</div>
+                <div style={sr.metaValue}>{split.content.length ? split.content.map(normalizeWarning).join(', ') : 'No content warnings.'}</div>
                 <div style={sr.metaLabel}>Visual warnings</div>
-                <div style={sr.metaValue}>{split.visual.length ? split.visual.join(', ') : 'No visual warnings.'}</div>
+                <div style={sr.metaValue}>{split.visual.length ? split.visual.map(normalizeWarning).join(', ') : 'No visual warnings.'}</div>
               </>
             )}
           </div>
@@ -602,87 +596,87 @@ const UnsupportedStoryboardVisual = ({ template, data = {}, compact }) => (
 const EmptyStoryboard = ({ onNav }) => (
   <div style={sr.loading}>
     <div>No storyboard selected.</div>
-    <button className="btn btn-accent" onClick={() => onNav && onNav('materials')} style={{ marginTop: 12 }}>Open materials</button>
+    <button className="btn btn-accent" onClick={() => onNav && onNav('materials')} style={{ marginTop: 'calc(12px * var(--app-density-scale))' }}>Open materials</button>
   </div>
 );
 
 const sr = {
   loading: { minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-2)' },
-  page: { padding: 28, maxWidth: 1380, margin: '0 auto' },
-  hero: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 20, marginBottom: 18 },
-  eyebrow: { fontSize: 11, color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 },
-  title: { fontFamily: 'var(--font-display)', fontSize: 42, fontWeight: 300, margin: 0 },
-  sub: { fontSize: 13.5, color: 'var(--fg-2)', maxWidth: 650, lineHeight: 1.6 },
-  statusBox: { display: 'flex', alignItems: 'center', gap: 10, color: 'var(--fg-2)', fontSize: 12 },
-  notice: { padding: 12, border: '1px solid var(--line)', background: 'var(--bg-1)', borderRadius: 8, color: 'var(--fg-2)', marginBottom: 12 },
-  warn: { display: 'flex', gap: 8, alignItems: 'center', padding: 12, border: '1px solid var(--warn)', color: 'var(--warn)', borderRadius: 8, marginBottom: 12 },
-  summary: { border: '1px solid var(--line)', background: 'var(--bg-1)', borderRadius: 8, padding: 16, marginBottom: 16 },
-  summaryHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, marginBottom: 14 },
-  summaryTitleRow: { display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 },
-  summaryEyebrow: { fontSize: 10.5, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 },
-  summaryTitle: { margin: 0, fontSize: 20, fontWeight: 500, color: 'var(--fg-0)' },
-  statusPill: { flex: '0 0 auto', borderRadius: 999, padding: '5px 9px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' },
+  page: { padding: 'calc(28px * var(--app-density-scale))', maxWidth: 1380, margin: '0 auto' },
+  hero: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 'calc(20px * var(--app-density-scale))', marginBottom: 'calc(18px * var(--app-density-scale))' },
+  eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 'calc(8px * var(--app-density-scale))' },
+  title: { fontFamily: 'var(--font-display)', fontSize: 'calc(42px * var(--app-font-scale))', fontWeight: 300, margin: 0 },
+  sub: { fontSize: 'calc(13.5px * var(--app-font-scale))', color: 'var(--fg-2)', maxWidth: 650, lineHeight: 1.6 },
+  statusBox: { display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))', color: 'var(--fg-2)', fontSize: 'calc(12px * var(--app-font-scale))' },
+  notice: { padding: 'calc(12px * var(--app-density-scale))', border: '1px solid var(--line)', background: 'var(--bg-1)', borderRadius: 8, color: 'var(--fg-2)', marginBottom: 'calc(12px * var(--app-density-scale))' },
+  warn: { display: 'flex', gap: 'calc(8px * var(--app-density-scale))', alignItems: 'center', padding: 'calc(12px * var(--app-density-scale))', border: '1px solid var(--warn)', color: 'var(--warn)', borderRadius: 8, marginBottom: 'calc(12px * var(--app-density-scale))' },
+  summary: { border: '1px solid var(--line)', background: 'var(--bg-1)', borderRadius: 8, padding: 'calc(16px * var(--app-density-scale))', marginBottom: 'calc(16px * var(--app-density-scale))' },
+  summaryHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'calc(14px * var(--app-density-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  summaryTitleRow: { display: 'flex', alignItems: 'flex-start', gap: 'calc(10px * var(--app-density-scale))', minWidth: 0 },
+  summaryEyebrow: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 'calc(4px * var(--app-density-scale))' },
+  summaryTitle: { margin: 0, fontSize: 'calc(20px * var(--app-font-scale))', fontWeight: 500, color: 'var(--fg-0)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  statusPill: { flex: '0 0 auto', borderRadius: 999, padding: '5px 9px', fontSize: 'calc(11px * var(--app-font-scale))', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' },
   statusGood: { color: 'var(--ok)', background: 'color-mix(in srgb, var(--ok) 14%, transparent)', border: '1px solid var(--ok)' },
   statusNeedsReview: { color: 'var(--warn)', background: 'color-mix(in srgb, var(--warn) 12%, transparent)', border: '1px solid var(--warn)' },
-  summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 10, marginBottom: 14 },
+  summaryGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 'calc(10px * var(--app-density-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
   summaryItem: { minWidth: 0, padding: '9px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-2)' },
-  summaryLabel: { fontSize: 10, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 5 },
-  summaryValue: { fontSize: 12.5, color: 'var(--fg-0)', lineHeight: 1.45, overflowWrap: 'anywhere' },
-  conceptsRow: { display: 'flex', alignItems: 'flex-start', gap: 12, borderTop: '1px solid var(--line)', paddingTop: 12 },
-  concepts: { display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 },
-  conceptChip: { fontSize: 11.5, color: 'var(--fg-1)', border: '1px solid var(--line)', background: 'var(--bg-0)', borderRadius: 999, padding: '5px 8px' },
-  muted: { fontSize: 12, color: 'var(--fg-3)' },
-  enrichmentNote: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.5 },
-  visualSummary: { marginTop: 12, padding: 10, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-2)' },
-  visualCoverageRows: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, color: 'var(--fg-2)', fontSize: 12, lineHeight: 1.45 },
-  warnText: { color: 'var(--warn)', fontSize: 12, fontWeight: 700 },
-  okText: { color: 'var(--ok)', fontSize: 12, fontWeight: 700 },
-  summaryWarnings: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, padding: 10, borderRadius: 8, border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: 12, lineHeight: 1.45 },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 },
-  scene: { border: '1px solid var(--line)', background: 'var(--bg-1)', borderRadius: 8, padding: 16, display: 'flex', flexDirection: 'column', gap: 12 },
-  sceneHead: { display: 'flex', alignItems: 'center', gap: 12 },
-  sceneNo: { color: 'var(--accent)', fontSize: 11 },
-  sceneTitle: { fontSize: 17, margin: 0, color: 'var(--fg-0)' },
-  sceneMeta: { fontSize: 11.5, color: 'var(--fg-3)', marginTop: 3 },
-  keyIdea: { fontSize: 12.5, color: 'var(--fg-1)', lineHeight: 1.5, padding: 10, background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line)' },
-  visualPanel: { border: '1px solid var(--line)', background: 'var(--bg-2)', borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', gap: 9 },
-  visualPanelHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 },
-  visualTypeName: { color: 'var(--fg-0)', fontSize: 13, fontWeight: 700, overflowWrap: 'anywhere' },
-  visualPurpose: { color: 'var(--fg-1)', fontSize: 12.5, lineHeight: 1.5 },
-  visualReason: { color: 'var(--fg-3)', fontSize: 11.5, lineHeight: 1.45 },
-  visualFacts: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 },
-  visualElementGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 },
+  summaryLabel: { fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 'calc(5px * var(--app-density-scale))' },
+  summaryValue: { fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)', lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  conceptsRow: { display: 'flex', alignItems: 'flex-start', gap: 'calc(12px * var(--app-density-scale))', borderTop: '1px solid var(--line)', paddingTop: 'calc(12px * var(--app-density-scale))' },
+  concepts: { display: 'flex', flexWrap: 'wrap', gap: 'calc(6px * var(--app-density-scale))', flex: 1 },
+  conceptChip: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-1)', border: '1px solid var(--line)', background: 'var(--bg-0)', borderRadius: 999, padding: '5px 8px', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  muted: { fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  enrichmentNote: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))', fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-2)', lineHeight: 1.5 },
+  visualSummary: { marginTop: 'calc(12px * var(--app-density-scale))', padding: 'calc(10px * var(--app-density-scale))', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-2)' },
+  visualCoverageRows: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 'calc(10px * var(--app-density-scale))', color: 'var(--fg-2)', fontSize: 'calc(12px * var(--app-font-scale))', lineHeight: 1.45 },
+  warnText: { color: 'var(--warn)', fontSize: 'calc(12px * var(--app-font-scale))', fontWeight: 700 },
+  okText: { color: 'var(--ok)', fontSize: 'calc(12px * var(--app-font-scale))', fontWeight: 700 },
+  summaryWarnings: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))', padding: 'calc(10px * var(--app-density-scale))', borderRadius: 8, border: '1px solid var(--warn)', color: 'var(--warn)', fontSize: 'calc(12px * var(--app-font-scale))', lineHeight: 1.45 },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'calc(14px * var(--app-density-scale))' },
+  scene: { border: '1px solid var(--line)', background: 'var(--bg-1)', borderRadius: 8, padding: 'calc(16px * var(--app-density-scale))', display: 'flex', flexDirection: 'column', gap: 'calc(12px * var(--app-density-scale))' },
+  sceneHead: { display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))' },
+  sceneNo: { color: 'var(--accent)', fontSize: 'calc(11px * var(--app-font-scale))' },
+  sceneTitle: { fontSize: 'calc(17px * var(--app-font-scale))', margin: 0, color: 'var(--fg-0)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  sceneMeta: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(3px * var(--app-density-scale))' },
+  keyIdea: { fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-1)', lineHeight: 1.5, padding: 'calc(10px * var(--app-density-scale))', background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  visualPanel: { border: '1px solid var(--line)', background: 'var(--bg-2)', borderRadius: 8, padding: 'calc(12px * var(--app-density-scale))', display: 'flex', flexDirection: 'column', gap: 'calc(9px * var(--app-density-scale))' },
+  visualPanelHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'calc(12px * var(--app-density-scale))' },
+  visualTypeName: { color: 'var(--fg-0)', fontSize: 'calc(13px * var(--app-font-scale))', fontWeight: 700, overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  visualPurpose: { color: 'var(--fg-1)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  visualReason: { color: 'var(--fg-3)', fontSize: 'calc(11.5px * var(--app-font-scale))', lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  visualFacts: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'calc(10px * var(--app-density-scale))' },
+  visualElementGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 'calc(8px * var(--app-density-scale))' },
   visualList: { minWidth: 0 },
-  visualChips: { display: 'flex', flexWrap: 'wrap', gap: 5 },
-  visualChip: { border: '1px solid var(--line)', background: 'var(--bg-0)', color: 'var(--fg-2)', borderRadius: 999, padding: '4px 7px', fontSize: 10.5, maxWidth: '100%', overflowWrap: 'anywhere' },
-  visualWarnings: { display: 'flex', alignItems: 'center', gap: 7, padding: 8, borderRadius: 8, border: '1px solid var(--warn)', color: 'var(--warn)', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', fontSize: 11.5, lineHeight: 1.45 },
-  metaToggle: { marginTop: 2 },
-  metaBtn: { fontSize: 11, color: 'var(--fg-3)', display: 'flex', alignItems: 'center', gap: 4, padding: 0 },
-  metaContent: { padding: '8px 10px', background: 'var(--bg-2)', borderRadius: 6, marginTop: 6, border: '1px dashed var(--line)' },
-  metaCols: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 },
-  metaLabel: { fontSize: 10, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2, marginTop: 6 },
-  metaValue: { fontSize: 11.5, color: 'var(--fg-2)', lineHeight: 1.5 },
-  evidenceItem: { border: '1px solid var(--line)', background: 'var(--bg-0)', borderRadius: 6, padding: '7px 8px', marginTop: 6 },
-  evidenceHeader: { fontSize: 10.5, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 3 },
-  narration: { color: 'var(--fg-2)', fontSize: 12.5, lineHeight: 1.65, margin: 0 },
-  sceneWarn: { fontSize: 11.5, color: 'var(--warn)' },
-  code: { maxHeight: 120, overflow: 'auto', background: '#0f172a', color: '#dbeafe', borderRadius: 8, padding: 12, fontFamily: 'var(--font-mono)', fontSize: 11.5 },
-  edit: { display: 'flex', flexDirection: 'column', gap: 8 },
-  label: { fontSize: 11, color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.1em' },
-  textarea: { minHeight: 130, resize: 'vertical', border: '1px solid var(--line)', borderRadius: 8, padding: 12, background: 'var(--bg-0)', color: 'var(--fg-0)', font: 'inherit', lineHeight: 1.55 },
-  videoBox: { marginTop: 18, border: '1px solid var(--line)', background: 'var(--bg-1)', borderRadius: 8, padding: 16 },
-  cardTitle: { fontSize: 13, color: 'var(--fg-1)', fontWeight: 600 },
-  unsupportedVisual: { border: '1px dashed var(--line)', background: 'var(--bg-2)', borderRadius: 8, padding: 12, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4 },
-  approvalPanel: { border: '1px solid var(--warn)', background: 'color-mix(in srgb, var(--warn) 5%, var(--bg-1))', borderRadius: 8, padding: 16, marginBottom: 16 },
-  approvalHead: { display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
-  approvalTitle: { fontSize: 15, fontWeight: 600, color: 'var(--fg-0)' },
-  approvalSub: { fontSize: 12.5, color: 'var(--fg-2)', marginTop: 2 },
-  approvalSection: { marginTop: 10, padding: '10px 0 0', borderTop: '1px solid var(--line)' },
-  approvalSectionTitle: { fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 8 },
-  approvalItem: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-0)', marginBottom: 6 },
-  approvalCode: { fontSize: 10, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em' },
-  approvalLabel: { fontSize: 12.5, color: 'var(--fg-1)', lineHeight: 1.4, marginTop: 2 },
-  approvalFix: { fontSize: 11, color: 'var(--fg-3)', marginTop: 2 },
+  visualChips: { display: 'flex', flexWrap: 'wrap', gap: 'calc(5px * var(--app-density-scale))' },
+  visualChip: { border: '1px solid var(--line)', background: 'var(--bg-0)', color: 'var(--fg-2)', borderRadius: 8, padding: '4px 7px', fontSize: 'calc(10.5px * var(--app-font-scale))', maxWidth: '100%', overflowWrap: 'anywhere', wordBreak: 'break-word', lineHeight: 1.25 },
+  visualWarnings: { display: 'flex', alignItems: 'center', gap: 'calc(7px * var(--app-density-scale))', padding: 'calc(8px * var(--app-density-scale))', borderRadius: 8, border: '1px solid var(--warn)', color: 'var(--warn)', background: 'color-mix(in srgb, var(--warn) 8%, transparent)', fontSize: 'calc(11.5px * var(--app-font-scale))', lineHeight: 1.45 },
+  metaToggle: { marginTop: 'calc(2px * var(--app-density-scale))' },
+  metaBtn: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', display: 'flex', alignItems: 'center', gap: 'calc(4px * var(--app-density-scale))', padding: 0 },
+  metaContent: { padding: '8px 10px', background: 'var(--bg-2)', borderRadius: 6, marginTop: 'calc(6px * var(--app-density-scale))', border: '1px dashed var(--line)' },
+  metaCols: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'calc(10px * var(--app-density-scale))' },
+  metaLabel: { fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 'calc(2px * var(--app-density-scale))', marginTop: 'calc(6px * var(--app-density-scale))' },
+  metaValue: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-2)', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  evidenceItem: { border: '1px solid var(--line)', background: 'var(--bg-0)', borderRadius: 6, padding: '7px 8px', marginTop: 'calc(6px * var(--app-density-scale))' },
+  evidenceHeader: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 'calc(3px * var(--app-density-scale))' },
+  narration: { color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.65, margin: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  sceneWarn: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--warn)' },
+  code: { maxHeight: 120, overflow: 'auto', background: '#0f172a', color: '#dbeafe', borderRadius: 8, padding: 'calc(12px * var(--app-density-scale))', fontFamily: 'var(--font-mono)', fontSize: 'calc(11.5px * var(--app-font-scale))' },
+  edit: { display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))' },
+  label: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', textTransform: 'uppercase', letterSpacing: '0.1em' },
+  textarea: { minHeight: 130, resize: 'vertical', border: '1px solid var(--line)', borderRadius: 8, padding: 'calc(12px * var(--app-density-scale))', background: 'var(--bg-0)', color: 'var(--fg-0)', font: 'inherit', lineHeight: 1.55 },
+  videoBox: { marginTop: 'calc(18px * var(--app-density-scale))', border: '1px solid var(--line)', background: 'var(--bg-1)', borderRadius: 8, padding: 'calc(16px * var(--app-density-scale))' },
+  cardTitle: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-1)', fontWeight: 600 },
+  unsupportedVisual: { border: '1px dashed var(--line)', background: 'var(--bg-2)', borderRadius: 8, padding: 'calc(12px * var(--app-density-scale))', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 'calc(4px * var(--app-density-scale))' },
+  approvalPanel: { border: '1px solid var(--warn)', background: 'color-mix(in srgb, var(--warn) 5%, var(--bg-1))', borderRadius: 8, padding: 'calc(16px * var(--app-density-scale))', marginBottom: 'calc(16px * var(--app-density-scale))' },
+  approvalHead: { display: 'flex', alignItems: 'flex-start', gap: 'calc(12px * var(--app-density-scale))', marginBottom: 'calc(12px * var(--app-density-scale))' },
+  approvalTitle: { fontSize: 'calc(15px * var(--app-font-scale))', fontWeight: 600, color: 'var(--fg-0)' },
+  approvalSub: { fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-2)', marginTop: 'calc(2px * var(--app-density-scale))' },
+  approvalSection: { marginTop: 'calc(10px * var(--app-density-scale))', padding: '10px 0 0', borderTop: '1px solid var(--line)' },
+  approvalSectionTitle: { fontSize: 'calc(10.5px * var(--app-font-scale))', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 700, marginBottom: 'calc(8px * var(--app-density-scale))' },
+  approvalItem: { display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-0)', marginBottom: 'calc(6px * var(--app-density-scale))' },
+  approvalCode: { fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em' },
+  approvalLabel: { fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-1)', lineHeight: 1.4, marginTop: 'calc(2px * var(--app-density-scale))' },
+  approvalFix: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(2px * var(--app-density-scale))' },
 };
 
 window.StoryboardReview = StoryboardReview;

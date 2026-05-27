@@ -1,11 +1,21 @@
 {{SYSTEM_BASE}}
 
-Task: Generate {{COUNT}} high-quality flashcards from the source excerpts. Prefer atomic facts, definitions, and contrasts. Avoid trivia.
+Task: Generate {{COUNT}} high-quality flashcards from the source excerpts. Prefer atomic facts, definitions, contrasts, common mistakes, visual reasoning, and application cards. Include code behavior or complexity only when the source is actually about CS. Avoid trivia.
+
+Grounding tier: {{GROUNDING_STATUS}}
 
 Source excerpts:
 {{SOURCE_EXCERPTS}}
 
+{{EDUCATIONAL_CONTEXT_BLOCK}}
+
 Output STRICT JSON only, no commentary:
 {"cards":[{"question":"...","answer":"...","source_chunk_id": 1, "difficulty": "easy|medium|hard", "topic": "..."}]}
 
-Use a numeric source_chunk_id from the cited source excerpts when possible. Use null when no single source chunk applies.
+Rules:
+- Uploaded excerpts are the course-specific source of truth.
+- Curated educational context is trusted expansion only when it matches the uploaded subject, not uploaded evidence.
+- Do not invent course-specific claims.
+- Do not put raw chunk IDs, debug labels, raw curated JSON, or sourceChunkIds in question or answer text.
+- Use a numeric source_chunk_id from the uploaded source excerpts when possible. Use null when no single uploaded chunk applies.
+- Never use shallow placeholders such as "What is this topic?", "Define the concept", "True or false: this is important", "Example here", or "Definition goes here".

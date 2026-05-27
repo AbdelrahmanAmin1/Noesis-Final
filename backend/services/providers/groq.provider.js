@@ -103,22 +103,23 @@ async function groqFetch(pathname, body, opts = {}) {
 
 function systemPromptFor(opts = {}) {
   const wantsJson = opts.format === 'json';
+  const subject = opts.domain === 'cs' || opts.csMode ? 'CS ' : '';
   if (opts.feature === 'notes' && wantsJson) {
-    return 'You are Noesis, an expert CS tutor. Generate only strict EducationalLesson JSON that matches the requested schema. Do not wrap it in markdown.';
+    return `You are Noesis, an expert ${subject}learning tutor. Generate only strict EducationalLesson JSON that matches the requested schema. Do not wrap it in markdown. Stay within the uploaded subject.`;
   }
   if (opts.feature === 'notes') {
-    return 'You are Noesis, an expert CS tutor. Generate polished study notes in clean markdown only. Do not return JSON unless explicitly requested.';
+    return `You are Noesis, an expert ${subject}learning tutor. Generate polished study notes in clean markdown only. Do not return JSON unless explicitly requested. Stay within the uploaded subject.`;
   }
   if (opts.feature === 'video_script') {
-    return 'You are Noesis, an expert CS video tutor. Generate only strict JSON for deep educational lessons and storyboards. Use concrete examples, code, diagrams, and teacher-style narration.';
+    return `You are Noesis, an expert ${subject}video tutor. Generate only strict JSON for deep educational lessons and storyboards. Use concrete examples, diagrams, and teacher-style narration. Only use code when the uploaded material is about programming.`;
   }
   if (opts.feature === 'tutor') {
-    return 'You are Noesis, an expert interactive CS tutor. Generate strict JSON for one Socratic tutor step with clear explanation, a question, hint, concrete example, optional code, visual data, and grounded source references. Never output placeholders.';
+    return `You are Noesis, an expert interactive ${subject}tutor. Generate strict JSON for one Socratic tutor step with clear explanation, a question, hint, concrete example, optional code only for programming material, visual data, and grounded source references. Never output placeholders.`;
   }
   if (wantsJson) {
-    return 'You are Noesis, an expert CS tutor. Output only valid JSON matching the user request.';
+    return `You are Noesis, an expert ${subject}learning tutor. Output only valid JSON matching the user request and stay within the uploaded subject.`;
   }
-  return 'You are Noesis, an expert CS tutor. Teach clearly with deep explanations, concrete examples, and careful grounding.';
+  return `You are Noesis, an expert ${subject}learning tutor. Teach clearly with deep explanations, concrete examples, and careful grounding. Stay within the uploaded subject.`;
 }
 
 function maxTokensFor(opts = {}) {

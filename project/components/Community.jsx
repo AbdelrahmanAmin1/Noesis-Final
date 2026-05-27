@@ -206,7 +206,7 @@ const FriendsPanel = () => {
           ))}
           {!(requests.incoming || []).length && <EmptyCommunity text="No incoming requests." />}
         </div>
-        <div style={{ ...cm.cardTitle, marginTop: 18 }}>Friends</div>
+        <div style={{ ...cm.cardTitle, marginTop: 'calc(18px * var(--app-density-scale))' }}>Friends</div>
         <div style={cm.list}>
           {friends.map(f => (
             <div key={f.user_id} style={cm.personRow}>
@@ -298,7 +298,7 @@ const StudyRoomsPanel = ({ onNav }) => {
           </select>
           <button className="btn btn-accent" onClick={create}><Icon.Plus size={12}/> Create room</button>
         </div>
-        <div style={{ ...cm.cardTitle, marginTop: 22 }}>Join by code</div>
+        <div style={{ ...cm.cardTitle, marginTop: 'calc(22px * var(--app-density-scale))' }}>Join by code</div>
         <div style={cm.searchRow}>
           <input className="input mono" value={code} onChange={e => setCode(e.target.value)} placeholder="Invite code" style={{ flex: 1 }}/>
           <button className="btn btn-ghost" onClick={joinCode}>Join</button>
@@ -320,7 +320,7 @@ const StudyRoomsPanel = ({ onNav }) => {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={cm.name}>{room.name}</div>
                 <div style={cm.muted}>{room.subject || 'General'} | {room.member_count} member{room.member_count === 1 ? '' : 's'} | {room.room_type}</div>
-                {room.user_role && <span className="chip chip-accent" style={{ marginTop: 8 }}>{room.user_role}</span>}
+                {room.user_role && <span className="chip chip-accent" style={{ marginTop: 'calc(8px * var(--app-density-scale))' }}>{room.user_role}</span>}
               </div>
               {room.user_role ? (
                 <button className="btn btn-accent" onClick={() => openRoom(room)}>Open</button>
@@ -512,7 +512,7 @@ const RoomDetail = ({ onNav }) => {
                     <div key={q.id} style={cm.sharedRow}>
                       <div style={cm.name}>{q.title_snapshot}</div>
                       <div style={cm.muted}>Shared by {q.display_name} | {(q.metadata && q.metadata.question_count) || 0} questions</div>
-                      <button className="btn btn-ghost" onClick={() => startQuiz(q.id)} style={{ marginTop: 8 }}>Start challenge</button>
+                      <button className="btn btn-ghost" onClick={() => startQuiz(q.id)} style={{ marginTop: 'calc(8px * var(--app-density-scale))' }}>Start challenge</button>
                     </div>
                   ))}
                 </div>
@@ -554,7 +554,7 @@ const RoomMessages = ({ roomId, refreshKey }) => {
       {messages.map(m => (
         <div key={m.id} style={cm.messageBubble}>
           <div style={cm.muted}>{m.display_name} | {new Date(m.created_at).toLocaleTimeString()}</div>
-          <div style={{ fontSize: 13, color: 'var(--fg-0)', marginTop: 4 }}>{m.body}</div>
+          <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', marginTop: 'calc(4px * var(--app-density-scale))' }}>{m.body}</div>
         </div>
       ))}
       {!messages.length && <EmptyCommunity text="No messages yet." />}
@@ -588,44 +588,44 @@ const EmptyCommunity = ({ text }) => (
 );
 
 const cm = {
-  page: { padding: 28, maxWidth: 1440, margin: '0 auto' },
-  hero: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 18, marginBottom: 18 },
-  roomHero: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px', gap: 18, alignItems: 'stretch', marginBottom: 14 },
-  eyebrow: { fontSize: 11, color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 },
-  title: { fontFamily: 'var(--font-display)', fontSize: 40, fontWeight: 300, letterSpacing: 0, margin: 0, maxWidth: 780 },
-  tabBar: { display: 'flex', gap: 5, padding: 3, borderRadius: 'var(--r-md)', border: '1px solid var(--line)', background: 'var(--bg-1)' },
-  tab: { display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 11px', borderRadius: 7, color: 'var(--fg-2)', fontSize: 12.5 },
+  page: { padding: 'calc(28px * var(--app-density-scale))', maxWidth: 1440, margin: '0 auto' },
+  hero: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 'calc(18px * var(--app-density-scale))', marginBottom: 'calc(18px * var(--app-density-scale))' },
+  roomHero: { display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 220px', gap: 'calc(18px * var(--app-density-scale))', alignItems: 'stretch', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 'calc(8px * var(--app-density-scale))' },
+  title: { fontFamily: 'var(--font-display)', fontSize: 'calc(40px * var(--app-font-scale))', fontWeight: 300, letterSpacing: 0, margin: 0, maxWidth: 780 },
+  tabBar: { display: 'flex', gap: 'calc(5px * var(--app-density-scale))', padding: 'calc(3px * var(--app-density-scale))', borderRadius: 'var(--r-md)', border: '1px solid var(--line)', background: 'var(--bg-1)' },
+  tab: { display: 'inline-flex', alignItems: 'center', gap: 'calc(7px * var(--app-density-scale))', padding: '8px 11px', borderRadius: 7, color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))' },
   tabActive: { background: 'var(--bg-2)', color: 'var(--fg-0)' },
-  card: { padding: 20, marginBottom: 14 },
-  cardHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, marginBottom: 14 },
-  cardTitle: { fontSize: 13, color: 'var(--fg-0)', fontWeight: 500 },
-  muted: { fontSize: 11.5, color: 'var(--fg-3)', lineHeight: 1.5 },
-  status: { margin: '10px 0', fontSize: 12, color: 'var(--fg-2)', padding: 10, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
-  table: { display: 'grid', gap: 7 },
-  rankRow: { display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
+  card: { padding: 'calc(20px * var(--app-density-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  cardHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'calc(14px * var(--app-density-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  cardTitle: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 },
+  muted: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', lineHeight: 1.5 },
+  status: { margin: '10px 0', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)', padding: 'calc(10px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
+  table: { display: 'grid', gap: 'calc(7px * var(--app-density-scale))' },
+  rankRow: { display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))', padding: 'calc(12px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
   rankCurrent: { borderColor: 'var(--accent-soft)', background: 'var(--accent-glow)' },
-  rank: { width: 42, color: 'var(--accent)', fontSize: 12 },
+  rank: { width: 42, color: 'var(--accent)', fontSize: 'calc(12px * var(--app-font-scale))' },
   avatar: { width: 32, height: 32, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, var(--accent), var(--parchment))', color: 'var(--bg-0)', fontFamily: 'var(--font-display)' },
-  name: { fontSize: 13.5, color: 'var(--fg-0)', fontWeight: 500 },
-  xp: { color: 'var(--accent)', fontSize: 12, whiteSpace: 'nowrap' },
-  twoCol: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 14 },
-  threeCol: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 14 },
-  searchRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 },
-  list: { display: 'grid', gap: 8, marginTop: 14 },
-  personRow: { display: 'flex', alignItems: 'center', gap: 10, padding: 11, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
-  roomRow: { display: 'flex', alignItems: 'center', gap: 12, padding: 14, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
-  activityRow: { padding: 11, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
-  sharedRow: { padding: 12, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
-  preview: { marginTop: 8, fontSize: 12, color: 'var(--fg-2)', lineHeight: 1.5 },
-  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 9, marginTop: 12 },
-  segmented: { display: 'flex', gap: 4, padding: 2, background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line)' },
-  segment: { padding: '6px 10px', borderRadius: 6, fontSize: 12, color: 'var(--fg-2)' },
+  name: { fontSize: 'calc(13.5px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 },
+  xp: { color: 'var(--accent)', fontSize: 'calc(12px * var(--app-font-scale))', whiteSpace: 'nowrap' },
+  twoCol: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 'calc(14px * var(--app-density-scale))' },
+  threeCol: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 'calc(14px * var(--app-density-scale))' },
+  searchRow: { display: 'flex', gap: 'calc(8px * var(--app-density-scale))', alignItems: 'center', marginTop: 'calc(12px * var(--app-density-scale))' },
+  list: { display: 'grid', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))' },
+  personRow: { display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))', padding: 'calc(11px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
+  roomRow: { display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))', padding: 'calc(14px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
+  activityRow: { padding: 'calc(11px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
+  sharedRow: { padding: 'calc(12px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
+  preview: { marginTop: 'calc(8px * var(--app-density-scale))', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)', lineHeight: 1.5 },
+  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'calc(9px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  segmented: { display: 'flex', gap: 'calc(4px * var(--app-density-scale))', padding: 'calc(2px * var(--app-density-scale))', background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line)' },
+  segment: { padding: '6px 10px', borderRadius: 6, fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)' },
   segmentActive: { background: 'var(--bg-0)', color: 'var(--fg-0)' },
-  empty: { padding: 16, border: '1px dashed var(--line-strong)', borderRadius: 8, color: 'var(--fg-3)', fontSize: 12.5, textAlign: 'center' },
-  inviteBox: { padding: 18, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
-  inviteCode: { marginTop: 8, fontSize: 24, color: 'var(--accent)' },
-  messages: { display: 'grid', gap: 8, margin: '12px 0', maxHeight: 260, overflow: 'auto' },
-  messageBubble: { padding: 11, borderRadius: 8, background: 'var(--bg-1)', border: '1px solid var(--line)' },
+  empty: { padding: 'calc(16px * var(--app-density-scale))', border: '1px dashed var(--line-strong)', borderRadius: 8, color: 'var(--fg-3)', fontSize: 'calc(12.5px * var(--app-font-scale))', textAlign: 'center' },
+  inviteBox: { padding: 'calc(18px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
+  inviteCode: { marginTop: 'calc(8px * var(--app-density-scale))', fontSize: 'calc(24px * var(--app-font-scale))', color: 'var(--accent)' },
+  messages: { display: 'grid', gap: 'calc(8px * var(--app-density-scale))', margin: '12px 0', maxHeight: 260, overflow: 'auto' },
+  messageBubble: { padding: 'calc(11px * var(--app-density-scale))', borderRadius: 8, background: 'var(--bg-1)', border: '1px solid var(--line)' },
 };
 
 window.Community = Community;

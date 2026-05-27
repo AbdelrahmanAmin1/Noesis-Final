@@ -8,6 +8,9 @@ describe('visual-registry', () => {
     expect(registry.normalizeVisualType('linkedlist')).toBe('linked_list_operation');
     expect(registry.normalizeVisualType('bigo_chart')).toBe('big_o_growth');
     expect(registry.normalizeVisualType('hash_table')).toBe('hash_table_operation');
+    expect(registry.normalizeVisualType('cards')).toBe('concept_cards');
+    expect(registry.normalizeVisualType('none')).toBe('no_visual');
+    expect(registry.normalizeVisualType('source_page')).toBe('source_page_reference');
   });
 
   it('routes stack_queue aliases using scene context', () => {
@@ -38,6 +41,10 @@ describe('visual-registry', () => {
       'tree_visual',
       'big_o_growth',
       'code_walkthrough',
+      'concept_cards',
+      'classification_table',
+      'source_page_reference',
+      'no_visual',
     ]));
     expect(registry.supportedVisualTypes().every(type => type === registry.normalizeVisualType(type))).toBe(true);
   });
@@ -49,6 +56,9 @@ describe('visual-registry', () => {
     expect(registry.legacyVisualTypeFor('queue_operation')).toBe('stack_queue');
     expect(registry.legacyVisualTypeFor('big_o_growth')).toBe('bigo_chart');
     expect(registry.legacyVisualTypeFor('learning_objectives')).toBe('summary');
+    expect(registry.legacyVisualTypeFor('concept_cards')).toBe('cards');
+    expect(registry.legacyVisualTypeFor('classification_table')).toBe('table');
+    expect(registry.legacyVisualTypeFor('no_visual')).toBe('none');
   });
 
   it('is exposed through renderer service for render-time checks', () => {

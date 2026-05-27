@@ -203,7 +203,7 @@ const Callouts = ({ items }) => {
         <div key={i} style={lr.callout}>
           <strong>{c.type || 'note'}:</strong> {c.text}
           {c.sourceChunkIds && c.sourceChunkIds.length > 0 && (
-            <span style={lr.sourceBadges}>{c.sourceChunkIds.slice(0, 4).map(id => <span key={id} style={lr.sourceBadge}>source {id}</span>)}</span>
+            <span style={lr.sourceBadges}><span style={lr.sourceBadge}>source-backed</span></span>
           )}
         </div>
       ))}
@@ -256,13 +256,13 @@ const MindmapDiagram = ({ diagram, title }) => {
         ))}
         <g filter="url(#mindmapShadow)">
           <rect x="158" y="116" width="184" height="80" rx="20" fill="var(--accent-glow)" stroke="var(--accent-soft)" />
-          <text x="250" y="151" textAnchor="middle" fill="var(--fg-0)" fontSize="15" fontWeight="700">{center}</text>
+          <SvgTextLines x={250} y={148} width={160} text={center} fill="var(--fg-0)" fontSize={14} lineHeight={15} fontWeight={700} maxLines={3} />
           <text x="250" y="171" textAnchor="middle" fill="var(--fg-3)" fontSize="11">mental model</text>
         </g>
         {nodes.map((node, i) => (
           <g key={node + i} filter="url(#mindmapShadow)">
             <rect x={points[i][0] - 70} y={points[i][1] - 28} width="140" height="56" rx="16" fill="var(--bg-2)" stroke="var(--line)" />
-            <text x={points[i][0]} y={points[i][1] + 4} textAnchor="middle" fill="var(--fg-1)" fontSize="12" fontWeight="600">{shortSvgLabel(node, 18)}</text>
+            <SvgTextLines x={points[i][0]} y={points[i][1]} width={120} text={node} fill="var(--fg-1)" fontSize={11.5} lineHeight={12} fontWeight={600} maxLines={3} />
           </g>
         ))}
       </svg>
@@ -270,10 +270,49 @@ const MindmapDiagram = ({ diagram, title }) => {
   );
 };
 
-function shortSvgLabel(value, max) {
-  const text = String(value || '').trim();
-  return text.length > max ? text.slice(0, max).trim() : text;
+function wrapSvgLabel(value, maxChars = 16, maxLines = 2) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return [''];
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  const push = () => {
+    if (current) {
+      lines.push(current);
+      current = '';
+    }
+  };
+  for (const word of words) {
+    if (word.length > maxChars) {
+      push();
+      lines.push(`${word.slice(0, Math.max(3, maxChars - 3))}...`);
+    } else {
+      const next = current ? `${current} ${word}` : word;
+      if (next.length > maxChars) {
+        push();
+        current = word;
+      } else {
+        current = next;
+      }
+    }
+    if (lines.length >= maxLines) break;
+  }
+  if (lines.length < maxLines) push();
+  if (lines.length > maxLines) lines.length = maxLines;
+  if (lines.length === maxLines && text.length > lines.join(' ').length) {
+    lines[maxLines - 1] = `${lines[maxLines - 1].slice(0, Math.max(3, maxChars - 3)).trim()}...`;
+  }
+  return lines.length ? lines : [''];
 }
+
+const SvgTextLines = ({ x, y, text, width = 120, fontSize = 12, lineHeight = 13, fontWeight = 700, fill = 'var(--fg-0)', maxLines = 2 }) => {
+  const maxChars = Math.max(6, Math.floor(width / Math.max(6, fontSize * 0.58)));
+  const lines = wrapSvgLabel(text, maxChars, maxLines);
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+  return <text textAnchor="middle" fill={fill} fontSize={fontSize} fontWeight={fontWeight}>
+    {lines.map((line, index) => <tspan key={`${line}-${index}`} x={x} y={startY + index * lineHeight}>{line}</tspan>)}
+  </text>;
+};
 
 const UmlDiagram = ({ diagram }) => {
   const nodes = diagram.nodes || [];
@@ -360,7 +399,7 @@ const TreeDiagram = ({ diagram }) => {
           return (
             <g key={`${n}-${i}`}>
               <circle cx={p.x} cy={p.y} r="31" fill={i === 0 ? 'var(--accent-glow)' : 'var(--bg-2)'} stroke={i === 0 ? 'var(--accent-soft)' : 'var(--line)'} strokeWidth="2" />
-              <text x={p.x} y={p.y + 5} textAnchor="middle" fill="var(--fg-0)" fontSize="13" fontWeight="700">{shortSvgLabel(n, 8)}</text>
+              <SvgTextLines x={p.x} y={p.y + 1} width={52} text={n} fill="var(--fg-0)" fontSize={11} lineHeight={11} fontWeight={700} maxLines={3} />
             </g>
           );
         })}
@@ -430,69 +469,69 @@ function labelFor(type) {
 
 const lr = {
   page: { color: 'var(--fg-1)' },
-  hero: { padding: '10px 0 24px', borderBottom: '1px solid var(--line-soft)', marginBottom: 22 },
-  eyebrow: { fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 8 },
-  title: { fontFamily: 'var(--font-display)', fontSize: 38, fontWeight: 300, lineHeight: 1.12, margin: 0, color: 'var(--fg-0)' },
-  meta: { marginTop: 10, fontSize: 12, color: 'var(--fg-3)' },
-  objectives: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, marginBottom: 22 },
-  objectiveCard: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 14 },
-  cardNumber: { fontSize: 10.5, color: 'var(--accent)', fontFamily: 'var(--font-mono)', marginBottom: 8 },
-  cardText: { fontSize: 13, lineHeight: 1.45, color: 'var(--fg-0)' },
-  startHere: { padding: 16, borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', marginBottom: 18 },
-  startTitle: { fontFamily: 'var(--font-display)', fontSize: 24, color: 'var(--fg-0)', marginBottom: 10, lineHeight: 1.2 },
-  hook: { padding: 20, borderRadius: 8, background: 'linear-gradient(135deg, color-mix(in oklab, var(--accent) 12%, transparent), var(--bg-1))', border: '1px solid var(--line)', marginBottom: 18 },
-  hookText: { fontSize: 17, lineHeight: 1.65, margin: 0, color: 'var(--fg-0)' },
+  hero: { padding: '10px 0 24px', borderBottom: '1px solid var(--line-soft)', marginBottom: 'calc(22px * var(--app-density-scale))' },
+  eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 'calc(8px * var(--app-density-scale))' },
+  title: { fontFamily: 'var(--font-display)', fontSize: 'calc(38px * var(--app-font-scale))', fontWeight: 300, lineHeight: 1.12, margin: 0, color: 'var(--fg-0)' },
+  meta: { marginTop: 'calc(10px * var(--app-density-scale))', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  objectives: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'calc(10px * var(--app-density-scale))', marginBottom: 'calc(22px * var(--app-density-scale))' },
+  objectiveCard: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(14px * var(--app-density-scale))' },
+  cardNumber: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', fontFamily: 'var(--font-mono)', marginBottom: 'calc(8px * var(--app-density-scale))' },
+  cardText: { fontSize: 'calc(13px * var(--app-font-scale))', lineHeight: 1.45, color: 'var(--fg-0)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  startHere: { padding: 'calc(16px * var(--app-density-scale))', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', marginBottom: 'calc(18px * var(--app-density-scale))' },
+  startTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(24px * var(--app-font-scale))', color: 'var(--fg-0)', marginBottom: 'calc(10px * var(--app-density-scale))', lineHeight: 1.2 },
+  hook: { padding: 'calc(20px * var(--app-density-scale))', borderRadius: 8, background: 'linear-gradient(135deg, color-mix(in oklab, var(--accent) 12%, transparent), var(--bg-1))', border: '1px solid var(--line)', marginBottom: 'calc(18px * var(--app-density-scale))' },
+  hookText: { fontSize: 'calc(17px * var(--app-font-scale))', lineHeight: 1.65, margin: 0, color: 'var(--fg-0)' },
   band: { padding: '18px 0', borderBottom: '1px solid var(--line-soft)' },
-  sectionLabel: { fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 7 },
-  h2: { fontSize: 24, fontWeight: 500, lineHeight: 1.22, margin: '0 0 10px', color: 'var(--fg-0)' },
-  p: { fontSize: 14.5, lineHeight: 1.75, margin: '0 0 14px', color: 'var(--fg-1)' },
-  cardGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginTop: 12 },
-  infoCard: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 13 },
+  sectionLabel: { fontSize: 'calc(10.5px * var(--app-font-scale))', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 'calc(7px * var(--app-density-scale))' },
+  h2: { fontSize: 'calc(24px * var(--app-font-scale))', fontWeight: 500, lineHeight: 1.22, margin: '0 0 10px', color: 'var(--fg-0)' },
+  p: { fontSize: 'calc(14.5px * var(--app-font-scale))', lineHeight: 1.75, margin: '0 0 14px', color: 'var(--fg-1)' },
+  cardGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  infoCard: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(13px * var(--app-density-scale))', minWidth: 0, overflowWrap: 'anywhere', wordBreak: 'break-word' },
   warnCard: { borderColor: 'color-mix(in oklab, var(--warn) 36%, var(--line))', background: 'color-mix(in oklab, var(--warn) 8%, var(--bg-1))' },
   metricCard: { borderColor: 'color-mix(in oklab, var(--accent) 32%, var(--line))' },
-  infoTitle: { fontSize: 13, color: 'var(--fg-0)', fontWeight: 600, marginBottom: 5 },
-  infoText: { fontSize: 12.5, color: 'var(--fg-2)', lineHeight: 1.5 },
-  pre: { background: '#0f172a', color: '#e2e8f0', padding: 16, borderRadius: 8, overflow: 'auto', lineHeight: 1.55, fontSize: 12.5, border: '1px solid var(--line)' },
-  walkGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10, marginTop: 12 },
-  walkCard: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 12, fontSize: 12.5, lineHeight: 1.5 },
-  lineRange: { fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--accent)', marginBottom: 6 },
-  diagram: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 18, marginTop: 12, overflow: 'auto' },
+  infoTitle: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 600, marginBottom: 'calc(5px * var(--app-density-scale))', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  infoText: { fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-2)', lineHeight: 1.5, overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  pre: { background: '#0f172a', color: '#e2e8f0', padding: 'calc(16px * var(--app-density-scale))', borderRadius: 8, overflow: 'auto', lineHeight: 1.55, fontSize: 'calc(12.5px * var(--app-font-scale))', border: '1px solid var(--line)' },
+  walkGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  walkCard: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(12px * var(--app-density-scale))', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.5 },
+  lineRange: { fontFamily: 'var(--font-mono)', fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', marginBottom: 'calc(6px * var(--app-density-scale))' },
+  diagram: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(18px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))', overflow: 'auto' },
   svg: { width: '100%', maxWidth: 720, display: 'block', margin: '0 auto' },
-  umlChildren: { display: 'flex', gap: 14, justifyContent: 'center', flexWrap: 'wrap', marginTop: 14 },
-  umlChildWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 },
-  umlArrow: { fontSize: 11, color: 'var(--fg-3)', fontFamily: 'var(--font-mono)' },
-  classBox: { minWidth: 170, border: '1px solid var(--accent-soft)', borderRadius: 8, background: 'var(--bg-0)', overflow: 'hidden' },
-  className: { padding: '9px 11px', textAlign: 'center', fontWeight: 700, color: 'var(--fg-0)', borderBottom: '1px solid var(--line-soft)' },
-  classPart: { padding: '8px 11px', borderTop: '1px solid var(--line-soft)', fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--fg-2)' },
-  listDiagram: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 16, marginTop: 12 },
-  headNode: { padding: '8px 12px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-0)', fontFamily: 'var(--font-mono)', fontSize: 12 },
-  listNode: { padding: '8px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-0)', fontFamily: 'var(--font-mono)', fontSize: 12 },
+  umlChildren: { display: 'flex', gap: 'calc(14px * var(--app-density-scale))', justifyContent: 'center', flexWrap: 'wrap', marginTop: 'calc(14px * var(--app-density-scale))' },
+  umlChildWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))' },
+  umlArrow: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', fontFamily: 'var(--font-mono)' },
+  classBox: { minWidth: 170, maxWidth: 260, border: '1px solid var(--accent-soft)', borderRadius: 8, background: 'var(--bg-0)', overflow: 'hidden' },
+  className: { padding: '9px 11px', textAlign: 'center', fontWeight: 700, color: 'var(--fg-0)', borderBottom: '1px solid var(--line-soft)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  classPart: { padding: '8px 11px', borderTop: '1px solid var(--line-soft)', fontSize: 'calc(12px * var(--app-font-scale))', fontFamily: 'var(--font-mono)', color: 'var(--fg-2)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  listDiagram: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(16px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  headNode: { padding: '8px 12px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-0)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--app-font-scale))', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  listNode: { padding: '8px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-0)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--app-font-scale))', maxWidth: 170, overflowWrap: 'anywhere', wordBreak: 'break-word' },
   nodeData: { display: 'inline-block', paddingRight: 8, marginRight: 8, borderRight: '1px solid var(--line)' },
   nodeNext: { color: 'var(--fg-3)' },
-  nullNode: { padding: '8px 12px', borderRadius: 8, background: 'color-mix(in oklab, var(--warn) 8%, var(--bg-1))', border: '1px solid color-mix(in oklab, var(--warn) 35%, var(--line))', color: 'var(--fg-0)', fontFamily: 'var(--font-mono)', fontSize: 12 },
-  arrow: { color: 'var(--fg-3)', fontFamily: 'var(--font-mono)', fontSize: 13 },
-  stack: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 16, marginTop: 12 },
-  stackTop: { width: 220, padding: '9px 12px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', textAlign: 'center', fontFamily: 'var(--font-mono)' },
-  stackItem: { width: 220, padding: '9px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', textAlign: 'center', fontFamily: 'var(--font-mono)' },
-  queue: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 16, marginTop: 12 },
-  queueLabel: { padding: '8px 10px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-0)', fontSize: 12, fontFamily: 'var(--font-mono)' },
-  queueItem: { minWidth: 54, textAlign: 'center', padding: '9px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-0)', fontFamily: 'var(--font-mono)', fontSize: 12 },
-  flow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 16, marginTop: 12 },
-  flowRoot: { padding: '8px 12px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-0)', fontSize: 12 },
-  flowNode: { padding: '8px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-0)', fontSize: 12 },
-  caption: { margin: '8px 0 0', fontSize: 12, color: 'var(--fg-3)' },
-  callouts: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 },
-  callout: { borderLeft: '3px solid var(--accent)', background: 'var(--bg-1)', padding: '9px 11px', fontSize: 12.5, lineHeight: 1.5 },
-  sourceBadges: { display: 'inline-flex', gap: 5, flexWrap: 'wrap', marginLeft: 8, verticalAlign: 'middle' },
-  sourceBadge: { border: '1px solid var(--line)', borderRadius: 999, padding: '1px 6px', fontSize: 10.5, color: 'var(--fg-3)', background: 'var(--bg-0)' },
-  quiz: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 14, marginTop: 12 },
-  quizQ: { fontSize: 14, color: 'var(--fg-0)', fontWeight: 600, marginBottom: 10 },
-  option: { padding: '8px 10px', background: 'var(--bg-2)', border: '1px solid var(--line-soft)', borderRadius: 6, marginTop: 6, fontSize: 12.5 },
-  answer: { marginTop: 10, color: 'var(--ok)', fontSize: 12.5, fontWeight: 600 },
-  explain: { marginTop: 4, color: 'var(--fg-2)', fontSize: 12.5, lineHeight: 1.45 },
-  chips: { display: 'flex', gap: 8, flexWrap: 'wrap' },
-  chip: { border: '1px solid var(--line)', borderRadius: 999, padding: '5px 9px', fontSize: 11.5, color: 'var(--fg-2)', background: 'var(--bg-1)' },
-  markdown: { minHeight: 420, fontSize: 14.5, lineHeight: 1.75, color: 'var(--fg-1)' },
+  nullNode: { padding: '8px 12px', borderRadius: 8, background: 'color-mix(in oklab, var(--warn) 8%, var(--bg-1))', border: '1px solid color-mix(in oklab, var(--warn) 35%, var(--line))', color: 'var(--fg-0)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--app-font-scale))' },
+  arrow: { color: 'var(--fg-3)', fontFamily: 'var(--font-mono)', fontSize: 'calc(13px * var(--app-font-scale))' },
+  stack: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'calc(6px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(16px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  stackTop: { width: 220, padding: '9px 12px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', textAlign: 'center', fontFamily: 'var(--font-mono)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  stackItem: { width: 220, padding: '9px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', textAlign: 'center', fontFamily: 'var(--font-mono)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  queue: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(16px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  queueLabel: { padding: '8px 10px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-0)', fontSize: 'calc(12px * var(--app-font-scale))', fontFamily: 'var(--font-mono)' },
+  queueItem: { minWidth: 54, maxWidth: 160, textAlign: 'center', padding: '9px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-0)', fontFamily: 'var(--font-mono)', fontSize: 'calc(12px * var(--app-font-scale))', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  flow: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(16px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  flowRoot: { padding: '8px 12px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-0)', fontSize: 'calc(12px * var(--app-font-scale))', maxWidth: 180, overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  flowNode: { padding: '8px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-0)', fontSize: 'calc(12px * var(--app-font-scale))', maxWidth: 180, overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  caption: { margin: '8px 0 0', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  callouts: { display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  callout: { borderLeft: '3px solid var(--accent)', background: 'var(--bg-1)', padding: '9px 11px', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.5 },
+  sourceBadges: { display: 'inline-flex', gap: 'calc(5px * var(--app-density-scale))', flexWrap: 'wrap', marginLeft: 8, verticalAlign: 'middle' },
+  sourceBadge: { border: '1px solid var(--line)', borderRadius: 999, padding: '1px 6px', fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', background: 'var(--bg-0)' },
+  quiz: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(14px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  quizQ: { fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 600, marginBottom: 'calc(10px * var(--app-density-scale))' },
+  option: { padding: '8px 10px', background: 'var(--bg-2)', border: '1px solid var(--line-soft)', borderRadius: 6, marginTop: 'calc(6px * var(--app-density-scale))', fontSize: 'calc(12.5px * var(--app-font-scale))' },
+  answer: { marginTop: 'calc(10px * var(--app-density-scale))', color: 'var(--ok)', fontSize: 'calc(12.5px * var(--app-font-scale))', fontWeight: 600 },
+  explain: { marginTop: 'calc(4px * var(--app-density-scale))', color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.45 },
+  chips: { display: 'flex', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap' },
+  chip: { border: '1px solid var(--line)', borderRadius: 999, padding: '5px 9px', fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-2)', background: 'var(--bg-1)' },
+  markdown: { minHeight: 420, fontSize: 'calc(14.5px * var(--app-font-scale))', lineHeight: 1.75, color: 'var(--fg-1)' },
 };
 
 LessonRenderer.parse = parseLesson;

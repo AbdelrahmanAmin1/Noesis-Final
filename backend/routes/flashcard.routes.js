@@ -5,17 +5,59 @@ const { z } = require('zod');
 const { requireAuth } = require('../middleware/auth');
 const { aiLimiter } = require('../middleware/rateLimit');
 const { getDb } = require('../config/db');
+const env = require('../config/env');
 const { HttpError } = require('../middleware/error');
 const ai = require('../services/ai.service');
 const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
-const { retrieve } = require('../services/rag.service');
+const { retrieveLessonContext, groundingTier: computeGroundingTier } = require('../services/rag.service');
+const educationalContext = require('../services/educational-context.service');
+const domainDetection = require('../services/domain-detection.service');
+const materialUnderstanding = require('../services/material-understanding.service');
 const srs = require('../services/srs.service');
 const log = require('../utils/logger');
 const gamification = require('../services/gamification.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
+const PLACEHOLDER_RE = /\b(what is this topic|define the concept|true or false:?\s*this is important|example here|definition goes here|placeholder|todo|lorem ipsum)\b/i;
+const MAX_FLASHCARDS = 10;
+
+function generationScope(body = {}) {
+  const sourceScope = String(body.sourceScope || body.source_scope || 'material').toLowerCase();
+  if (!['material', 'chapter', 'chunk'].includes(sourceScope)) throw new HttpError(400, 'invalid_source_scope');
+  return {
+    sourceScope,
+    chapterId: body.chapter_id ? parseInt(body.chapter_id, 10) : null,
+    chunkId: body.chunk_id ? parseInt(body.chunk_id, 10) : null,
+  };
+}
+
+function validateScope(db, userId, materialId, scope) {
+  if (scope.sourceScope === 'chapter') {
+    if (!Number.isInteger(scope.chapterId)) throw new HttpError(400, 'missing_chapter_id');
+    const row = db.prepare(`
+      SELECT c.title
+      FROM chapters c
+      JOIN materials m ON m.id = c.material_id
+      WHERE c.id=? AND c.material_id=? AND m.user_id=?
+    `).get(scope.chapterId, materialId, userId);
+    if (!row) throw new HttpError(404, 'chapter_not_found');
+    return { title: row.title };
+  }
+  if (scope.sourceScope === 'chunk') {
+    if (!Number.isInteger(scope.chunkId)) throw new HttpError(400, 'missing_chunk_id');
+    const row = db.prepare(`
+      SELECT ch.heading, ch.chapter_title, ch.section_title, ch.slide_title
+      FROM chunks ch
+      JOIN materials m ON m.id = ch.material_id
+      WHERE ch.id=? AND ch.material_id=? AND m.user_id=?
+    `).get(scope.chunkId, materialId, userId);
+    if (!row) throw new HttpError(404, 'chunk_not_found');
+    return { title: row.heading || row.section_title || row.slide_title || row.chapter_title || 'Selected section' };
+  }
+  return { title: null };
+}
 
 const FlashSchema = z.object({
   cards: z.array(z.object({
@@ -51,6 +93,119 @@ function inferTopic(text, fallback) {
   return words || fallback || 'General';
 }
 
+function stripInternalRefs(value) {
+  return String(value || '')
+    .replace(/\[chunk\s*:\s*\d+\]/gi, '')
+    .replace(/\[source[_\s-]*chunk\s*:\s*\d+\]/gi, '')
+    .replace(/"?source[_\s-]*chunk[_\s-]*id"?\s*:?\s*\d+/gi, '')
+    .replace(/\bchunk\s*id\s*#?\s*\d+\b/gi, '')
+    .replace(/sourceChunkIds?\s*:\s*\[[^\]]*\]/gi, '')
+    .replace(/\b(debug|trace|raw curated json|internal metadata)\s*:\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseCardCount(value) {
+  const parsed = parseInt(value || env.FLASHCARD_MAX_CARDS || 6, 10);
+  const safe = Number.isInteger(parsed) ? parsed : (env.FLASHCARD_MAX_CARDS || 6);
+  return Math.min(MAX_FLASHCARDS, Math.max(1, safe));
+}
+
+function truncateText(value, max = 700) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max - 3).trim()}...` : text;
+}
+
+function compactChunks(chunks, limit, maxChars) {
+  return (chunks || []).slice(0, limit).map(chunk => ({
+    ...chunk,
+    text: truncateText(chunk.text, maxChars),
+  }));
+}
+
+function extractText(value) {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return '';
+  return value.text || value.answer || value.correctAnswer || value.back || value.front || value.mistake || value.correction || '';
+}
+
+function addFallbackCard(cards, seen, card, count) {
+  if (cards.length >= count) return;
+  const question = stripInternalRefs(card.question);
+  const answer = stripInternalRefs(card.answer);
+  const key = question.toLowerCase();
+  if (question.length < 10 || answer.length < 12 || PLACEHOLDER_RE.test(question) || PLACEHOLDER_RE.test(answer) || seen.has(key)) return;
+  seen.add(key);
+  cards.push({
+    question,
+    answer,
+    difficulty: ['easy', 'medium', 'hard'].includes(card.difficulty) ? card.difficulty : 'medium',
+    topic: stripInternalRefs(card.topic || 'General') || 'General',
+    source_chunk_id: Number.isInteger(Number(card.source_chunk_id)) ? Number(card.source_chunk_id) : null,
+  });
+}
+
+function fallbackFlashcardsFromContext(context, chunks, count, deckTitle) {
+  const cards = [];
+  const seen = new Set();
+  const curated = context && context.curatedKnowledge;
+  const topic = (curated && curated.topic) || deckTitle || 'General';
+
+  if (curated) {
+    if (curated.definition) {
+      addFallbackCard(cards, seen, {
+        question: `What is the core idea of ${topic}?`,
+        answer: curated.definition,
+        difficulty: 'easy',
+        topic,
+      }, count);
+    }
+    for (const item of curated.flashcards || []) {
+      addFallbackCard(cards, seen, {
+        question: item.front || item.question,
+        answer: item.back || item.answer,
+        difficulty: 'medium',
+        topic,
+      }, count);
+    }
+    for (const mistake of curated.commonMistakes || []) {
+      const mistakeText = stripInternalRefs(extractText(mistake.mistake || mistake));
+      const correctionText = stripInternalRefs(extractText(mistake.correction || mistake.whyItHappens));
+      if (mistakeText) {
+        addFallbackCard(cards, seen, {
+          question: `What common mistake should you avoid in ${topic}?`,
+          answer: correctionText ? `${mistakeText} Fix: ${correctionText}` : mistakeText,
+          difficulty: 'medium',
+          topic,
+        }, count);
+      }
+    }
+    if (curated.complexity) {
+      addFallbackCard(cards, seen, {
+        question: `What complexity detail should you remember for ${topic}?`,
+        answer: typeof curated.complexity === 'string' ? curated.complexity : JSON.stringify(curated.complexity),
+        difficulty: 'medium',
+        topic,
+      }, count);
+    }
+    const codeExample = (curated.codeExamples || [])[0];
+    if (codeExample && (codeExample.title || codeExample.code)) {
+      const walkthrough = (codeExample.walkthrough || []).map(extractText).filter(Boolean).join(' ');
+      addFallbackCard(cards, seen, {
+        question: `What does the ${codeExample.title || topic + ' code example'} show?`,
+        answer: truncateText(walkthrough || codeExample.code, 360),
+        difficulty: 'medium',
+        topic,
+      }, count);
+    }
+  }
+
+  const chunkFallback = fallbackFlashcardsFromChunks(chunks, count - cards.length, deckTitle).cards;
+  for (const card of chunkFallback) addFallbackCard(cards, seen, card, count);
+
+  return { cards };
+}
+
 function fallbackFlashcardsFromChunks(chunks, count, deckTitle) {
   const candidates = [];
   for (const chunk of chunks || []) {
@@ -70,7 +225,7 @@ function fallbackFlashcardsFromChunks(chunks, count, deckTitle) {
     const topic = inferTopic(item.sentence, deckTitle);
     return {
       question: `What should you remember about ${topic}?`,
-      answer: `${item.sentence} [chunk:${item.chunkId}]`,
+      answer: item.sentence,
       difficulty: idx < 2 ? 'easy' : 'medium',
       topic,
       source_chunk_id: item.chunkId,
@@ -79,24 +234,102 @@ function fallbackFlashcardsFromChunks(chunks, count, deckTitle) {
   return { cards };
 }
 
+function existingFlashcards(db, userId, materialId, topic, count) {
+  const rows = db.prepare(`
+    SELECT id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at
+    FROM flashcards
+    WHERE user_id=? AND material_id=?
+      AND (? IS NULL OR LOWER(COALESCE(topic, deck, '')) = LOWER(?) OR LOWER(COALESCE(deck, '')) = LOWER(?))
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(userId, materialId, topic || null, topic || '', topic || '', count);
+  return rows;
+}
+
+function usableProvider(provider) {
+  const name = String(provider || '').toLowerCase();
+  if (!name) return false;
+  if (name === 'groq') return !!env.GROQ_API_KEY;
+  return true;
+}
+
+function providerList() {
+  const names = [];
+  for (const name of [env.FLASHCARD_PROVIDER, env.FLASHCARD_FALLBACK_PROVIDER]) {
+    const normalized = String(name || '').toLowerCase();
+    if (normalized && !names.includes(normalized) && usableProvider(normalized)) names.push(normalized);
+  }
+  return names;
+}
+
+function timeoutError(provider, timeoutMs) {
+  const err = new Error(`${provider} flashcard generation timed out after ${timeoutMs}ms`);
+  err.code = 'flashcard_timeout';
+  err.provider = provider;
+  return err;
+}
+
+function withTimeout(promise, timeoutMs, provider) {
+  let timer;
+  return Promise.race([
+    promise.finally(() => clearTimeout(timer)),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(timeoutError(provider, timeoutMs)), timeoutMs);
+    }),
+  ]);
+}
+
+async function generateFlashcardsJson(prompt, n) {
+  const providers = providerList();
+  let lastErr = null;
+  for (const provider of providers) {
+    try {
+      const raw = await withTimeout(ai.generate(prompt, {
+        provider,
+        feature: 'flashcards',
+        format: 'json',
+        temperature: 0.35,
+        num_ctx: 2048,
+        num_predict: Math.min(900, 160 + n * 80),
+      }), env.FLASHCARD_TIMEOUT_MS, provider);
+      return { raw, provider };
+    } catch (err) {
+      lastErr = err;
+      log.warn('flashcard_provider_failed', {
+        provider,
+        code: err && err.code,
+        message: err && err.message,
+      });
+    }
+  }
+  if (lastErr) throw lastErr;
+  throw new HttpError(503, 'flashcard_provider_unavailable', 'No flashcard AI provider is configured.');
+}
+
 function sanitizeCards(cards, chunks, count, deckTitle) {
   const validChunkIds = new Set((chunks || []).map(c => Number(c.id)).filter(Number.isInteger));
-  return (cards || [])
-    .map((card) => {
-      const question = String(card.question || '').replace(/\s+/g, ' ').trim();
-      const answer = String(card.answer || '').replace(/\s+/g, ' ').trim();
-      const topic = String(card.topic || deckTitle || 'General').replace(/\s+/g, ' ').trim();
-      const sourceId = Number(card.source_chunk_id);
-      return {
-        question,
-        answer,
-        difficulty: ['easy', 'medium', 'hard'].includes(card.difficulty) ? card.difficulty : 'medium',
-        topic: topic || deckTitle || 'General',
-        source_chunk_id: Number.isInteger(sourceId) && validChunkIds.has(sourceId) ? sourceId : null,
-      };
-    })
-    .filter(card => card.question && card.answer)
-    .slice(0, count);
+  const seen = new Set();
+  const cleaned = [];
+  for (const card of cards || []) {
+    const question = stripInternalRefs(card.question);
+    const answer = stripInternalRefs(card.answer);
+    const topic = stripInternalRefs(card.topic || deckTitle || 'General');
+    if (question.length < 10 || answer.length < 12) continue;
+    if (PLACEHOLDER_RE.test(question) || PLACEHOLDER_RE.test(answer)) continue;
+    const key = question.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const sourceId = Number(card.source_chunk_id);
+    cleaned.push({
+      question,
+      answer,
+      difficulty: ['easy', 'medium', 'hard'].includes(card.difficulty) ? card.difficulty : 'medium',
+      topic: topic || deckTitle || 'General',
+      source_chunk_id: Number.isInteger(sourceId) && validChunkIds.has(sourceId) ? sourceId : null,
+    });
+    if (cleaned.length >= count) break;
+  }
+  return cleaned;
 }
 
 router.get('/', requireAuth, (req, res, next) => {
@@ -137,29 +370,107 @@ router.get('/due', requireAuth, (req, res, next) => {
 
 router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
   try {
-    const { material_id, count } = req.body || {};
+    const { material_id, count, regenerate } = req.body || {};
     if (!material_id) throw new HttpError(400, 'missing_material_id');
-    const n = Math.min(20, Math.max(1, parseInt(count || 6, 10)));
+    const scope = generationScope(req.body || {});
+    const n = parseCardCount(count);
     const db = getDb();
     const m = db.prepare('SELECT id, title FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
-    await ai.assertModelsAvailable({ generation: true, embedding: true });
-    const chunks = await retrieve(material_id, m.title, { feature: 'flashcards' });
-    const raw = await ai.generate(prompts.FLASHCARDS(chunks, n), {
-      format: 'json',
-      temperature: 0.35,
-      num_ctx: 2048,
-      num_predict: Math.min(1100, 180 + n * 90),
+    const scopeInfo = validateScope(db, req.user.id, material_id, scope);
+
+    let topicQuery = stripInternalRefs((req.body && req.body.topic) || scopeInfo.title || m.title);
+    const sourceUnderstanding = materialUnderstanding.understandGeneralFromDb(req.user.id, material_id, {
+      explicitQuery: topicQuery,
+      scopeTitle: scopeInfo.title,
+      title: m.title,
+      sourceScope: scope.sourceScope,
+      chapterId: scope.chapterId,
+      chunkId: scope.chunkId,
+    });
+    topicQuery = stripInternalRefs(sourceUnderstanding.topic || topicQuery || m.title);
+    const domainInfo = domainDetection.detectMaterialDomain(req.user.id, material_id, { hint: topicQuery });
+    const focusTerms = materialUnderstanding.focusTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
+    const avoidTerms = materialUnderstanding.competingTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
+    if (!regenerate && scope.sourceScope === 'material') {
+      const existing = existingFlashcards(db, req.user.id, material_id, topicQuery, n);
+      if (existing.length) {
+        return res.json({
+          created: 0,
+          ids: existing.map(card => card.id),
+          cards: existing,
+          reused: true,
+          fallback: false,
+          message: `Using ${existing.length} existing flashcard${existing.length === 1 ? '' : 's'} for this material.`,
+        });
+      }
+    }
+
+    const ragResult = await retrieveLessonContext(material_id, topicQuery, {
+      feature: 'flashcards',
+      k: env.FLASHCARD_TOP_K_CHUNKS,
+      minScore: 0.08,
+      maxMerged: env.FLASHCARD_TOP_K_CHUNKS,
+      sourceScope: scope.sourceScope,
+      chapterId: scope.chapterId,
+      chunkId: scope.chunkId,
+      focusTopic: topicQuery,
+      focusTerms,
+      avoidTerms,
+      includeSystem: domainDetection.shouldUseCuratedCs(domainInfo),
+    });
+    const uploadedChunks = compactChunks(
+      (ragResult.uploaded && ragResult.uploaded.chunks) || [],
+      env.FLASHCARD_TOP_K_CHUNKS,
+      700
+    );
+    const context = educationalContext.buildEducationalContext({
+      userId: req.user.id,
+      materialId: material_id,
+      topic: m.title,
+      query: topicQuery,
+      feature: 'flashcards',
+      ragResult,
+      retrievedChunks: ragResult.chunks,
+      domainInfo,
+      audienceLevel: 'beginner',
+    });
+    const educationalContextPrompt = educationalContext.formatPracticeEducationalContextForPrompt(context, {
+      feature: 'flashcards',
+      maxChars: Math.min(2500, env.FLASHCARD_MAX_CONTEXT_CHARS),
+    });
+    const tier = computeGroundingTier(ragResult.uploaded || ragResult);
+    const prompt = prompts.FLASHCARDS(uploadedChunks, n, {
+      educationalContext: educationalContextPrompt,
+      groundingTier: tier,
     });
     let data;
+    let fallback = false;
+    let fallbackReason = null;
+    let providerUsed = null;
     try {
-      data = await parseJsonSafe(raw, FlashSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0, num_predict: 700 }));
+      const generated = await generateFlashcardsJson(prompt, n);
+      providerUsed = generated.provider;
+      data = await parseJsonSafe(generated.raw, FlashSchema, async (txt) => withTimeout(ai.generate(prompts.REPAIR_JSON(txt), {
+        provider: generated.provider,
+        feature: 'flashcards',
+        temperature: 0,
+        num_predict: 500,
+      }), Math.min(env.FLASHCARD_TIMEOUT_MS, 20000), generated.provider));
     } catch (e) {
       log.warn('flashcard_json_fallback', e.message || e);
-      data = fallbackFlashcardsFromChunks(chunks, n, m.title);
+      fallback = true;
+      fallbackReason = ((e && e.code === 'flashcard_timeout') || (e && e.code === 'ai_timeout'))
+        ? 'ai_timeout'
+        : 'ai_failed';
+      data = fallbackFlashcardsFromContext(context, uploadedChunks, n, m.title);
     }
-    let cards = sanitizeCards(data.cards, chunks, n, m.title);
-    if (!cards.length) cards = sanitizeCards(fallbackFlashcardsFromChunks(chunks, n, m.title).cards, chunks, n, m.title);
+    let cards = sanitizeCards(data.cards, uploadedChunks, n, m.title);
+    if (!cards.length) {
+      fallback = true;
+      fallbackReason = fallbackReason || 'empty_ai_output';
+      cards = sanitizeCards(fallbackFlashcardsFromContext(context, uploadedChunks, n, m.title).cards, uploadedChunks, n, m.title);
+    }
     if (!cards.length) throw new HttpError(502, 'flashcard_generation_empty', 'Could not create flashcards from the available source text.');
     const ins = db.prepare(`INSERT INTO flashcards (user_id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at)
                             VALUES (?,?,?,?,?,?,?,?,?)`);
@@ -170,7 +481,22 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         ids.push(r.lastInsertRowid);
       }
     })();
-    res.json({ created: ids.length, ids });
+    res.json({
+      created: ids.length,
+      ids,
+      reused: false,
+      fallback,
+      fallback_reason: fallbackReason,
+      provider: providerUsed,
+      message: fallback
+        ? `Created ${ids.length} source-derived fallback flashcard${ids.length === 1 ? '' : 's'} because AI generation was unavailable.`
+        : `Generated ${ids.length} flashcard${ids.length === 1 ? '' : 's'}.`,
+      source_scope: scope.sourceScope,
+      source_label: ragResult.sourceLabel,
+      chapter_id: scope.chapterId,
+      chunk_id: scope.chunkId,
+      domain: domainInfo,
+    });
   } catch (e) { next(e); }
 });
 

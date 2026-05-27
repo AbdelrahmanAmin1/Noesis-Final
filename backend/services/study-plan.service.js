@@ -14,11 +14,64 @@ function task(type, title, minutes, successCriteria) {
   return { type, title, estimatedMinutes: minutes, successCriteria };
 }
 
+function recentReadyMaterials(db, userId) {
+  return db.prepare(`
+    SELECT id, title
+    FROM materials
+    WHERE user_id=? AND status='ready'
+    ORDER BY created_at DESC
+    LIMIT 4
+  `).all(userId);
+}
+
+function buildCombinedMap(userId, materials) {
+  const maps = materials.map(material => learningMaps.buildLearningMap(userId, { materialId: material.id, rootTopic: material.title }));
+  const nodes = [];
+  const seen = new Set();
+  for (const map of maps) {
+    for (const node of map.nodes || []) {
+      const key = String(node.label || '').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      nodes.push({ ...node, materialId: map.materialGrounding && map.materialGrounding.materialId || null });
+    }
+  }
+  const recommendedPath = [];
+  for (const map of maps) {
+    for (const topic of map.recommendedPath || []) {
+      const key = String(topic || '').toLowerCase();
+      if (key && !recommendedPath.some(t => String(t).toLowerCase() === key)) recommendedPath.push(topic);
+    }
+  }
+  return {
+    rootTopic: materials.length === 1 ? materials[0].title : 'Uploaded Materials',
+    startHere: recommendedPath[0] || (nodes[0] && nodes[0].label) || 'Upload material',
+    tree: {
+      label: 'Uploaded Materials',
+      children: maps.map(map => ({
+        label: map.rootTopic,
+        children: (map.recommendedPath || []).slice(0, 4).map(label => ({ label, children: [] })),
+      })),
+    },
+    nodes: nodes.slice(0, 14),
+    recommendedPath: recommendedPath.slice(0, 7),
+    materialGrounding: {
+      used: materials.length > 0,
+      materialIds: materials.map(m => m.id),
+      combined: true,
+    },
+    generatedAt: nowIso(),
+  };
+}
+
 function buildPlan(userId, opts = {}) {
   const db = getDb();
   const prefs = db.prepare('SELECT * FROM user_prefs WHERE user_id=?').get(userId) || {};
   const profile = parseJson(prefs.study_profile_json, {});
-  const map = learningMaps.buildLearningMap(userId, { materialId: opts.materialId });
+  const materials = opts.materialId ? [] : recentReadyMaterials(db, userId);
+  const map = opts.materialId || !materials.length
+    ? learningMaps.buildLearningMap(userId, { materialId: opts.materialId })
+    : buildCombinedMap(userId, materials);
   const daysPerWeek = Math.max(1, Math.min(7, Number(profile.daysPerWeek || profile.days_per_week || 5)));
   const minutes = Math.max(20, Math.min(180, Number(profile.minutesPerSession || prefs.daily_minutes || 45)));
   const deadline = profile.deadline || '';
@@ -53,7 +106,7 @@ function buildPlan(userId, opts = {}) {
     daysPerWeek,
     minutesPerSession: minutes,
     learningStyle: profile.learningStyle || 'mixed',
-    preferredLanguage: profile.preferredLanguage || 'java',
+    preferredLanguage: profile.preferredLanguage || (map.materialGrounding && map.materialGrounding.domain && map.materialGrounding.domain.domain !== 'cs' ? 'general' : 'java'),
     weakTopics: map.nodes.filter(n => n.type === 'weak').map(n => n.label).slice(0, 6),
     dailyPlan,
     learningMap: map,

@@ -66,7 +66,7 @@ const Dashboard = ({ onNav }) => {
               You're at {totalWeek}h this week of {goalH}h goal. Pick up where you left, or start a new tutor session.
             </p>
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+            <div style={{ display: 'flex', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(24px * var(--app-density-scale))' }}>
               <button className="btn btn-accent" onClick={() => onNav(nextAction && nextAction.route || 'tutor')}>
                 <Icon.Play size={12} /> {nextAction ? (nextAction.label || nextAction.title) : "Start today's session"}
               </button>
@@ -103,39 +103,39 @@ const Dashboard = ({ onNav }) => {
         </section>
 
         <section style={ds.grid} className="reveal">
-          <div className="card" style={{ padding: 22 }}>
+          <div className="card" style={{ padding: 'calc(22px * var(--app-density-scale))' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>Level progress</span>
               <span className="chip chip-accent">{xp.weekly_xp || 0} XP this week</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 14 }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: 44, fontWeight: 300 }}>{xp.level || 1}</span>
-              <span style={{ fontSize: 12, color: 'var(--fg-2)' }}>level</span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))' }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(44px * var(--app-font-scale))', fontWeight: 300 }}>{xp.level || 1}</span>
+              <span style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)' }}>level</span>
             </div>
             <div style={ds.progress}>
               <div style={{ ...ds.progressFill, width: (xp.progress_pct || 0) + '%' }} />
             </div>
-            <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--fg-3)' }}>{xp.xp_to_next_level || 0} XP to next level</div>
+            <div style={{ marginTop: 'calc(10px * var(--app-density-scale))', fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{xp.xp_to_next_level || 0} XP to next level</div>
           </div>
 
-          <div className="card" style={{ padding: 22 }}>
+          <div className="card" style={{ padding: 'calc(22px * var(--app-density-scale))' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>Daily goal</span>
               <Icon.Bolt size={14} style={{ color: 'var(--accent)' }}/>
             </div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 36, fontWeight: 300, marginTop: 14 }}>{dailyGoal ? dailyGoal.completed_xp : 0}/{dailyGoal ? dailyGoal.target_xp : 50}</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(36px * var(--app-font-scale))', fontWeight: 300, marginTop: 'calc(14px * var(--app-density-scale))' }}>{dailyGoal ? dailyGoal.completed_xp : 0}/{dailyGoal ? dailyGoal.target_xp : 50}</div>
             <div style={ds.progress}>
               <div style={{ ...ds.progressFill, width: (dailyGoal ? dailyGoal.xp_progress_pct : 0) + '%' }} />
             </div>
-            <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--fg-3)' }}>{dailyGoal && dailyGoal.status === 'completed' ? 'Goal complete' : 'XP target for today'}</div>
+            <div style={{ marginTop: 'calc(10px * var(--app-density-scale))', fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{dailyGoal && dailyGoal.status === 'completed' ? 'Goal complete' : 'XP target for today'}</div>
           </div>
 
-          <div className="card" style={{ padding: 22 }}>
+          <div className="card" style={{ padding: 'calc(22px * var(--app-density-scale))' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>Weekly leaderboard</span>
-              <button className="btn btn-bare" onClick={() => onNav('community')} style={{ fontSize: 11.5 }}>Open <Icon.ArrowRight size={11}/></button>
+              <button className="btn btn-bare" onClick={() => onNav('community')} style={{ fontSize: 'calc(11.5px * var(--app-font-scale))' }}>Open <Icon.ArrowRight size={11}/></button>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))' }}>
               {(leaderboardPreview.length ? leaderboardPreview : [{ rank: '-', display_name: 'No XP yet', xp: 0 }]).slice(0, 4).map((row, i) => (
                 <div key={row.user_id || i} style={ds.leaderRow}>
                   <span className="mono" style={{ color: 'var(--accent)', width: 28 }}>#{row.rank}</span>
@@ -150,23 +150,23 @@ const Dashboard = ({ onNav }) => {
         {/* Three-column work grid */}
         <section style={ds.grid} className="reveal">
           {/* Continue where you left off */}
-          <div className="card" style={{ padding: 22, gridColumn: 'span 2' }}>
+          <div className="card" style={{ padding: 'calc(22px * var(--app-density-scale))', gridColumn: 'span 2' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>Pick up where you left</span>
-              <button className="btn btn-bare" onClick={() => onNav('materials')} style={{ fontSize: 11.5 }}>See library <Icon.ArrowRight size={11}/></button>
+              <button className="btn btn-bare" onClick={() => onNav('materials')} style={{ fontSize: 'calc(11.5px * var(--app-font-scale))' }}>See library <Icon.ArrowRight size={11}/></button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))' }}>
               {(resumeItems.length ? resumeItems : [{ t: 'Upload material to get started', src: 'Library', prog: 0, chip: 'New' }]).slice(0, 2).map((c, i) => (
                 <button key={i} style={ds.resumeCard} onClick={() => {
                   if (resumeItems.length && c.id) sessionStorage.setItem('noesis.materialId', String(c.id));
                   onNav(resumeItems.length ? 'material' : 'materials');
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))' }}>
                     <span className="chip">{c.chip}</span>
-                    <span className="mono" style={{ fontSize: 10.5, color: 'var(--fg-3)' }}>{c.prog}%</span>
+                    <span className="mono" style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{c.prog}%</span>
                   </div>
-                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 400, color: 'var(--fg-0)', margin: '10px 0 6px', letterSpacing: '-0.01em', textAlign: 'left' }}>{c.t}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--fg-3)', textAlign: 'left' }}>{c.src}</div>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(20px * var(--app-font-scale))', fontWeight: 400, color: 'var(--fg-0)', margin: '10px 0 6px', letterSpacing: '-0.01em', textAlign: 'left' }}>{c.t}</div>
+                  <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', textAlign: 'left' }}>{c.src}</div>
                   <div style={ds.progress}>
                     <div style={{ ...ds.progressFill, width: c.prog + '%' }} />
                   </div>
@@ -176,31 +176,31 @@ const Dashboard = ({ onNav }) => {
           </div>
 
           {/* Streak + metrics */}
-          <div className="card" style={{ padding: 22 }}>
+          <div className="card" style={{ padding: 'calc(22px * var(--app-density-scale))' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>This week</span>
               <Icon.Flame size={14} style={{ color: 'var(--accent)' }}/>
             </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 14 }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: 46, fontWeight: 300 }}>{totalWeek}</span>
-              <span style={{ fontSize: 12, color: 'var(--fg-2)' }}>hrs focused</span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))' }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(46px * var(--app-font-scale))', fontWeight: 300 }}>{totalWeek}</span>
+              <span style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)' }}>hrs focused</span>
             </div>
-            <div style={{ display: 'flex', gap: 4, marginTop: 12 }}>
+            <div style={{ display: 'flex', gap: 'calc(4px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' }}>
               {weekly.map((h, i) => (
                 <div key={i} style={{ flex: 1 }}>
                   <div style={{
                     height: h * 12, minHeight: 3,
                     background: i === 6 ? 'var(--accent)' : 'var(--fg-4)',
-                    borderRadius: 2, marginBottom: 6,
+                    borderRadius: 2, marginBottom: 'calc(6px * var(--app-density-scale))',
                     transition: 'all 300ms var(--ease-out)',
                   }} />
-                  <div className="mono" style={{ fontSize: 9, color: 'var(--fg-3)', textAlign: 'center' }}>
+                  <div className="mono" style={{ fontSize: 'calc(9px * var(--app-font-scale))', color: 'var(--fg-3)', textAlign: 'center' }}>
                     {['M','T','W','T','F','S','S'][i]}
                   </div>
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', fontSize: 11.5, color: 'var(--fg-2)' }}>
+            <div style={{ marginTop: 'calc(16px * var(--app-density-scale))', paddingTop: 'calc(14px * var(--app-density-scale))', borderTop: '1px solid var(--line)', display: 'flex', justifyContent: 'space-between', fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-2)' }}>
               <div>Streak: <span style={{ color: 'var(--ok)' }}>{(data && data.streak_days) || 0}d</span></div>
               <div>Goal: {goalH}h</div>
             </div>
@@ -210,49 +210,49 @@ const Dashboard = ({ onNav }) => {
         {/* Second row */}
         <section style={ds.grid}>
           {/* Spaced rep queue */}
-          <div className="card" style={{ padding: 22 }}>
+          <div className="card" style={{ padding: 'calc(22px * var(--app-density-scale))' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>Due for review</span>
               <span className="chip chip-accent">{dueCount} cards</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))' }}>
               {(dueRows.length ? dueRows : [{ q: 'Generate flashcards from a material to start reviewing.', t: '—', conf: 'good' }]).slice(0, 3).map((r, i) => (
                 <div key={i} style={ds.reviewRow}>
                   <span style={{ ...ds.dot, background: r.conf === 'shaky' ? 'var(--err)' : r.conf === 'ok' ? 'var(--warn)' : 'var(--ok)' }}/>
-                  <span style={{ fontSize: 13, color: 'var(--fg-1)', flex: 1 }}>{r.q}</span>
-                  <span style={{ fontSize: 10.5, color: 'var(--fg-3)' }} className="mono">{r.t}</span>
+                  <span style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-1)', flex: 1 }}>{r.q}</span>
+                  <span style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)' }} className="mono">{r.t}</span>
                 </div>
               ))}
             </div>
-            <button className="btn btn-ghost" onClick={() => onNav('flashcards')} style={{ marginTop: 14, width: '100%', justifyContent: 'center' }}>
+            <button className="btn btn-ghost" onClick={() => onNav('flashcards')} style={{ marginTop: 'calc(14px * var(--app-density-scale))', width: '100%', justifyContent: 'center' }}>
               Review now <Icon.ArrowRight size={12}/>
             </button>
           </div>
 
           {/* Concepts map */}
-          <div className="card" style={{ padding: 22 }}>
+          <div className="card" style={{ padding: 'calc(22px * var(--app-density-scale))' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>Concept mastery</span>
-              <button className="btn btn-bare" style={{ fontSize: 11.5 }} onClick={() => onNav('progress')}>Open <Icon.ArrowUpRight size={11}/></button>
+              <button className="btn btn-bare" style={{ fontSize: 'calc(11.5px * var(--app-font-scale))' }} onClick={() => onNav('progress')}>Open <Icon.ArrowUpRight size={11}/></button>
             </div>
             <ConceptMap concepts={conceptList} />
           </div>
 
           {/* Upcoming */}
-          <div className="card" style={{ padding: 22 }}>
+          <div className="card" style={{ padding: 'calc(22px * var(--app-density-scale))' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>On the horizon</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 14 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(12px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))' }}>
               {(upcomingItems.length ? upcomingItems : [{ d: 'Course', dn: '-', t: 'No active course tracks', sub: 'Complete onboarding to add OOP and Data Structures', tint: 'default' }]).map((u, i) => (
                 <div key={i} style={ds.upcoming}>
                   <div style={{ ...ds.dateBox, borderColor: u.tint === 'warn' ? 'var(--warn)' : u.tint === 'accent' ? 'var(--accent-soft)' : 'var(--line-strong)' }}>
-                    <div className="mono" style={{ fontSize: 9, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{u.d}</div>
-                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, color: 'var(--fg-0)', lineHeight: 1 }}>{u.dn}</div>
+                    <div className="mono" style={{ fontSize: 'calc(9px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>{u.d}</div>
+                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(22px * var(--app-font-scale))', color: 'var(--fg-0)', lineHeight: 1 }}>{u.dn}</div>
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: 'var(--fg-0)', fontWeight: 500 }}>{u.t}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--fg-3)', marginTop: 2 }}>{u.sub}</div>
+                    <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{u.t}</div>
+                    <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(2px * var(--app-density-scale))' }}>{u.sub}</div>
                   </div>
                 </div>
               ))}
@@ -261,20 +261,20 @@ const Dashboard = ({ onNav }) => {
         </section>
 
         {/* AI suggestions */}
-        <section className="card" style={{ padding: 22, marginBottom: 40 }}>
+        <section className="card" style={{ padding: 'calc(22px * var(--app-density-scale))', marginBottom: 'calc(40px * var(--app-density-scale))' }}>
           <div style={ds.cardHead}>
             <span style={ds.cardTitle}><Icon.Sparkle size={13} style={{ color: 'var(--accent)' }}/> Noēsis noticed</span>
-            <span style={{ fontSize: 11, color: 'var(--fg-3)' }}>{recentActivity.length} recent event{recentActivity.length === 1 ? '' : 's'}</span>
+            <span style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{recentActivity.length} recent event{recentActivity.length === 1 ? '' : 's'}</span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginTop: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'calc(12px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))' }}>
             {insightItems.map((s, i) => {
               const C = Icon[s.icon] || Icon.Sparkle;
               return (
                 <div key={i} style={ds.insight}>
                   <C size={15} style={{ color: 'var(--accent)' }}/>
-                  <div style={{ fontSize: 13, color: 'var(--fg-0)', fontWeight: 500, margin: '8px 0 4px' }}>{s.t}</div>
-                  <div style={{ fontSize: 12, color: 'var(--fg-2)' }}>{s.d}</div>
-                  <button className="btn btn-bare" onClick={() => s.route && onNav(s.route)} style={{ marginTop: 10, padding: '4px 0', fontSize: 12, color: 'var(--accent)' }}>
+                  <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500, margin: '8px 0 4px' }}>{s.t}</div>
+                  <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)' }}>{s.d}</div>
+                  <button className="btn btn-bare" onClick={() => s.route && onNav(s.route)} style={{ marginTop: 'calc(10px * var(--app-density-scale))', padding: '4px 0', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--accent)' }}>
                     {s.cta} <Icon.ArrowRight size={11}/>
                   </button>
                 </div>
@@ -282,11 +282,11 @@ const Dashboard = ({ onNav }) => {
             })}
           </div>
           {recentActivity.length > 0 && (
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line)', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+            <div style={{ marginTop: 'calc(16px * var(--app-density-scale))', paddingTop: 'calc(14px * var(--app-density-scale))', borderTop: '1px solid var(--line)', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'calc(10px * var(--app-density-scale))' }}>
               {recentActivity.slice(0, 4).map((a, i) => (
-                <div key={i} style={{ fontSize: 11.5, color: 'var(--fg-2)' }}>
+                <div key={i} style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-2)' }}>
                   <span style={{ color: 'var(--fg-0)', textTransform: 'capitalize' }}>{a.kind}</span>
-                  <div style={{ marginTop: 3, color: 'var(--fg-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title || 'Activity'}</div>
+                  <div style={{ marginTop: 'calc(3px * var(--app-density-scale))', color: 'var(--fg-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.title || 'Activity'}</div>
                 </div>
               ))}
             </div>
@@ -294,19 +294,19 @@ const Dashboard = ({ onNav }) => {
         </section>
 
         {recentBadges.length > 0 && (
-          <section className="card" style={{ padding: 22, marginBottom: 40 }}>
+          <section className="card" style={{ padding: 'calc(22px * var(--app-density-scale))', marginBottom: 'calc(40px * var(--app-density-scale))' }}>
             <div style={ds.cardHead}>
               <span style={ds.cardTitle}>Recent achievements</span>
-              <button className="btn btn-bare" onClick={() => onNav('community')} style={{ fontSize: 11.5 }}>Community <Icon.ArrowRight size={11}/></button>
+              <button className="btn btn-bare" onClick={() => onNav('community')} style={{ fontSize: 'calc(11.5px * var(--app-font-scale))' }}>Community <Icon.ArrowRight size={11}/></button>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 10, marginTop: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))' }}>
               {recentBadges.slice(0, 5).map(b => {
                 const C = Icon[b.icon] || Icon.Star;
                 return (
                   <div key={b.code} style={ds.badgeCard}>
                     <C size={15} style={{ color: 'var(--accent)' }}/>
-                    <div style={{ fontSize: 12.5, color: 'var(--fg-0)', marginTop: 8, fontWeight: 500 }}>{b.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 4 }}>{b.description}</div>
+                    <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)', marginTop: 'calc(8px * var(--app-density-scale))', fontWeight: 500 }}>{b.name}</div>
+                    <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(4px * var(--app-density-scale))' }}>{b.description}</div>
                   </div>
                 );
               })}
@@ -334,10 +334,10 @@ const FocusRing = ({ value = 0 }) => {
         <circle cx="100" cy="100" r="52" stroke="var(--line-soft)" strokeWidth="1" fill="none"/>
       </svg>
       <div style={{ position: 'absolute', textAlign: 'center' }}>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 44, fontWeight: 300, color: 'var(--fg-0)', lineHeight: 1 }}>
-          {v}<span style={{ fontSize: 18, color: 'var(--fg-2)' }}>%</span>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(44px * var(--app-font-scale))', fontWeight: 300, color: 'var(--fg-0)', lineHeight: 1 }}>
+          {v}<span style={{ fontSize: 'calc(18px * var(--app-font-scale))', color: 'var(--fg-2)' }}>%</span>
         </div>
-        <div style={{ fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 4 }}>Weekly focus</div>
+        <div style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: 'calc(4px * var(--app-density-scale))' }}>Weekly focus</div>
       </div>
     </div>
   );
@@ -352,12 +352,12 @@ const ConceptMap = ({ concepts: input }) => {
   ];
   const src = (input && input.length ? input : []).slice(0, positions.length);
   if (!src.length) {
-    return <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-3)', fontSize: 12 }}>No concept data yet.</div>;
+    return <div style={{ height: 180, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--fg-3)', fontSize: 'calc(12px * var(--app-font-scale))' }}>No concept data yet.</div>;
   }
   const concepts = src.map((c, i) => ({ ...positions[i], name: c.name, m: c.mastery_pct ?? c.m ?? 0 }));
   const color = (m) => m > 70 ? 'var(--ok)' : m > 45 ? 'var(--accent)' : m > 25 ? 'var(--warn)' : 'var(--err)';
   return (
-    <div style={{ position: 'relative', height: 180, marginTop: 10 }}>
+    <div style={{ position: 'relative', height: 180, marginTop: 'calc(10px * var(--app-density-scale))' }}>
       <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0 }}>
         {concepts.map((a, i) => concepts.slice(i + 1).map((b, j) => (
           <line key={`${i}-${j}`} x1={`${a.x}%`} y1={`${a.y}%`} x2={`${b.x}%`} y2={`${b.y}%`}
@@ -374,7 +374,7 @@ const ConceptMap = ({ concepts: input }) => {
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <div style={{ width: 6, height: 6, borderRadius: 3, background: color(c.m) }}/>
-          <span style={{ position: 'absolute', top: '100%', marginTop: 4, fontSize: 9.5, color: 'var(--fg-2)', whiteSpace: 'nowrap' }} className="mono">{c.name}</span>
+          <span style={{ position: 'absolute', top: '100%', marginTop: 'calc(4px * var(--app-density-scale))', fontSize: 'calc(9.5px * var(--app-font-scale))', color: 'var(--fg-2)', whiteSpace: 'nowrap' }} className="mono">{c.name}</span>
         </div>
       ))}
     </div>
@@ -384,52 +384,52 @@ const ConceptMap = ({ concepts: input }) => {
 const ds = {
   page: { padding: '28px', maxWidth: 1400, margin: '0 auto' },
   errorBanner: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '10px 12px', marginBottom: 14,
+    display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))',
+    padding: '10px 12px', marginBottom: 'calc(14px * var(--app-density-scale))',
     borderRadius: 'var(--r-sm)', border: '1px solid var(--err)',
     color: 'var(--err)', background: 'color-mix(in oklab, var(--err) 10%, transparent)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
   },
   hero: {
     display: 'grid', gridTemplateColumns: '1fr auto',
-    gap: 40, alignItems: 'center',
+    gap: 'calc(40px * var(--app-density-scale))', alignItems: 'center',
     padding: '24px 0 32px',
   },
-  metrics: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 14 },
+  metrics: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 'calc(10px * var(--app-density-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
   metricCard: { padding: '14px 16px' },
-  metricValue: { fontFamily: 'var(--font-display)', fontSize: 28, fontWeight: 300, color: 'var(--fg-0)' },
-  metricLabel: { fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 4 },
-  eyebrow: { fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 14 },
-  heroTitle: { fontFamily: 'var(--font-display)', fontSize: 44, fontWeight: 300, letterSpacing: '-0.02em', lineHeight: 1.1, margin: '0 0 14px', maxWidth: 680 },
-  heroSub: { fontSize: 14, color: 'var(--fg-2)', margin: 0, maxWidth: 560 },
+  metricValue: { fontFamily: 'var(--font-display)', fontSize: 'calc(28px * var(--app-font-scale))', fontWeight: 300, color: 'var(--fg-0)' },
+  metricLabel: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 'calc(4px * var(--app-density-scale))' },
+  eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  heroTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(44px * var(--app-font-scale))', fontWeight: 300, letterSpacing: '-0.02em', lineHeight: 1.1, margin: '0 0 14px', maxWidth: 680 },
+  heroSub: { fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-2)', margin: 0, maxWidth: 560 },
   link: { color: 'var(--accent)', cursor: 'pointer', borderBottom: '1px dotted var(--accent-soft)' },
-  focusWrap: { padding: 10 },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 },
+  focusWrap: { padding: 'calc(10px * var(--app-density-scale))' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'calc(14px * var(--app-density-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
   cardHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
-  cardTitle: { fontSize: 13, color: 'var(--fg-1)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 8 },
+  cardTitle: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-1)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))' },
   resumeCard: {
-    padding: 16, borderRadius: 'var(--r-md)',
+    padding: 'calc(16px * var(--app-density-scale))', borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)', border: '1px solid var(--line)',
     textAlign: 'left', display: 'flex', flexDirection: 'column',
     transition: 'all 180ms var(--ease-out)',
   },
-  progress: { marginTop: 14, height: 3, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' },
+  progress: { marginTop: 'calc(14px * var(--app-density-scale))', height: 3, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' },
   progressFill: { height: '100%', background: 'var(--accent)', borderRadius: 2, transition: 'width 600ms var(--ease-out)' },
-  reviewRow: { display: 'flex', alignItems: 'center', gap: 10 },
+  reviewRow: { display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))' },
   dot: { width: 6, height: 6, borderRadius: 3, flexShrink: 0 },
-  upcoming: { display: 'flex', gap: 12, alignItems: 'center' },
+  upcoming: { display: 'flex', gap: 'calc(12px * var(--app-density-scale))', alignItems: 'center' },
   dateBox: {
     width: 48, height: 48, borderRadius: 'var(--r-sm)',
     border: '1px solid', display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center', gap: 2, flexShrink: 0,
+    alignItems: 'center', justifyContent: 'center', gap: 'calc(2px * var(--app-density-scale))', flexShrink: 0,
     background: 'var(--bg-1)',
   },
   insight: {
-    padding: 14, borderRadius: 'var(--r-md)',
+    padding: 'calc(14px * var(--app-density-scale))', borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)', border: '1px solid var(--line)',
   },
-  leaderRow: { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid var(--line-soft)', fontSize: 12 },
-  badgeCard: { padding: 14, borderRadius: 'var(--r-md)', background: 'var(--bg-2)', border: '1px solid var(--line)' },
+  leaderRow: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', padding: '8px 0', borderBottom: '1px solid var(--line-soft)', fontSize: 'calc(12px * var(--app-font-scale))' },
+  badgeCard: { padding: 'calc(14px * var(--app-density-scale))', borderRadius: 'var(--r-md)', background: 'var(--bg-2)', border: '1px solid var(--line)' },
 };
 
 window.Dashboard = Dashboard;

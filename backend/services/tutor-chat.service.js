@@ -5,6 +5,8 @@ const env = require('../config/env');
 const ai = require('./ai.service');
 const rag = require('./rag.service');
 const prompts = require('../utils/prompts');
+const educationalContext = require('./educational-context.service');
+const domainDetection = require('./domain-detection.service');
 const { HttpError } = require('../middleware/error');
 const { sourceChunksForClient } = require('./tutor.service');
 
@@ -12,7 +14,7 @@ const CHAT_ACTIONS = {
   explain_deeper: {
     label: 'Explain deeper',
     message: 'Explain the last concept in more depth with an analogy.',
-    instructions: 'Deepen the most recent concept from the conversation. Add one beginner-friendly analogy, one concrete CS example, and one common misconception to avoid.',
+    instructions: 'Deepen the most recent concept from the conversation. Add one beginner-friendly analogy, one concrete example from the subject, and one common misconception to avoid. Use code only when the uploaded material is actually about programming.',
   },
   quiz_me: {
     label: 'Quiz me',
@@ -27,8 +29,8 @@ const CHAT_ACTIONS = {
   },
   give_example: {
     label: 'Give example',
-    message: 'Show me a concrete code example for the last topic.',
-    instructions: 'Give one compact code example when the topic is code-related. Explain the example line by line and tie it back to the uploaded material.',
+    message: 'Show me a concrete example for the last topic.',
+    instructions: 'Give one compact code example only when the topic is code-related. Otherwise give a concrete scenario, case, or worked example from the subject. Explain it step by step and tie it back to the uploaded material.',
   },
   compare_concepts: {
     label: 'Compare concepts',
@@ -367,14 +369,14 @@ function groundingSummary(tier, sources = []) {
     return {
       tier: 'weak',
       label: 'Weak grounding',
-      message: 'I could not find strong support for this in your uploaded material; any extra explanation is general CS help.',
+      message: 'I could not find strong support for this in your uploaded material; any extra explanation is general subject help.',
       sourceCount,
     };
   }
   return {
     tier: 'moderate',
     label: 'Moderate grounding',
-    message: 'This answer uses the uploaded material plus standard CS explanation.',
+    message: 'This answer uses the uploaded material plus standard subject explanation.',
     sourceCount,
   };
 }
@@ -388,10 +390,11 @@ function ensureGroundingDisclosure(reply, grounding) {
     || head.includes('not find this in your uploaded material')
     || head.includes('not enough support in your uploaded material')
     || head.includes('general cs explanation')
+    || head.includes('general subject explanation')
   ) {
     return text;
   }
-  return cleanText(`${grounding.message}\n\nGeneral CS explanation: ${text}`, 8000);
+  return cleanText(`${grounding.message}\n\nGeneral subject explanation: ${text}`, 8000);
 }
 
 function normalizeAction(action) {
@@ -558,6 +561,15 @@ function getConversationMessages(db, conversationId, limit = 12) {
   `).all(conversationId, limit).reverse();
 }
 
+function friendlyAiMessage(err) {
+  const code = err && err.code;
+  if (code === 'ai_model_missing') return 'The selected tutor model is unavailable. I tried the configured fallback, but no model was ready.';
+  if (code === 'ai_auth_failed') return 'The tutor provider rejected the API key. Check the provider credentials or switch to a local model.';
+  if (code === 'ai_rate_limited') return 'The tutor provider is rate limited right now. Please try again shortly.';
+  if (code === 'ai_timeout') return 'The tutor provider did not respond before the timeout. Please try a shorter question or use the fallback provider.';
+  return 'The tutor service is unavailable right now. Check provider settings or try again in a moment.';
+}
+
 async function sendMessage(userId, payload = {}) {
   const db = getDb();
   const actionKey = normalizeAction(payload.action);
@@ -579,7 +591,15 @@ async function sendMessage(userId, payload = {}) {
   const historyRows = getConversationMessages(db, conversation.id, 10);
   const retrievalStart = Date.now();
   const retrievalMaterialId = conversation.material_id || 'system';
-  const context = await rag.retrieveLessonContext(retrievalMaterialId, message, { feature: 'tutor', k: 6, maxMerged: 10 });
+  const domainInfo = conversation.material_id
+    ? domainDetection.detectMaterialDomain(userId, conversation.material_id, { hint: message })
+    : { domain: 'general', confidence: 0.3, evidence: [], source: 'system' };
+  const context = await rag.retrieveLessonContext(retrievalMaterialId, message, {
+    feature: 'tutor',
+    k: 6,
+    maxMerged: 10,
+    includeSystem: !conversation.material_id || domainDetection.shouldUseCuratedCs(domainInfo),
+  });
   context.chunks = dedupeChunks(context.chunks);
   const retrievalMs = Date.now() - retrievalStart;
   const tier = rag.groundingTier(context);
@@ -591,6 +611,21 @@ async function sendMessage(userId, payload = {}) {
   const conversationHistory = actionKey
     ? formatHistory(historyRows.slice(-6))
     : formatHistory(historyRows);
+  const education = env.KNOWLEDGE_CONTEXT_ENABLED && env.KNOWLEDGE_USE_FOR_TUTOR
+    ? educationalContext.buildEducationalContext({
+      userId,
+      materialId: conversation.material_id,
+      topic: [message, conversationHistory].filter(Boolean).join('\n'),
+      query: message,
+      feature: 'tutor',
+      ragResult: context,
+      domainInfo,
+      audienceLevel: 'beginner',
+    })
+    : null;
+  const educationalContextPrompt = education
+    ? educationalContext.formatEducationalContextForPrompt(education, { maxChars: env.KNOWLEDGE_CONTEXT_MAX_CHARS })
+    : '(Curated knowledge context is disabled.)';
   const prompt = actionKey
     ? prompts.TUTOR_CHAT_ACTION(context.chunks, message, {
       groundingTier: tier,
@@ -598,14 +633,25 @@ async function sendMessage(userId, payload = {}) {
       actionLabel: actionDef.label,
       actionInstructions: actionDef.instructions,
       structuredOutputInstructions: actionDef.structured || '',
+      educationalContext: educationalContextPrompt,
     })
     : prompts.TUTOR_CHAT(context.chunks, message, {
       groundingTier: tier,
       conversationHistory,
+      educationalContext: educationalContextPrompt,
     });
 
   const generationStart = Date.now();
-  const raw = await ai.generate(prompt, { feature: 'tutor', temperature: 0.35 });
+  let generation = null;
+  try {
+    generation = await ai.generateWithFallback(prompt, { feature: 'tutor', temperature: 0.35, domain: domainInfo.domain });
+  } catch (err) {
+    if (err && ['ai_model_missing', 'ai_unavailable', 'ai_timeout', 'ai_rate_limited', 'ai_auth_failed'].includes(err.code)) {
+      throw new HttpError(err.status || 503, err.code, friendlyAiMessage(err), err.details);
+    }
+    throw err;
+  }
+  const raw = String(generation.text || '').replace(/[\u2010-\u2015]/g, '-');
   const generationMs = Date.now() - generationStart;
   const parsedAction = parseActionArtifacts(raw, actionKey);
   let { reply, suggestions } = parseSuggestions(parsedAction.text);
@@ -630,7 +676,8 @@ async function sendMessage(userId, payload = {}) {
   }
 
   const trace = {
-    provider: env.TUTOR_PROVIDER || env.AI_PROVIDER,
+    provider: generation.provider || env.TUTOR_PROVIDER || env.AI_PROVIDER,
+    fallbackUsed: !!generation.fallbackUsed,
     model: (env.TUTOR_PROVIDER === 'groq' ? env.GROQ_MODEL : env.OLLAMA_GEN_MODEL),
     retrievalMs,
     generationMs,
@@ -640,6 +687,8 @@ async function sendMessage(userId, payload = {}) {
     action: actionKey || null,
     grounding,
     response: normalizedReply.response,
+    educationalContext: education && education.trace || null,
+    domain: domainInfo,
   };
   const assistantMessageId = storeMessage(db, conversation.id, 'assistant', reply, {
     sources,

@@ -11,6 +11,12 @@ const TYPE_TO_VISUAL = {
   big_o_chart: 'bigo_chart',
   mindmap: 'mindmap',
   flow: 'flow',
+  concept_cards: 'cards',
+  classification_table: 'table',
+  comparison_table: 'table',
+  source_page_reference: 'source_reference',
+  source_slide_reference: 'source_reference',
+  no_visual: 'none',
 };
 
 function cleanText(value, max = 120) {

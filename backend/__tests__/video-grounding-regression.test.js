@@ -141,9 +141,10 @@ function encapsulationStoryboard() {
         edges: [['Client code', 'public API'], ['public API', 'validation'], ['validation', 'private state']],
         operations: ['client calls API', 'method validates', 'state changes internally'],
       }),
-      scene('scene-8', 'summary_path', 'Controlled API Recap', ['class', 'object', 'private fields', 'public methods', 'valid state'], {
+      scene('scene-8', 'summary_path', 'Checkpoint: Controlled API Recap', ['class', 'object', 'private fields', 'public methods', 'valid state'], {
         visualElementType: 'summary_path',
         operations: ['recap source-backed concepts'],
+        onScreenText: ['Check yourself', 'Why keep count private?', 'Use public methods', 'valid state'],
       }),
     ],
   };

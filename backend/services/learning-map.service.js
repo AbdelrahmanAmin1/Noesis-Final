@@ -1,6 +1,7 @@
 'use strict';
 
 const { getDb } = require('../config/db');
+const domainDetection = require('./domain-detection.service');
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -439,6 +440,48 @@ function inferSubjectKeyFromMaterial(material, chunks) {
   return scored[0].key;
 }
 
+function titleCase(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function generalTreeFromMaterial(material, chunks) {
+  const seen = new Set();
+  const children = [];
+  const add = (label) => {
+    const clean = titleCase(label);
+    if (!clean || clean.length < 3) return;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    children.push({ label: clean.slice(0, 80), children: [] });
+  };
+  for (const chunk of chunks || []) {
+    add(chunk.chapter_title || chunk.slide_title || chunk.section_title || chunk.heading);
+    if (children.length >= 8) break;
+  }
+  if (children.length < 4) {
+    for (const chunk of chunks || []) {
+      const keywords = parseKeywords(chunk).split(/\s+/).filter(w => w.length > 4).slice(0, 4);
+      keywords.forEach(add);
+      if (children.length >= 8) break;
+    }
+  }
+  if (!children.length) {
+    add(material && material.title || 'Uploaded Material');
+    add('Core Ideas');
+    add('Examples');
+    add('Practice Review');
+  }
+  return {
+    label: material && material.title || 'Learning Path',
+    children: children.slice(0, 8),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Main builder
 // ---------------------------------------------------------------------------
@@ -470,9 +513,17 @@ function buildLearningMap(userId, opts = {}) {
   const wrongMap = new Map(wrong.map(w => [String(w.concept || '').toLowerCase(), w.misses]));
 
   // Build hierarchical tree
-  const key = inferSubjectKeyFromMaterial(material, materialChunks) || subjectKey(prefs.subject);
+  const domainInfo = opts.materialId
+    ? domainDetection.detectMaterialDomain(userId, opts.materialId, { hint: opts.rootTopic || (material && material.title) })
+    : null;
+  const useCuratedCs = opts.materialId ? domainDetection.shouldUseCuratedCs(domainInfo) : true;
+  const key = opts.materialId
+    ? (useCuratedCs ? (inferSubjectKeyFromMaterial(material, materialChunks) || subjectKey(prefs.subject)) : null)
+    : subjectKey(prefs.subject);
   let sourceTree;
-  if (key && TOPIC_TREE[key]) {
+  if (opts.materialId && !useCuratedCs) {
+    sourceTree = generalTreeFromMaterial(material, materialChunks);
+  } else if (key && TOPIC_TREE[key]) {
     sourceTree = cloneTree(TOPIC_TREE[key]);
   } else {
     // Mixed: combine OOP + DS branches under a generic root
@@ -518,7 +569,10 @@ function buildLearningMap(userId, opts = {}) {
   const flatTopics = nodes.map(n => n.label);
 
   // Determine start point and recommended path (same logic as before)
-  const basePath = materialGrounding.specificEnough && sourceTree.children.length
+  const usingGeneralMaterialTree = opts.materialId && !useCuratedCs;
+  const basePath = usingGeneralMaterialTree && sourceTree.children.length
+    ? sourceTree.children.map(c => c.label)
+    : materialGrounding.specificEnough && sourceTree.children.length
     ? sourceTree.children.map(c => c.label)
     : pathForKeyOrSubject(key, prefs.subject);
   const allTopics = [...new Set([...basePath, ...extraWeak])].slice(0, 14);
@@ -537,6 +591,7 @@ function buildLearningMap(userId, opts = {}) {
     recommendedPath: [startHere, ...remainingPath].filter(Boolean).slice(0, 7),
     materialGrounding: {
       materialId: opts.materialId || null,
+      domain: domainInfo,
       used: materialChunks.length > 0,
       chunkCount: materialGrounding.chunkCount,
       groundedConcepts: materialGrounding.groundedConcepts.slice(0, 16),

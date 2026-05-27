@@ -110,6 +110,79 @@ describe('scoreVideoScript', () => {
     expect(truncCriterion.passed).toBe(true);
   });
 
+  it('allows non-CS science videos without code scenes but blocks CS injection', () => {
+    const slide = (type, title, bullets, visualType = 'mindmap') => ({
+      slideType: type,
+      title,
+      narration: `${title} explains photosynthesis using light energy, chloroplasts, carbon dioxide, glucose, oxygen, and a concrete plant-cell scenario from the uploaded lecture.`,
+      bullets,
+      visual: { type: visualType, nodes: bullets, edges: [['Photosynthesis', bullets[0] || title].filter(Boolean)] },
+      visual_nodes: bullets,
+      callouts: [],
+    });
+    const script = {
+      topic: 'Photosynthesis',
+      learningObjectives: ['Explain photosynthesis', 'Apply source process'],
+      slides: [
+        slide('title', 'Photosynthesis', ['Photosynthesis', 'Light Energy']),
+        slide('objectives', 'Learning Objectives', ['Explain Process', 'Apply Source']),
+        slide('concept', 'Source Process', ['Chloroplasts', 'Glucose']),
+        slide('analogy', 'Plant Cell Scenario', ['Sunlight Input', 'Glucose Output'], 'comparison'),
+        slide('diagram', 'Energy Conversion Flow', ['Light Energy', 'Carbon Dioxide', 'Glucose', 'Oxygen'], 'flow'),
+        slide('mistakes', 'Soil Food Mistake', ['Soil only', 'Glucose production'], 'comparison'),
+        slide('recap', 'Recap', ['Chloroplasts', 'Oxygen']),
+        slide('quiz', 'Mini Checkpoint', ['Question', 'Chloroplasts']),
+      ],
+    };
+    const result = scoreVideoScript(script, { concept: 'Photosynthesis', domain: 'science' });
+
+    expect(result.criteria.find(c => c.name === 'required_slide_types').passed).toBe(true);
+    expect(result.criteria.find(c => c.name === 'no_unrelated_cs_terms').passed).toBe(true);
+
+    script.slides[2].narration += ' This is not a search algorithm, stack, or queue example.';
+    const withCsLeak = scoreVideoScript(script, { concept: 'Photosynthesis', domain: 'science' });
+    expect(withCsLeak.criteria.find(c => c.name === 'no_unrelated_cs_terms').passed).toBe(false);
+    expect(withCsLeak.passed).toBe(false);
+  });
+
+  it('passes source-led anatomy videos without CS diagram or code requirements', () => {
+    const slide = (type, title, bullets, visualType = 'cards') => ({
+      slideType: type,
+      title,
+      narration: `${title} uses uploaded anatomy terms: skeletal system, axial skeleton, appendicular skeleton, bone shapes, mineral storage, red blood cell production, organ protection, and movement support. This scene explains the actual source concepts with a concrete review step.`,
+      bullets,
+      visual: { type: visualType, nodes: bullets, operations: bullets.map(b => `${b}: source detail`) },
+      visual_nodes: bullets,
+      callouts: [],
+    });
+    const script = {
+      topic: 'The Skeletal System',
+      learningObjectives: ['Explain skeletal functions', 'Compare axial appendicular'],
+      slides: [
+        slide('title', 'The Skeletal System', ['Skeletal functions', 'Source terms'], 'none'),
+        slide('objectives', 'Learning Goals', ['Explain support', 'Compare skeletons'], 'cards'),
+        slide('concept', 'Source Overview', ['Support and protection', 'Blood cell production'], 'cards'),
+        slide('analogy', 'Classification Table', ['Axial skeleton', 'Appendicular skeleton'], 'table'),
+        slide('diagram', 'Bone Shape Categories', ['Long bones', 'Flat bones', 'Irregular bones'], 'table'),
+        slide('mistakes', 'Common Misunderstanding', ['Memorize labels', 'Use source detail'], 'table'),
+        slide('quiz', 'Review Question', ['Which skeleton?', 'Why?'], 'cards'),
+        slide('recap', 'Exam Ready Recap', ['Functions', 'Classifications'], 'cards'),
+      ],
+    };
+
+    const result = scoreVideoScript(script, {
+      concept: 'The Skeletal System',
+      domain: 'science',
+      chunks: [{ text: 'The skeletal system supports the body, protects organs, stores minerals, produces red blood cells, and includes axial and appendicular skeletons.' }],
+    });
+
+    expect(result.criteria.find(c => c.name === 'required_slide_types').passed).toBe(true);
+    expect(result.criteria.find(c => c.name === 'oop_class_visual').passed).toBe(true);
+    expect(result.criteria.find(c => c.name === 'ds_operation_visual').passed).toBe(true);
+    expect(result.criteria.find(c => c.name === 'no_unrelated_cs_terms').passed).toBe(true);
+    expect(result.passed).toBe(true);
+  });
+
   it('fails when slide count is too low', () => {
     const script = makeFullScript();
     script.slides = script.slides.slice(0, 4);
@@ -200,5 +273,53 @@ describe('scoreVideoScript', () => {
     const result = scoreVideoScript(script, { concept: 'Hash Table' });
     expect(result.criteria.find(c => c.name === 'hash_table_specifics').passed).toBe(true);
     expect(result.passed).toBe(true);
+  });
+
+  it('checks Queue-specific FIFO/front/rear coverage', () => {
+    const script = makeFullScript();
+    script.topic = 'Queue';
+    script.learningObjectives = ['Understand FIFO queues', 'Trace enqueue and dequeue', 'Identify front and rear'];
+    script.slides[4].visual.type = 'stack_queue';
+    script.slides[4].visual.nodes = ['Queue', 'FIFO order', 'front pointer', 'rear pointer', 'enqueue', 'dequeue'];
+    script.slides[4].narration = 'A queue is FIFO: first in, first out. Enqueue adds at the rear pointer, while dequeue removes from the front pointer.';
+    script.slides[5].example_code = 'Queue<Integer> q = new ArrayDeque<>();\nq.add(10); // enqueue at rear\nq.add(20);\nint first = q.remove(); // dequeue from front';
+    script.slides[5].narration = 'This Java queue example shows enqueue at the rear and dequeue at the front, so the first item inserted is the first one removed. Both common operations are O(1) in a normal linked or circular queue.';
+    script.slides[6].narration = 'The walkthrough tracks the front pointer before dequeue and the rear pointer after enqueue. Underflow means trying to remove from an empty queue.';
+
+    const result = scoreVideoScript(script, { concept: 'Queue' });
+
+    expect(result.criteria.find(c => c.name === 'queue_specifics').passed).toBe(true);
+  });
+
+  it('checks BST-specific root/search/inorder coverage', () => {
+    const script = makeFullScript();
+    script.topic = 'Binary Search Tree';
+    script.learningObjectives = ['Use the BST property', 'Trace search and insert', 'Read inorder traversal'];
+    script.slides[4].visual.type = 'tree';
+    script.slides[4].visual.nodes = ['root 8', 'left child 3', 'right child 10', 'search path', 'inorder traversal'];
+    script.slides[4].narration = 'A binary search tree keeps smaller values on the left and larger values on the right of each root. Search and insert follow that comparison path.';
+    script.slides[5].example_code = 'boolean search(Node root, int target) {\n  if (root == null) return false;\n  if (target == root.value) return true;\n  return target < root.value ? search(root.left, target) : search(root.right, target);\n}';
+    script.slides[5].narration = 'The code compares the target with the root, then moves left for smaller values and right for larger values. In a balanced BST this is O(log n), while a skewed tree can degrade to O(n).';
+    script.slides[6].narration = 'An inorder traversal visits left subtree, root, then right subtree, which produces sorted order when the BST property is preserved.';
+
+    const result = scoreVideoScript(script, { concept: 'Binary Search Tree' });
+
+    expect(result.criteria.find(c => c.name === 'bst_specifics').passed).toBe(true);
+  });
+
+  it('checks Big-O growth-rate coverage and runtime-seconds warning', () => {
+    const script = makeFullScript();
+    script.topic = 'Big-O Notation';
+    script.learningObjectives = ['Compare growth rates', 'Use input size n', 'Avoid timing misconceptions'];
+    script.slides[4].visual.type = 'bigo_chart';
+    script.slides[4].visual.nodes = ['input size n', 'O(1)', 'O(log n)', 'O(n)', 'O(n log n)', 'O(n^2)', 'growth rate'];
+    script.slides[4].narration = 'Big-O describes growth rate as input size n increases, not exact runtime seconds on one machine. The chart compares O(1), O(log n), O(n), O(n log n), and O(n^2).';
+    script.slides[5].example_code = 'for (int i = 0; i < n; i++) {\n  System.out.println(i); // O(n)\n}\nfor (int i = 1; i < n; i *= 2) {\n  System.out.println(i); // O(log n)\n}';
+    script.slides[5].narration = 'The first loop grows linearly with input n, so it is O(n). The second loop doubles i each time, so it is O(log n).';
+    script.slides[6].narration = 'The common mistake is saying one algorithm is always faster in seconds. Big-O compares how cost grows as n changes, independent of a single machine timing.';
+
+    const result = scoreVideoScript(script, { concept: 'Big-O Notation' });
+
+    expect(result.criteria.find(c => c.name === 'big_o_specifics').passed).toBe(true);
   });
 });

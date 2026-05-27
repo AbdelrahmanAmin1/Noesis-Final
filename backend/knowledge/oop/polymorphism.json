@@ -1,31 +1,117 @@
 {
+  "id": "oop_polymorphism",
+  "schemaVersion": 1,
+  "domain": "oop",
   "topic": "Polymorphism",
-  "aliases": ["Dynamic dispatch", "Runtime binding", "Method overriding"],
-  "definition": "Polymorphism means one interface or superclass reference can refer to different subclass objects, and the method implementation runs according to the runtime object.",
-  "deepExplanation": "The reference type controls which methods are legal to call. The actual object type controls which overridden method body runs. This lets client code depend on a stable general type while new subclasses provide new behavior.",
+  "aliases": ["Dynamic Dispatch", "Runtime Binding", "Subtype Polymorphism", "Superclass Reference", "Method Overriding"],
+  "difficulty": "intermediate",
+  "prerequisites": ["Inheritance", "Method Overriding", "Object Reference"],
+  "nextTopics": ["Interface", "Abstract Class", "Overloading vs Overriding", "SOLID Basics"],
+  "definition": "Polymorphism means code can use a general type while the actual runtime object determines which overridden method implementation runs.",
+  "deepExplanation": "In Java, the reference type controls what methods are legal to call, but the runtime object controls which overridden method body executes. If a variable is declared as Shape but stores a Circle object, a call to draw or area is checked against Shape and then dispatched to Circle at runtime. This lets one piece of code work with many specialized objects without knowing every subclass in advance.",
+  "whyItMatters": "Polymorphism is the core reason inheritance and interfaces become flexible: new subclasses can be added while existing client code keeps calling the same general method.",
+  "analogy": "A remote control has a general power button. The command is the same, but the TV, speaker, or projector decides what turning on actually means.",
   "codeExamples": [
     {
       "language": "java",
-      "title": "Same call, different behavior",
-      "code": "Shape shape = new Circle(2);\nSystem.out.println(shape.area());\n\nshape = new Rectangle(3, 4);\nSystem.out.println(shape.area());"
+      "title": "Same Shape reference, different runtime behavior",
+      "code": "abstract class Shape {\n  abstract void draw();\n}\n\nclass Circle extends Shape {\n  @Override\n  void draw() {\n    System.out.println(\"Drawing a circle\");\n  }\n}\n\nclass Rectangle extends Shape {\n  @Override\n  void draw() {\n    System.out.println(\"Drawing a rectangle\");\n  }\n}\n\nShape s = new Circle();\ns.draw();\n\ns = new Rectangle();\ns.draw();",
+      "walkthrough": [
+        {
+          "lineRange": "1-3",
+          "text": "Shape defines the general method that client code is allowed to call."
+        },
+        {
+          "lineRange": "5-10",
+          "text": "Circle provides the overridden method draw with circle-specific behavior."
+        },
+        {
+          "lineRange": "12-17",
+          "text": "Rectangle provides another overridden method for the same draw contract."
+        },
+        {
+          "lineRange": "19-20",
+          "text": "Shape s = new Circle(); creates a superclass reference whose runtime object is Circle; s.draw() uses dynamic dispatch to run the overridden method Circle.draw."
+        },
+        {
+          "lineRange": "22-23",
+          "text": "The same variable now stores a Rectangle, so the same call runs Rectangle.draw."
+        }
+      ]
     }
   ],
   "diagrams": [
     {
       "type": "flow",
-      "nodes": ["Shape reference", "Circle object", "shape.area()", "Circle.area()", "Rectangle object", "Rectangle.area()"],
-      "edges": [["Shape reference", "Circle object"], ["shape.area()", "Circle.area()"], ["Shape reference", "Rectangle object"], ["shape.area()", "Rectangle.area()"]],
-      "caption": "The call expression is the same, but the runtime object selects the method body."
+      "title": "Dynamic Dispatch Flow",
+      "nodes": ["Shape reference s", "Circle object", "Rectangle object", "s.draw()", "Circle.draw()", "Rectangle.draw()"],
+      "edges": [
+        ["Shape reference s", "Circle object", "first assignment"],
+        ["s.draw()", "Circle.draw()", "runtime dispatch"],
+        ["Shape reference s", "Rectangle object", "second assignment"],
+        ["s.draw()", "Rectangle.draw()", "runtime dispatch"]
+      ],
+      "caption": "The call syntax stays the same, but the runtime object chooses the overridden method."
     }
   ],
   "commonMistakes": [
-    "Confusing overriding with overloading.",
-    "Expecting static methods to dispatch dynamically.",
-    "Trying to override final methods."
+    {
+      "mistake": "Confusing overriding with overloading.",
+      "whyItHappens": "Both words involve methods with related names, but they are resolved at different times.",
+      "correction": "Overriding changes subclass behavior at runtime; overloading chooses among parameter lists at compile time."
+    },
+    {
+      "mistake": "Expecting static methods to dispatch polymorphically.",
+      "whyItHappens": "Static methods look callable through references, but they belong to the class.",
+      "correction": "Use instance methods for dynamic dispatch; static methods are resolved by the declared class context."
+    },
+    {
+      "mistake": "Thinking the variable type and object type are always the same.",
+      "whyItHappens": "Simple examples often declare Circle c = new Circle(), hiding the general-reference pattern.",
+      "correction": "Trace both types: Shape is the reference type, Circle or Rectangle is the runtime object type."
+    }
   ],
-  "complexity": {},
-  "practiceQuestions": [
-    "If Shape s = new Rectangle(3, 4), which area method runs?"
+  "bestPractices": [
+    "Program to a stable superclass or interface when multiple implementations should be interchangeable.",
+    "Use @Override so overridden methods are checked by the compiler.",
+    "Keep overridden methods compatible with the meaning promised by the parent type.",
+    "Avoid using instanceof chains when polymorphic method calls would express the design more clearly."
   ],
-  "visualTemplates": ["flow", "comparison", "uml_class"]
+  "complexity": null,
+  "miniQuiz": [
+    {
+      "question": "Given Shape s = new Circle(); s.draw(); which draw method runs?",
+      "options": ["Shape.draw", "Circle.draw", "Rectangle.draw", "No method can run"],
+      "answer": "Circle.draw",
+      "explanation": "The variable is typed as Shape, but the runtime object is Circle, so dynamic dispatch runs Circle's override."
+    },
+    {
+      "question": "What is the key difference between overriding and overloading?",
+      "options": ["Overriding uses runtime object type; overloading uses parameter lists", "They are identical", "Overloading requires inheritance", "Overriding only works for static methods"],
+      "answer": "Overriding uses runtime object type; overloading uses parameter lists",
+      "explanation": "Overriding is runtime polymorphism. Overloading is compile-time method selection based on arguments."
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "What is polymorphism?",
+      "back": "Polymorphism lets a general reference call behavior that is chosen by the runtime object.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "In Shape s = new Circle(), what is the reference type?",
+      "back": "Shape is the reference type; Circle is the runtime object type.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "What is dynamic dispatch?",
+      "back": "Dynamic dispatch is the runtime process of choosing the overridden method implementation based on the actual object.",
+      "difficulty": "medium"
+    }
+  ],
+  "visualTemplates": ["dynamic_dispatch_flow", "uml_class", "overriding_vs_overloading_comparison"],
+  "source": {
+    "type": "curated",
+    "license": "project-authored"
+  }
 }

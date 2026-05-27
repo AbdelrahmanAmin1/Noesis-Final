@@ -1,81 +1,81 @@
-# Noēsis — AI Learning Assistant
+# Noesis AI Learning Assistant
 
-This project is a frontend design exported from Claude Design.
+Noesis is a graduation project that turns uploaded course material into an interactive learning workspace. It supports AI tutor chat, generated notes, quizzes, flashcards, study planning, learning maps, and storyboard/video explanations for OOP and Data Structures topics.
 
-The goal is to transform it into a **fully working AI-powered learning system**.
+The current demo architecture is not fine-tuned. Quality comes from uploaded-material RAG, a curated OOP/Data Structures knowledge base, feature-specific prompts, and configurable Groq/Ollama providers.
 
----
+## Quick Start
 
-## ⚠️ Instructions for Coding Agents
+Start the backend:
 
-### Step 1 — Read Design Files
-Go to:
+```bash
+cd backend
+npm install
+npm start
+```
 
-noesis/project/
+Start the frontend:
 
-- Read the main file
-- Follow all imports
-- Understand UI, flows, and mock data
+```bash
+cd project
+node build-bundle.js
+node dev-server.js
+```
 
----
+Open:
 
-### Step 2 — Plan Before Coding
-You MUST:
-- Analyze frontend
-- Identify backend requirements
-- Create a full implementation plan
+```text
+http://localhost:5173/Noesis
+```
 
-Do NOT code before showing the plan.
+Health check:
 
----
+```text
+http://localhost:3001/api/health
+```
 
-### Step 3 — Backend Implementation
-After approval:
+## Demo Provider Strategy
 
-- Build backend (Node.js + Express)
-- Use SQLite (MVP)
-- Integrate local AI via Ollama
-- Replace all frontend mock data
+- Ollama is the local-first provider and does not require a cloud key.
+- Groq is optional for stronger demo-quality generation when configured.
+- Uploaded material remains the source of course-specific truth.
+- Curated OOP/Data Structures knowledge expands explanations, examples, diagrams, mistakes, quizzes, and flashcards.
+- Fine-tuning is future work, not part of the current demo.
 
----
+## Useful Commands
 
-### Step 4 — AI Features
-Implement:
+Backend:
 
-- Notes generation
-- Summaries
-- Flashcards
-- Quizzes
-- Dashboard analytics
-- Video explanation generator
+```bash
+cd backend
+npm start
+npm run knowledge:validate
+npm run demo:check
+```
 
----
+Frontend:
 
-### Step 5 — Final Review (MANDATORY)
+```bash
+cd project
+node build-bundle.js
+node dev-server.js
+```
 
-After implementation:
+Dataset/evaluation summary:
 
-You MUST trigger a **Codex review**.
+```bash
+node training/scripts/dataset_report.js
+```
 
-The review must:
-1. Be adversarial first (find bugs/security issues)
-2. Then provide a fix plan
-3. Then apply fixes
+## Documentation
 
----
+- `docs/noesis-demo-readiness.md` - final demo startup, smoke checklist, and fallback plan.
+- `docs/noesis-demo-script.md` - presenter walkthrough.
+- `docs/noesis-ai-architecture.md` - current AI architecture.
+- `docs/noesis-rag-and-knowledge-base.md` - RAG and curated knowledge design.
+- `docs/noesis-ai-evaluation.md` - evaluation framework and evidence.
+- `docs/noesis-fine-tuning-roadmap.md` - why fine-tuning is future work.
 
-## 🧠 AI Requirements
+## Safe Demo Materials
 
-- Must use Ollama locally
-- No external APIs allowed
-- Model should be configurable
-
----
-
-## 🎯 Goal
-
-Deliver a working MVP where users can:
-- Upload materials
-- Learn OOP & Data Structures
-- Generate notes, quizzes, and flashcards
-- Watch AI-generated explanation videos
+Project-authored demo materials live in `demo-materials/` and are safe for local upload during the presentation.

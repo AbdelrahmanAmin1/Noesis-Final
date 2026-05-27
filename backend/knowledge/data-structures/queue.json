@@ -1,28 +1,93 @@
 {
+  "id": "ds_queue",
+  "schemaVersion": 1,
+  "domain": "data-structures",
   "topic": "Queue",
-  "aliases": ["FIFO", "enqueue", "dequeue", "front", "rear"],
+  "aliases": ["FIFO", "Enqueue", "Dequeue", "Front", "Rear", "Linked Queue", "Circular Queue"],
+  "difficulty": "beginner",
+  "prerequisites": ["Array", "Linked List", "Reference", "Null"],
+  "nextTopics": ["Stack", "Deque", "Breadth-First Search", "Priority Queue"],
   "definition": "A queue is a First-In, First-Out data structure where items are added at the rear and removed from the front.",
-  "deepExplanation": "A queue models waiting order. The first item that enters should be the first item that leaves, so enqueue changes the rear pointer and dequeue changes the front pointer. In an array-based queue, circular indexing prevents wasted space. In a linked queue, front and rear references keep both operations constant time.",
+  "deepExplanation": "A queue models waiting order. The oldest item should be served first, so enqueue adds a new item at the rear and dequeue removes the item at the front. A linked queue usually keeps both front and rear references so both operations are constant time. An array queue often uses circular indexing so removed slots at the beginning can be reused instead of wasting space.",
+  "whyItMatters": "Queues are used in scheduling, print jobs, message processing, breadth-first search, and any system that must preserve arrival order.",
+  "analogy": "A queue is like a line at a ticket counter. People join at the back, and the person who has waited longest is served first.",
   "codeExamples": [
     {
       "language": "java",
-      "title": "Linked queue",
-      "code": "class Queue {\n  private static class Node {\n    int value;\n    Node next;\n    Node(int value) { this.value = value; }\n  }\n\n  private Node front, rear;\n\n  void enqueue(int value) {\n    Node node = new Node(value);\n    if (rear != null) rear.next = node;\n    rear = node;\n    if (front == null) front = rear;\n  }\n\n  int dequeue() {\n    if (front == null) throw new IllegalStateException(\"underflow\");\n    int value = front.value;\n    front = front.next;\n    if (front == null) rear = null;\n    return value;\n  }\n}"
+      "title": "Linked queue with front and rear references",
+      "code": "class IntQueue {\n  private static class Node {\n    int value;\n    Node next;\n\n    Node(int value) {\n      this.value = value;\n    }\n  }\n\n  private Node front;\n  private Node rear;\n\n  void enqueue(int value) {\n    Node node = new Node(value);\n    if (rear != null) {\n      rear.next = node;\n    }\n    rear = node;\n    if (front == null) {\n      front = rear;\n    }\n  }\n\n  int dequeue() {\n    if (front == null) {\n      throw new IllegalStateException(\"underflow\");\n    }\n    int value = front.value;\n    front = front.next;\n    if (front == null) {\n      rear = null;\n    }\n    return value;\n  }\n}",
+      "walkthrough": [
+        {
+          "lineRange": "1-8",
+          "text": "Each node stores a value and a next reference, just like a linked list node."
+        },
+        {
+          "lineRange": "10-11",
+          "text": "front points to the oldest item, and rear points to the newest item."
+        },
+        {
+          "lineRange": "13-22",
+          "text": "enqueue links the old rear to the new node, then updates rear to the new last item."
+        },
+        {
+          "lineRange": "19-21",
+          "text": "If the queue was empty, the new node must be both front and rear."
+        },
+        {
+          "lineRange": "24-35",
+          "text": "dequeue removes the front item and resets rear to null if the queue becomes empty."
+        }
+      ]
     }
   ],
   "diagrams": [
     {
       "type": "queue",
+      "title": "Horizontal FIFO Queue Diagram",
       "nodes": ["front", "A", "B", "C", "rear"],
-      "edges": [["front", "A"], ["A", "B"], ["B", "C"], ["C", "rear"]],
-      "operations": ["enqueue at rear", "dequeue from front", "peek front"],
-      "caption": "The oldest item leaves first; new items join at the rear."
+      "edges": [
+        ["front", "A", "points to oldest"],
+        ["A", "B", "next"],
+        ["B", "C", "next"],
+        ["C", "rear", "newest item"]
+      ],
+      "caption": "A horizontal queue diagram: dequeue removes A from the front, while enqueue adds a new item after C at the rear."
+    },
+    {
+      "type": "operation_sequence",
+      "title": "Enqueue and Dequeue Trace",
+      "nodes": ["enqueue A", "enqueue B", "enqueue C", "dequeue returns A", "front becomes B"],
+      "edges": [
+        ["enqueue A", "enqueue B", "then"],
+        ["enqueue B", "enqueue C", "then"],
+        ["enqueue C", "dequeue returns A", "oldest leaves"],
+        ["dequeue returns A", "front becomes B", "after removal"]
+      ],
+      "caption": "The first item enqueued is the first item dequeued."
     }
   ],
   "commonMistakes": [
-    "Confusing FIFO queues with LIFO stacks.",
-    "Forgetting to update rear when the last item is dequeued.",
-    "Using an array queue without circular indexing and wasting unused slots."
+    {
+      "mistake": "Confusing FIFO queues with LIFO stacks.",
+      "whyItHappens": "Both structures have add and remove operations, so students may focus on operation names instead of order.",
+      "correction": "Remember that queues serve the oldest item first, while stacks serve the newest item first."
+    },
+    {
+      "mistake": "Forgetting to update rear when the last item is dequeued.",
+      "whyItHappens": "The front pointer changes first, and rear can be left pointing to a removed node.",
+      "correction": "If front becomes null after dequeue, set rear to null as well."
+    },
+    {
+      "mistake": "Using a plain array queue without circular indexing.",
+      "whyItHappens": "Students move front forward but never reuse earlier empty slots.",
+      "correction": "Use circular indexing or a linked queue to avoid wasting array space."
+    }
+  ],
+  "bestPractices": [
+    "Keep front and rear references for constant-time linked queue operations.",
+    "Define enqueue and dequeue behavior for an empty queue before implementing.",
+    "Use circular indexing for array-based queues.",
+    "Reset both front and rear when the queue becomes empty."
   ],
   "complexity": {
     "enqueue": "O(1)",
@@ -31,9 +96,40 @@
     "search": "O(n)",
     "space": "O(n)"
   },
-  "practiceQuestions": [
-    "Enqueue A, then B, then C. What does the first dequeue return?",
-    "Why does a linked queue usually keep both front and rear references?"
+  "miniQuiz": [
+    {
+      "question": "Enqueue A, then B, then C. What does the first dequeue return?",
+      "options": ["A", "B", "C", "null"],
+      "answer": "A",
+      "explanation": "A queue is FIFO, so the first item added is the first item removed."
+    },
+    {
+      "question": "Why does a linked queue keep a rear reference?",
+      "options": ["To make search O(1)", "To add new items without traversing the whole list", "To remove from the middle", "To sort the queue"],
+      "answer": "To add new items without traversing the whole list",
+      "explanation": "rear points directly to the last node, so enqueue can link the new node in constant time."
+    }
   ],
-  "visualTemplates": ["queue", "operation_sequence", "complexity_table"]
+  "flashcards": [
+    {
+      "front": "What does FIFO mean?",
+      "back": "First-In, First-Out: the oldest item added is the first item removed.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "What does enqueue do?",
+      "back": "enqueue adds an item at the rear of the queue.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "Why reset rear after dequeuing the last item?",
+      "back": "When the queue becomes empty, rear must not point to a removed node.",
+      "difficulty": "medium"
+    }
+  ],
+  "visualTemplates": ["horizontal_queue_diagram", "queue", "operation_sequence", "complexity_table"],
+  "source": {
+    "type": "curated",
+    "license": "project-authored"
+  }
 }

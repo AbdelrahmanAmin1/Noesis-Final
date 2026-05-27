@@ -1,39 +1,157 @@
 {
+  "id": "ds_binary_search_tree",
+  "schemaVersion": 1,
+  "domain": "data-structures",
   "topic": "Binary Search Tree",
-  "aliases": ["BST", "ordered binary tree", "left subtree", "right subtree"],
-  "definition": "A binary search tree is a binary tree where every node keeps smaller values in the left subtree and larger values in the right subtree.",
-  "deepExplanation": "A BST turns comparison into direction. At each node, compare the target value with the current value. Smaller means move left; larger means move right. This can make search, insert, and delete efficient when the tree is balanced, but a badly ordered insertion sequence can make the tree behave like a linked list.",
+  "aliases": ["BST", "Ordered Binary Tree", "Left Subtree", "Right Subtree", "Tree Search"],
+  "difficulty": "intermediate",
+  "prerequisites": ["Binary Tree", "Recursion", "Comparison", "Big-O Notation"],
+  "nextTopics": ["Heap", "Balanced Tree", "AVL Tree", "Tree Traversal"],
+  "definition": "A binary search tree is a binary tree where each node keeps smaller values in its left subtree and larger values in its right subtree.",
+  "deepExplanation": "A BST turns comparison into direction. At each node, compare the target value with the current node's value. If the target is smaller, move left; if it is larger, move right. When the tree is balanced, each comparison discards a large part of the remaining tree, so search, insert, and delete can be O(log n). If values are inserted in sorted order without balancing, the tree can stretch into a chain and operations become O(n).",
+  "whyItMatters": "BSTs connect tree structure, recursion, searching, and Big-O tradeoffs in one visual model.",
+  "analogy": "A BST is like a guessing game where each answer tells you which half of the remaining possibilities to ignore, but only if the choices are well balanced.",
   "codeExamples": [
     {
       "language": "java",
-      "title": "BST search",
-      "code": "class Node {\n  int value;\n  Node left, right;\n}\n\nboolean contains(Node root, int target) {\n  Node current = root;\n  while (current != null) {\n    if (target == current.value) return true;\n    if (target < current.value) current = current.left;\n    else current = current.right;\n  }\n  return false;\n}"
+      "title": "Iterative BST search",
+      "code": "class Node {\n  int value;\n  Node left;\n  Node right;\n\n  Node(int value) {\n    this.value = value;\n  }\n}\n\nboolean contains(Node root, int target) {\n  Node current = root;\n  while (current != null) {\n    if (target == current.value) {\n      return true;\n    }\n    if (target < current.value) {\n      current = current.left;\n    } else {\n      current = current.right;\n    }\n  }\n  return false;\n}",
+      "walkthrough": [
+        {
+          "lineRange": "1-8",
+          "text": "Each node stores a value and references to left and right children."
+        },
+        {
+          "lineRange": "11-12",
+          "text": "Search starts at the root and uses current to walk down the tree."
+        },
+        {
+          "lineRange": "13-16",
+          "text": "If the target matches the current node, the search succeeds immediately."
+        },
+        {
+          "lineRange": "17-21",
+          "text": "A smaller target moves left; a larger target moves right, following the BST ordering rule."
+        },
+        {
+          "lineRange": "23",
+          "text": "Reaching null means the target is not in the tree."
+        }
+      ]
+    },
+    {
+      "language": "pseudocode",
+      "title": "Recursive insert outline",
+      "code": "insert(node, value):\n  if node is null: return new Node(value)\n  if value < node.value: node.left = insert(node.left, value)\n  else if value > node.value: node.right = insert(node.right, value)\n  return node",
+      "walkthrough": [
+        {
+          "lineRange": "1-2",
+          "text": "A null position is the correct place to attach the new value."
+        },
+        {
+          "lineRange": "3-4",
+          "text": "The value chooses left or right using the same comparison rule as search."
+        },
+        {
+          "lineRange": "5",
+          "text": "Returning node reconnects the subtree after insertion."
+        }
+      ]
     }
   ],
   "diagrams": [
     {
       "type": "tree",
+      "title": "BST Ordering Rule",
       "nodes": ["8", "3", "10", "1", "6", "14"],
-      "edges": [["8", "3", "left"], ["8", "10", "right"], ["3", "1", "left"], ["3", "6", "right"], ["10", "14", "right"]],
-      "operations": ["compare", "go left if smaller", "go right if larger"],
-      "caption": "Each comparison removes about half the remaining tree when the tree is balanced."
+      "edges": [
+        ["8", "3", "left: smaller"],
+        ["8", "10", "right: larger"],
+        ["3", "1", "left: smaller"],
+        ["3", "6", "right: larger"],
+        ["10", "14", "right: larger"]
+      ],
+      "caption": "Every left subtree value is smaller than its parent, and every right subtree value is larger."
+    },
+    {
+      "type": "operation_sequence",
+      "title": "Search for 6",
+      "nodes": ["start at 8", "6 < 8 so go left", "at 3", "6 > 3 so go right", "found 6"],
+      "edges": [
+        ["start at 8", "6 < 8 so go left", "compare"],
+        ["6 < 8 so go left", "at 3", "move"],
+        ["at 3", "6 > 3 so go right", "compare"],
+        ["6 > 3 so go right", "found 6", "move"]
+      ],
+      "caption": "BST search follows comparisons from the root until it finds the value or reaches null."
     }
   ],
   "commonMistakes": [
-    "Assuming every BST operation is always O(log n) even when the tree is unbalanced.",
-    "Putting equal values inconsistently and breaking search rules.",
-    "Deleting a node with two children without preserving the in-order order."
+    {
+      "mistake": "Assuming every BST operation is always O(log n).",
+      "whyItHappens": "Balanced tree diagrams are common in examples.",
+      "correction": "State the condition: operations are O(log n) when the tree height is logarithmic; worst case is O(n)."
+    },
+    {
+      "mistake": "Putting equal values inconsistently.",
+      "whyItHappens": "Duplicate handling is often omitted from beginner examples.",
+      "correction": "Choose a duplicate policy, such as count duplicates or always reject them, and apply it consistently."
+    },
+    {
+      "mistake": "Deleting a node with two children without preserving order.",
+      "whyItHappens": "Two-child deletion requires replacing the value with an in-order predecessor or successor.",
+      "correction": "Use the next larger value from the right subtree or next smaller value from the left subtree."
+    }
+  ],
+  "bestPractices": [
+    "Track the tree height when discussing performance.",
+    "Use clear duplicate-value rules.",
+    "Test search paths that go left, right, and all the way to null.",
+    "Use balanced-tree variants when consistently logarithmic operations are required."
   ],
   "complexity": {
-    "search_balanced": "O(log n)",
-    "insert_balanced": "O(log n)",
-    "delete_balanced": "O(log n)",
-    "search_worst": "O(n)",
+    "searchBalanced": "O(log n)",
+    "insertBalanced": "O(log n)",
+    "deleteBalanced": "O(log n)",
+    "searchWorst": "O(n)",
+    "insertWorst": "O(n)",
+    "deleteWorst": "O(n)",
     "space": "O(n)"
   },
-  "practiceQuestions": [
-    "Where would value 6 go in a BST whose root is 8 and left child is 3?",
-    "Why can a sorted insertion order make a BST slow?"
+  "miniQuiz": [
+    {
+      "question": "In a BST with root 8 and left child 3, where does value 6 go relative to 3?",
+      "options": ["Left of 3", "Right of 3", "Above 8", "It cannot be inserted"],
+      "answer": "Right of 3",
+      "explanation": "6 is smaller than 8, so it goes left from 8. It is larger than 3, so it goes right from 3."
+    },
+    {
+      "question": "Why can sorted insertion make an unbalanced BST slow?",
+      "options": ["It creates many duplicate roots", "It can make the tree behave like a linked list", "It removes all leaves", "It prevents comparison"],
+      "answer": "It can make the tree behave like a linked list",
+      "explanation": "If every new value goes to one side, the height becomes n, so search can require walking through many nodes."
+    }
   ],
-  "visualTemplates": ["tree", "operation_sequence", "complexity_table"]
+  "flashcards": [
+    {
+      "front": "What is the BST ordering rule?",
+      "back": "Smaller values go in the left subtree; larger values go in the right subtree.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "When is BST search O(log n)?",
+      "back": "When the tree is balanced enough that its height grows logarithmically with the number of nodes.",
+      "difficulty": "medium"
+    },
+    {
+      "front": "What is the worst-case search time for an unbalanced BST?",
+      "back": "O(n), because the tree can degrade into a chain.",
+      "difficulty": "medium"
+    }
+  ],
+  "visualTemplates": ["tree", "operation_sequence", "complexity_table"],
+  "source": {
+    "type": "curated",
+    "license": "project-authored"
+  }
 }

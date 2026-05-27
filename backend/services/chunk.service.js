@@ -3,6 +3,7 @@
 const TARGET_TOKENS = 600;
 const OVERLAP_TOKENS = 100;
 const TOK_CHARS = 4; // ~4 chars per token
+const WEAK_HEADING_RE = /^(?:top|home|welcome|contents?|table of contents|index|appendix|acknowledgements?|references?|bibliography|copyright|license|quiz answer keys?|answer keys?|answers?|untitled|document|material|file)$/i;
 
 function estimateTokens(s) {
   return Math.ceil((s || '').length / TOK_CHARS);
@@ -57,18 +58,18 @@ function detectHeading(text) {
   const lines = text.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const trimmed = lines[i].trim();
-    if (!trimmed || trimmed.length > 100) continue;
+    if (!trimmed || trimmed.length > 100 || WEAK_HEADING_RE.test(trimmed)) continue;
     if (/^#{1,4}\s+\S/.test(trimmed)) return trimmed.replace(/^#+\s*/, '').slice(0, 80);
     if (/^(?:Title:|Slide \d+)/.test(trimmed)) {
       const stripped = trimmed.replace(/^(?:Title:\s*|Slide \d+\s*)/, '').trim();
-      if (stripped) return stripped.slice(0, 80);
-      const next = lines.slice(i + 1).find(l => l.trim().length > 0);
+      if (stripped && !WEAK_HEADING_RE.test(stripped)) return stripped.slice(0, 80);
+      const next = lines.slice(i + 1).find(l => l.trim().length > 0 && !WEAK_HEADING_RE.test(l.trim()));
       if (next && next.trim().length < 80) return next.trim().slice(0, 80);
       return '';
     }
   }
   const first = (lines.find(l => l.trim().length > 0 && l.trim().length < 60) || '').trim();
-  if (first && /^[A-Z]/.test(first) && !/[.!?]$/.test(first)) return first.slice(0, 80);
+  if (first && /^[A-Z]/.test(first) && !/[.!?]$/.test(first) && !WEAK_HEADING_RE.test(first)) return first.slice(0, 80);
   return '';
 }
 
@@ -91,6 +92,13 @@ function slideMeta(text, chapterTitle = '') {
     }
   }
   return { slide_number, slide_title };
+}
+
+function sourcePageMeta(text, chapterTitle = '') {
+  const source = `${chapterTitle || ''}\n${text || ''}`;
+  const match = source.match(/(?:^|\n)\s*(?:page|p\.)\s*(\d{1,4})\b/i);
+  if (match) return parseInt(match[1], 10);
+  return null;
 }
 
 function keywords(text, max = 12) {
@@ -128,6 +136,7 @@ function chunkByChapter(text, chapters) {
         section_title: heading || ch.title || '',
         slide_number: meta.slide_number,
         slide_title: meta.slide_title,
+        source_page: c.source_page || ch.source_page || sourcePageMeta(c.text, ch.title || ''),
         has_code: hasCode(c.text),
         keywords: keywords(c.text),
         keywords_json: JSON.stringify(keywords(c.text)),
@@ -137,4 +146,4 @@ function chunkByChapter(text, chapters) {
   return all.map((c, i) => ({ ...c, idx: i }));
 }
 
-module.exports = { chunkText, chunkByChapter, estimateTokens, detectHeading, hasCode, slideMeta, keywords };
+module.exports = { chunkText, chunkByChapter, estimateTokens, detectHeading, hasCode, slideMeta, sourcePageMeta, keywords };

@@ -14,3 +14,28 @@ backend/tts-models/*
 !backend/tts-models/README.md
 project/frontend*.log
 project/uploads/
+
+# Training dataset safety: keep bulky or derived data local.
+training/raw/**
+training/cleaned/**
+training/generated/**
+*.parquet
+*.arrow
+*.zip
+*.tar.gz
+*.jsonl
+
+# Allow small reviewed training artifacts.
+!training/samples/
+!training/samples/**
+!training/eval/
+!training/eval/**
+!training/sources/
+!training/sources/**
+
+# Keep generated evaluation run outputs local unless explicitly reviewed.
+training/reports/eval-report-*.json
+training/reports/eval-summary-*.md
+training/reports/eval-comparison-*.json
+training/reports/eval-comparison-*.md
+training/generated/*.jsonl

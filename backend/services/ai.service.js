@@ -23,7 +23,21 @@ function getProviderFor(feature) {
   if (feature === 'notes') return env.NOTES_PROVIDER || env.AI_PROVIDER;
   if (feature === 'summary') return env.SUMMARY_PROVIDER || env.NOTES_PROVIDER || env.AI_PROVIDER;
   if (feature === 'tutor') return env.TUTOR_PROVIDER || env.AI_PROVIDER;
+  if (feature === 'flashcards') return env.FLASHCARD_PROVIDER || env.AI_PROVIDER;
   return env.AI_PROVIDER;
+}
+
+function fallbackProviderFor(feature) {
+  if (feature === 'tutor') return env.TUTOR_FALLBACK_PROVIDER;
+  if (feature === 'flashcards') return env.FLASHCARD_FALLBACK_PROVIDER;
+  return null;
+}
+
+function providerUsable(name) {
+  const normalized = String(name || '').toLowerCase();
+  if (!normalized) return false;
+  if (normalized === 'groq') return !!env.GROQ_API_KEY;
+  return !!providers[normalized];
 }
 
 function getGenerationProvider(opts = {}) {
@@ -33,6 +47,36 @@ function getGenerationProvider(opts = {}) {
 
 async function generate(prompt, opts = {}) {
   return getGenerationProvider(opts).generate(prompt, opts);
+}
+
+async function generateWithFallback(prompt, opts = {}) {
+  const names = [];
+  const primary = opts.provider || getProviderFor(opts.feature);
+  const fallback = opts.fallbackProvider || fallbackProviderFor(opts.feature);
+  for (const name of [primary, fallback]) {
+    const normalized = String(name || '').toLowerCase();
+    if (normalized && !names.includes(normalized) && providerUsable(normalized)) names.push(normalized);
+  }
+  if (!names.length) {
+    throw new AiServiceError(503, 'ai_unavailable', 'No usable AI provider is configured for this request.', {
+      feature: opts.feature || 'default',
+      primary,
+      fallback,
+    });
+  }
+  let lastErr = null;
+  for (const provider of names) {
+    try {
+      const text = await module.exports.generate(prompt, { ...opts, provider });
+      return { text, provider, fallbackUsed: provider !== String(primary || '').toLowerCase() };
+    } catch (err) {
+      lastErr = err;
+      if (!['ai_model_missing', 'ai_unavailable', 'ai_timeout', 'ai_rate_limited', 'ai_auth_failed'].includes(err && err.code)) {
+        throw err;
+      }
+    }
+  }
+  throw lastErr || new AiServiceError(503, 'ai_unavailable', 'AI generation failed.');
 }
 
 async function generateJSON(prompt, opts = {}) {
@@ -147,12 +191,21 @@ async function healthCheck() {
       learningMapLayout: env.LEARNING_MAP_LAYOUT,
       cacheTtlMs: env.TUTOR_CACHE_TTL_MS,
     },
+    flashcards: {
+      provider: env.FLASHCARD_PROVIDER,
+      fallbackProvider: env.FLASHCARD_FALLBACK_PROVIDER,
+      groqConfigured: !!env.GROQ_API_KEY,
+      maxCards: env.FLASHCARD_MAX_CARDS,
+      topKChunks: env.FLASHCARD_TOP_K_CHUNKS,
+      timeoutMs: env.FLASHCARD_TIMEOUT_MS,
+    },
   };
 }
 
 module.exports = {
   AiServiceError,
   generate,
+  generateWithFallback,
   generateJSON,
   embed,
   listModels,

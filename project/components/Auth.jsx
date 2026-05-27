@@ -57,7 +57,7 @@ const Auth = ({ initialMode = 'signin', onComplete, onBack }) => {
           <h1 style={as.title}>{mode === 'signin' ? 'Back to the desk.' : 'Begin the work.'}</h1>
           <p style={as.sub}>{mode === 'signin' ? 'Your materials, notes, cards, and quiz history are waiting.' : 'Create a local learning workspace for OOP and Data Structures.'}</p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(10px * var(--app-density-scale))' }}>
             {mode === 'signup' && (
               <div style={as.field}>
                 <label style={as.label}>Full name</label>
@@ -74,27 +74,27 @@ const Auth = ({ initialMode = 'signin', onComplete, onBack }) => {
             </div>
           </div>
 
-          {error && <div style={{ color: 'var(--err)', fontSize: 12, marginTop: 12 }}>{error}</div>}
-          {success && <div style={{ color: 'var(--ok)', fontSize: 12, marginTop: 12 }}>{success}</div>}
+          {error && <div style={{ color: 'var(--err)', fontSize: 'calc(12px * var(--app-font-scale))', marginTop: 'calc(12px * var(--app-density-scale))' }}>{error}</div>}
+          {success && <div style={{ color: 'var(--ok)', fontSize: 'calc(12px * var(--app-font-scale))', marginTop: 'calc(12px * var(--app-density-scale))' }}>{success}</div>}
 
-          <button type="submit" className="btn btn-primary" disabled={busy} style={{ marginTop: 20, padding: '12px 14px', justifyContent: 'center', opacity: busy ? 0.6 : 1 }}>
+          <button type="submit" className="btn btn-primary" disabled={busy} style={{ marginTop: 'calc(20px * var(--app-density-scale))', padding: '12px 14px', justifyContent: 'center', opacity: busy ? 0.6 : 1 }}>
             {busy ? (mode === 'signin' ? 'Logging in...' : 'Creating account...') : (mode === 'signin' ? 'Login' : 'Register')} <Icon.ArrowRight size={14} />
           </button>
 
-          <div style={{ marginTop: 24, fontSize: 12.5, color: 'var(--fg-2)' }}>
+          <div style={{ marginTop: 'calc(24px * var(--app-density-scale))', fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-2)' }}>
             {mode === 'signin' ? 'New here?' : 'Already have an account?'}{' '}
             <a onClick={() => { if (busy) return; setError(''); setSuccess(''); setMode(mode === 'signin' ? 'signup' : 'signin'); }} style={{ color: 'var(--accent)', cursor: busy ? 'not-allowed' : 'pointer' }}>
               {mode === 'signin' ? 'Create an account' : 'Sign in'}
             </a>
           </div>
         </form>
-        <div style={{ fontSize: 11, color: 'var(--fg-3)' }}>Authentication is handled by the Noesis backend session layer.</div>
+        <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>Authentication is handled by the Noesis backend session layer.</div>
       </div>
       <div style={as.right}>
         <div style={as.quote}>
           <Icon.Sparkle size={28} style={{ color: 'var(--accent)', opacity: 0.6 }}/>
           <p style={as.quoteText}>Noesis turns OOP and Data Structures material into notes, flashcards, quizzes, and guided tutor sessions.</p>
-          <div style={{ fontSize: 12, color: 'var(--fg-2)' }}>A local-first learning workspace for core Computer Science study.</div>
+          <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)' }}>A local-first learning workspace for core Computer Science study.</div>
         </div>
       </div>
     </div>
@@ -103,21 +103,21 @@ const Auth = ({ initialMode = 'signin', onComplete, onBack }) => {
 
 const as = {
   page: { display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: '100vh' },
-  left: { padding: '40px 56px', display: 'flex', flexDirection: 'column', gap: 24 },
-  top: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 },
+  left: { padding: '40px 56px', display: 'flex', flexDirection: 'column', gap: 'calc(24px * var(--app-density-scale))' },
+  top: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'calc(16px * var(--app-density-scale))' },
   right: {
     background: 'var(--bg-1)', borderLeft: '1px solid var(--line)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    padding: 56,
+    padding: 'calc(56px * var(--app-density-scale))',
     backgroundImage: 'radial-gradient(ellipse at 30% 20%, var(--accent-glow), transparent 60%)',
   },
   quote: { maxWidth: 420 },
-  quoteText: { fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 300, lineHeight: 1.3, letterSpacing: '-0.015em', margin: '18px 0' },
-  eyebrow: { fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 14 },
-  title: { fontFamily: 'var(--font-display)', fontSize: 40, fontWeight: 300, margin: '0 0 12px', letterSpacing: '-0.02em' },
-  sub: { fontSize: 14, color: 'var(--fg-2)', margin: '0 0 32px' },
-  field: { display: 'flex', flexDirection: 'column', gap: 6 },
-  label: { fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.04em' },
+  quoteText: { fontFamily: 'var(--font-display)', fontSize: 'calc(32px * var(--app-font-scale))', fontWeight: 300, lineHeight: 1.3, letterSpacing: '-0.015em', margin: '18px 0' },
+  eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  title: { fontFamily: 'var(--font-display)', fontSize: 'calc(40px * var(--app-font-scale))', fontWeight: 300, margin: '0 0 12px', letterSpacing: '-0.02em' },
+  sub: { fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-2)', margin: '0 0 32px' },
+  field: { display: 'flex', flexDirection: 'column', gap: 'calc(6px * var(--app-density-scale))' },
+  label: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.04em' },
 };
 
 const Onboarding = ({ onComplete }) => {
@@ -186,7 +186,7 @@ const Onboarding = ({ onComplete }) => {
             <div key={i} style={{ height: 3, flex: 1, borderRadius: 2, background: i <= step ? 'var(--accent)' : 'var(--line)', transition: 'background 400ms var(--ease-out)' }} />
           ))}
         </div>
-        <span className="mono" style={{ fontSize: 11, color: 'var(--fg-3)' }}>{step + 1} / {steps.length}</span>
+        <span className="mono" style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{step + 1} / {steps.length}</span>
       </header>
 
       <main style={os.main}>
@@ -195,7 +195,7 @@ const Onboarding = ({ onComplete }) => {
           <h1 style={os.title}>{steps[step].title}</h1>
           <p style={os.sub}>{steps[step].sub}</p>
 
-          <div style={{ marginTop: 36 }}>
+          <div style={{ marginTop: 'calc(36px * var(--app-density-scale))' }}>
             {step === 0 && (
               <div style={os.grid3}>
                 {[
@@ -208,7 +208,7 @@ const Onboarding = ({ onComplete }) => {
                   return (
                     <button key={o.id} onClick={() => setSubject(o.id)} style={{ ...os.tile, ...(active ? os.tileActive : {}) }}>
                       <C size={20} style={{ color: active ? 'var(--accent)' : 'var(--fg-2)' }} />
-                      <span style={{ fontSize: 13, color: active ? 'var(--fg-0)' : 'var(--fg-1)' }}>{o.label}</span>
+                      <span style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: active ? 'var(--fg-0)' : 'var(--fg-1)' }}>{o.label}</span>
                     </button>
                   );
                 })}
@@ -216,7 +216,7 @@ const Onboarding = ({ onComplete }) => {
             )}
 
             {step === 1 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))' }}>
                 {[
                   { id: 'oop', label: 'Object-Oriented Programming', prof: 'Classes, objects, encapsulation, inheritance, polymorphism, interfaces' },
                   { id: 'ds', label: 'Data Structures & Algorithms', prof: 'Arrays, linked lists, stacks, queues, trees, graphs, hashing, Big-O' },
@@ -229,8 +229,8 @@ const Onboarding = ({ onComplete }) => {
                         {on && <Icon.Check size={10} style={{ color: 'var(--bg-0)' }}/>}
                       </div>
                       <div style={{ textAlign: 'left', flex: 1 }}>
-                        <div style={{ fontSize: 13, color: 'var(--fg-0)', fontWeight: 500 }}>{c.label}</div>
-                        <div style={{ fontSize: 11.5, color: 'var(--fg-3)', marginTop: 2 }}>{c.prof}</div>
+                        <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{c.label}</div>
+                        <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(2px * var(--app-density-scale))' }}>{c.prof}</div>
                       </div>
                     </button>
                   );
@@ -252,8 +252,8 @@ const Onboarding = ({ onComplete }) => {
                     <button key={o.id} onClick={() => setGoal(o.id)} style={{ ...os.goalTile, ...(active ? os.tileActive : {}) }}>
                       <C size={22} style={{ color: active ? 'var(--accent)' : 'var(--fg-2)' }} />
                       <div style={{ textAlign: 'left' }}>
-                        <div style={{ fontSize: 14, color: 'var(--fg-0)', fontWeight: 500 }}>{o.label}</div>
-                        <div style={{ fontSize: 12, color: 'var(--fg-2)', marginTop: 3 }}>{o.sub}</div>
+                        <div style={{ fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{o.label}</div>
+                        <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)', marginTop: 'calc(3px * var(--app-density-scale))' }}>{o.sub}</div>
                       </div>
                     </button>
                   );
@@ -263,17 +263,17 @@ const Onboarding = ({ onComplete }) => {
 
             {step === 3 && (
               <div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 20 }}>
-                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 72, fontWeight: 300, color: 'var(--fg-0)' }}>{time}</span>
-                  <span style={{ fontSize: 15, color: 'var(--fg-2)' }}>minutes / day</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 'calc(10px * var(--app-density-scale))', marginBottom: 'calc(20px * var(--app-density-scale))' }}>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(72px * var(--app-font-scale))', fontWeight: 300, color: 'var(--fg-0)' }}>{time}</span>
+                  <span style={{ fontSize: 'calc(15px * var(--app-font-scale))', color: 'var(--fg-2)' }}>minutes / day</span>
                 </div>
                 <input type="range" min="15" max="120" step="15" value={time} onChange={e => setTime(+e.target.value)} style={{ width: '100%', accentColor: 'var(--accent)' }} />
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: 'var(--fg-3)' }} className="mono">
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'calc(8px * var(--app-density-scale))', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }} className="mono">
                   <span>15m</span><span>60m</span><span>120m</span>
                 </div>
-                <div style={{ marginTop: 28, padding: 16, border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' }}>
-                  <div style={{ fontSize: 11, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 }}>Your plan</div>
-                  <div style={{ fontSize: 13, color: 'var(--fg-1)' }}>
+                <div style={{ marginTop: 'calc(28px * var(--app-density-scale))', padding: 'calc(16px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' }}>
+                  <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(6px * var(--app-density-scale))' }}>Your plan</div>
+                  <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-1)' }}>
                     Roughly <b>{time}m/day</b>: one tutor session, one flashcard review, and one quiz cycle each week.
                   </div>
                 </div>
@@ -281,7 +281,7 @@ const Onboarding = ({ onComplete }) => {
             )}
 
             {step === 4 && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'calc(12px * var(--app-density-scale))' }}>
                 <label style={os.formField}>
                   <span style={os.formLabel}>Current level</span>
                   <select className="input" value={level} onChange={e => setLevel(e.target.value)}>
@@ -329,8 +329,8 @@ const Onboarding = ({ onComplete }) => {
             )}
           </div>
 
-          {error && <div style={{ marginTop: 16, color: 'var(--err)', fontSize: 12 }}>{error}</div>}
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 48 }}>
+          {error && <div style={{ marginTop: 'calc(16px * var(--app-density-scale))', color: 'var(--err)', fontSize: 'calc(12px * var(--app-font-scale))' }}>{error}</div>}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'calc(48px * var(--app-density-scale))' }}>
             <button className="btn btn-bare" onClick={() => step > 0 && setStep(step - 1)} style={{ visibility: step > 0 ? 'visible' : 'hidden' }}>
               <Icon.ArrowLeft size={13} /> Back
             </button>
@@ -346,36 +346,36 @@ const Onboarding = ({ onComplete }) => {
 
 const os = {
   page: { minHeight: '100vh', background: 'var(--bg-0)', display: 'flex', flexDirection: 'column' },
-  header: { display: 'flex', alignItems: 'center', gap: 24, padding: '20px 56px', borderBottom: '1px solid var(--line-soft)' },
-  progress: { flex: 1, display: 'flex', gap: 6, maxWidth: 360 },
-  main: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 56 },
-  eyebrow: { fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 14 },
-  title: { fontFamily: 'var(--font-display)', fontSize: 44, fontWeight: 300, letterSpacing: '-0.02em', margin: '0 0 10px' },
-  sub: { fontSize: 15, color: 'var(--fg-2)', margin: 0 },
-  grid3: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 },
-  grid2: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 },
+  header: { display: 'flex', alignItems: 'center', gap: 'calc(24px * var(--app-density-scale))', padding: '20px 56px', borderBottom: '1px solid var(--line-soft)' },
+  progress: { flex: 1, display: 'flex', gap: 'calc(6px * var(--app-density-scale))', maxWidth: 360 },
+  main: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(56px * var(--app-density-scale))' },
+  eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  title: { fontFamily: 'var(--font-display)', fontSize: 'calc(44px * var(--app-font-scale))', fontWeight: 300, letterSpacing: '-0.02em', margin: '0 0 10px' },
+  sub: { fontSize: 'calc(15px * var(--app-font-scale))', color: 'var(--fg-2)', margin: 0 },
+  grid3: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'calc(10px * var(--app-density-scale))' },
+  grid2: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 'calc(10px * var(--app-density-scale))' },
   tile: {
-    display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'flex-start',
+    display: 'flex', flexDirection: 'column', gap: 'calc(10px * var(--app-density-scale))', alignItems: 'flex-start',
     padding: '20px 16px', borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)', border: '1px solid var(--line)',
     minHeight: 96, transition: 'all 160ms var(--ease-out)',
   },
   tileActive: { background: 'var(--bg-2)', borderColor: 'var(--accent-soft)', boxShadow: '0 0 0 3px var(--accent-glow)' },
   goalTile: {
-    display: 'flex', gap: 14, alignItems: 'flex-start',
+    display: 'flex', gap: 'calc(14px * var(--app-density-scale))', alignItems: 'flex-start',
     padding: '18px 18px', borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)', border: '1px solid var(--line)',
     transition: 'all 160ms var(--ease-out)',
   },
   course: {
-    display: 'flex', alignItems: 'center', gap: 12,
+    display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))',
     padding: '14px 16px', borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)', border: '1px solid var(--line)',
     transition: 'all 160ms var(--ease-out)',
   },
   courseActive: { borderColor: 'var(--accent-soft)', background: 'var(--bg-2)' },
-  formField: { display: 'flex', flexDirection: 'column', gap: 6 },
-  formLabel: { fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.04em', textTransform: 'uppercase' },
+  formField: { display: 'flex', flexDirection: 'column', gap: 'calc(6px * var(--app-density-scale))' },
+  formLabel: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.04em', textTransform: 'uppercase' },
   check: {
     width: 18, height: 18, borderRadius: 5, border: '1.5px solid',
     display: 'flex', alignItems: 'center', justifyContent: 'center',

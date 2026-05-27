@@ -25,6 +25,10 @@ const VISUAL_TYPES = [
   'linkedlist',
   'hash_table',
   'bigo_chart',
+  'cards',
+  'table',
+  'source_reference',
+  'none',
 ];
 
 let _canvas = null;
@@ -398,6 +402,68 @@ function drawComparison(ctx, visual, bullets, region) {
       w: colW - 36,
       h: itemH,
     }, col ? '#f0fdf4' : '#eff6ff');
+  });
+}
+
+function drawCardsVisual(ctx, visual, region) {
+  const nodes = (visual.nodes.length ? visual.nodes : ['Source concept', 'Supporting detail', 'Review question']).slice(0, 6);
+  const r = inset(region, 26);
+  const cols = nodes.length > 3 ? 3 : Math.max(1, nodes.length);
+  const rows = Math.ceil(nodes.length / cols);
+  const gap = 16;
+  const cardW = Math.floor((r.w - gap * (cols - 1)) / cols);
+  const cardH = Math.floor((r.h - gap * (rows - 1)) / rows);
+  nodes.forEach((node, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    drawBox(ctx, node, {
+      x: r.x + col * (cardW + gap),
+      y: r.y + row * (cardH + gap),
+      w: cardW,
+      h: Math.max(70, cardH),
+    }, ['#dbeafe', '#dcfce7', '#fef3c7'][i % 3], '#94a3b8', { align: 'center', maxLines: 3 });
+  });
+}
+
+function drawTableVisual(ctx, visual, region) {
+  const rows = (visual.operations.length ? visual.operations : visual.nodes).slice(0, 5);
+  const r = inset(region, 26);
+  const rowH = Math.max(50, Math.floor(r.h / Math.max(1, rows.length)));
+  rows.forEach((row, i) => {
+    const y = r.y + i * rowH;
+    fillRoundRect(ctx, r.x, y, r.w, rowH - 8, 8, i % 2 ? '#f8fafc' : '#eff6ff', '#cbd5e1', 1.5);
+    const parts = String(row || '').split(':');
+    drawTextBox(ctx, parts[0] || row, { x: r.x + 16, y: y + 10, w: Math.floor(r.w * 0.34), h: rowH - 20 }, { startPx: 17, minPx: 12, weight: '700', maxLines: 2 });
+    drawTextBox(ctx, parts.slice(1).join(':') || '', { x: r.x + Math.floor(r.w * 0.38), y: y + 10, w: Math.floor(r.w * 0.58), h: rowH - 20 }, { startPx: 16, minPx: 11, maxLines: 2 });
+  });
+}
+
+function drawSourceReference(ctx, slide, visual, region) {
+  const r = inset(region, 36);
+  const title = visual.caption || slide.title || 'Source reference';
+  drawBox(ctx, title, { x: r.x, y: r.y, w: r.w, h: 82 }, '#e0f2fe', BLUE, { align: 'center', startPx: 22 });
+  const nodes = (visual.nodes.length ? visual.nodes : slide.bullets || []).slice(0, 4);
+  nodes.forEach((node, i) => {
+    drawBox(ctx, node, { x: r.x + 34, y: r.y + 118 + i * 58, w: r.w - 68, h: 46 }, i % 2 ? '#f0fdf4' : '#fef3c7', '#94a3b8', { maxLines: 1 });
+  });
+}
+
+function drawNoVisual(ctx, slide, bullets, region) {
+  const r = inset(region, 54);
+  drawTextBox(ctx, slide.title || 'Source-led explanation', { x: r.x, y: r.y + 34, w: r.w, h: 80 }, {
+    color: BLUE,
+    startPx: 30,
+    minPx: 18,
+    weight: '700',
+    align: 'center',
+    maxLines: 2,
+  });
+  drawTextBox(ctx, (bullets || []).join('  |  ') || 'Follow the narration and source-backed takeaway.', { x: r.x, y: r.y + 150, w: r.w, h: 160 }, {
+    color: INK,
+    startPx: 24,
+    minPx: 15,
+    align: 'center',
+    maxLines: 4,
   });
 }
 
@@ -781,10 +847,14 @@ function drawBigOChart(ctx, slide, region) {
 
 function drawVisual(ctx, slide, visual, bullets, region) {
   const type = visual.type;
+  if (type === 'none') return drawNoVisual(ctx, slide, bullets, region);
   drawCard(ctx, region, type.replace(/_/g, ' '));
   const content = inset(region, 18);
   content.y += 34;
   content.h -= 34;
+  if (type === 'cards') return drawCardsVisual(ctx, visual, content);
+  if (type === 'table') return drawTableVisual(ctx, visual, content);
+  if (type === 'source_reference') return drawSourceReference(ctx, slide, visual, content);
   if (type === 'flow') return drawFlow(ctx, visual, content);
   if (type === 'comparison') return drawComparison(ctx, visual, bullets, content);
   if (type === 'code') return drawCode(ctx, slide, bullets, content);

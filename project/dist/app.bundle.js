@@ -629,7 +629,7 @@ const Logo = ({
   style: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     color: 'var(--fg-0)',
     background: 'transparent',
     padding: 0,
@@ -651,7 +651,7 @@ const Logo = ({
 }), showWord && React.createElement("span", {
   style: {
     fontFamily: 'var(--font-display)',
-    fontSize: size * 0.82,
+    fontSize: `calc(${size * 0.82}px * var(--app-font-scale))`,
     letterSpacing: '-0.015em',
     fontWeight: 400
   }
@@ -737,7 +737,7 @@ const Sidebar = ({
   }), React.createElement("span", null, "New session"), React.createElement("span", {
     style: {
       marginLeft: 'auto',
-      fontSize: 10,
+      fontSize: 'calc(10px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     },
     className: "mono"
@@ -746,7 +746,7 @@ const Sidebar = ({
       padding: '12px 10px',
       display: 'flex',
       flexDirection: 'column',
-      gap: 1
+      gap: 'calc(1px * var(--app-density-scale))'
     }
   }, SIDEBAR.map(item => {
     const IconCmp = Icon[item.icon];
@@ -779,7 +779,7 @@ const Sidebar = ({
     }
   }, React.createElement("span", {
     style: {
-      fontSize: 10,
+      fontSize: 'calc(10px * var(--app-font-scale))',
       letterSpacing: '0.08em',
       color: 'var(--fg-3)',
       textTransform: 'uppercase'
@@ -793,25 +793,25 @@ const Sidebar = ({
     style: {
       display: 'flex',
       alignItems: 'baseline',
-      gap: 6,
-      marginTop: 4
+      gap: 'calc(6px * var(--app-density-scale))',
+      marginTop: 'calc(4px * var(--app-density-scale))'
     }
   }, React.createElement("span", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 28,
+      fontSize: 'calc(28px * var(--app-font-scale))',
       color: 'var(--fg-0)'
     }
   }, streakDays), React.createElement("span", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, "days")), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 2,
-      marginTop: 8
+      gap: 'calc(2px * var(--app-density-scale))',
+      marginTop: 'calc(8px * var(--app-density-scale))'
     }
   }, Array.from({
     length: 7
@@ -827,7 +827,7 @@ const Sidebar = ({
     onClick: onSettings,
     style: {
       ...ss.sbItem,
-      marginTop: 6
+      marginTop: 'calc(6px * var(--app-density-scale))'
     }
   }, React.createElement(Icon.Cog, {
     size: 16
@@ -846,7 +846,7 @@ const Sidebar = ({
     }
   }, React.createElement("span", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       fontWeight: 500,
       whiteSpace: 'nowrap',
@@ -856,7 +856,7 @@ const Sidebar = ({
     }
   }, userName || 'User'), React.createElement("span", {
     style: {
-      fontSize: 10,
+      fontSize: 'calc(10px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, userSub || 'Student')), React.createElement(Icon.ChevronRight, {
@@ -918,25 +918,25 @@ const ss = {
   sbNewBtn: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     width: '100%',
     padding: '8px 12px',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)',
     border: '1px solid var(--line)',
     color: 'var(--fg-1)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     transition: 'all 160ms var(--ease-out)'
   },
   sbItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     width: '100%',
     padding: '7px 10px',
     borderRadius: 'var(--r-sm)',
     color: 'var(--fg-2)',
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     transition: 'all 140ms var(--ease-out)',
     position: 'relative'
   },
@@ -962,12 +962,12 @@ const ss = {
   profile: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     width: '100%',
     padding: '8px',
     borderRadius: 'var(--r-md)',
     background: 'transparent',
-    marginTop: 4,
+    marginTop: 'calc(4px * var(--app-density-scale))',
     transition: 'background 140ms var(--ease-out)'
   },
   avatar: {
@@ -976,7 +976,7 @@ const ss = {
     borderRadius: 8,
     background: 'linear-gradient(135deg, var(--accent) 0%, var(--parchment) 100%)',
     color: 'var(--bg-0)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     fontWeight: 600,
     display: 'flex',
     alignItems: 'center',
@@ -992,7 +992,7 @@ const ss = {
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-md)',
-    padding: 4,
+    padding: 'calc(4px * var(--app-density-scale))',
     boxShadow: 'var(--shadow-lg)',
     zIndex: 40,
     animation: 'slideUp 180ms var(--ease-out)'
@@ -1000,11 +1000,11 @@ const ss = {
   menuItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     width: '100%',
     padding: '8px 10px',
     borderRadius: 'var(--r-sm)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     textAlign: 'left',
     transition: 'background 140ms var(--ease-out)'
@@ -1020,7 +1020,7 @@ const Topbar = ({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 12,
+      gap: 'calc(12px * var(--app-density-scale))',
       padding: '14px 28px',
       borderBottom: '1px solid var(--line-soft)',
       background: 'var(--bg-0)',
@@ -1033,7 +1033,7 @@ const Topbar = ({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 8,
+      gap: 'calc(8px * var(--app-density-scale))',
       flex: 1,
       minWidth: 0
     }
@@ -1041,7 +1041,7 @@ const Topbar = ({
     key: i
   }, React.createElement("span", {
     style: {
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, c), React.createElement(Icon.ChevronRight, {
@@ -1051,7 +1051,7 @@ const Topbar = ({
     }
   }))), React.createElement("span", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       fontWeight: 500
     }
@@ -1059,12 +1059,12 @@ const Topbar = ({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 6
+      gap: 'calc(6px * var(--app-density-scale))'
     }
   }, right, React.createElement("button", {
     className: "btn btn-bare",
     style: {
-      padding: 7,
+      padding: 'calc(7px * var(--app-density-scale))',
       opacity: 0.4
     },
     disabled: true
@@ -1073,7 +1073,7 @@ const Topbar = ({
   })), React.createElement("button", {
     className: "btn btn-bare",
     style: {
-      padding: 7,
+      padding: 'calc(7px * var(--app-density-scale))',
       opacity: 0.4
     },
     disabled: true
@@ -1301,7 +1301,7 @@ const Hero3D = ({
       pointerEvents: 'none',
       color: 'var(--bg-0)',
       fontFamily: 'var(--font-display)',
-      fontSize: 26,
+      fontSize: 'calc(26px * var(--app-font-scale))',
       fontWeight: 400,
       mixBlendMode: 'screen'
     }
@@ -1544,11 +1544,11 @@ const Splash = ({
   })), React.createElement("div", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 64,
+      fontSize: 'calc(64px * var(--app-font-scale))',
       fontWeight: 300,
       letterSpacing: '-0.025em',
       color: '#fff',
-      marginTop: 34,
+      marginTop: 'calc(34px * var(--app-density-scale))',
       overflow: 'hidden',
       display: 'flex'
     }
@@ -1562,11 +1562,11 @@ const Splash = ({
     }
   }, ch))), React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       letterSpacing: '0.22em',
       textTransform: 'uppercase',
       color: 'rgba(199, 201, 220, 0.6)',
-      marginTop: 22,
+      marginTop: 'calc(22px * var(--app-density-scale))',
       opacity: phase >= 3 ? 1 : 0,
       transform: phase >= 3 ? 'translateY(0)' : 'translateY(8px)',
       transition: 'all 700ms cubic-bezier(.2,.8,.2,1)'
@@ -1575,7 +1575,7 @@ const Splash = ({
     style: {
       position: 'absolute',
       bottom: 32,
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'rgba(255,255,255,0.3)',
       letterSpacing: '0.08em',
       opacity: phase >= 3 ? 1 : 0,
@@ -1733,7 +1733,7 @@ const Landing = ({
   }, React.createElement("div", {
     className: "chip",
     style: {
-      marginBottom: 22
+      marginBottom: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("span", {
     style: ls.liveDot
@@ -1843,11 +1843,11 @@ const Landing = ({
     id: "how",
     style: {
       ...ls.section,
-      paddingTop: 24
+      paddingTop: 'calc(24px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: {
-      marginBottom: 32
+      marginBottom: 'calc(32px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ls.eyebrow
@@ -1861,7 +1861,7 @@ const Landing = ({
   }, React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 6
+      gap: 'calc(6px * var(--app-density-scale))'
     }
   }, React.createElement("span", {
     style: ls.chromeDot
@@ -1872,7 +1872,7 @@ const Landing = ({
   })), React.createElement("span", {
     className: "mono",
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, "noesis.local / materials / arrays-and-complexity")), React.createElement("div", {
@@ -1896,7 +1896,7 @@ const Landing = ({
     onClick: () => auth('signup'),
     style: {
       ...ls.cta,
-      marginTop: 24
+      marginTop: 'calc(24px * var(--app-density-scale))'
     }
   }, "Create account ", React.createElement(Icon.ArrowRight, {
     size: 14
@@ -1906,7 +1906,7 @@ const Landing = ({
     size: 16
   }), React.createElement("div", {
     style: {
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, "Noesis AI Learning Assistant - graduation project build")));
@@ -2007,15 +2007,15 @@ const StudyFlowPreview = ({
       size: 13
     })), React.createElement("div", null, React.createElement("div", {
       style: {
-        fontSize: 12.5,
+        fontSize: 'calc(12.5px * var(--app-font-scale))',
         color: 'var(--fg-0)',
         fontWeight: 500
       }
     }, title), React.createElement("div", {
       style: {
-        fontSize: 11.5,
+        fontSize: 'calc(11.5px * var(--app-font-scale))',
         color: 'var(--fg-3)',
-        marginTop: 2
+        marginTop: 'calc(2px * var(--app-density-scale))'
       }
     }, text)));
   })));
@@ -2053,8 +2053,8 @@ const ls = {
   },
   navLinks: {
     display: 'flex',
-    gap: 6,
-    fontSize: 13,
+    gap: 'calc(6px * var(--app-density-scale))',
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     padding: '4px',
     background: 'color-mix(in oklab, var(--bg-1) 60%, transparent)',
@@ -2069,7 +2069,7 @@ const ls = {
   },
   navActions: {
     display: 'flex',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     alignItems: 'center',
     justifyContent: 'flex-end'
   },
@@ -2077,7 +2077,7 @@ const ls = {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
     alignItems: 'center',
-    gap: 60,
+    gap: 'calc(60px * var(--app-density-scale))',
     padding: '80px 56px 110px',
     maxWidth: 1400,
     margin: '0 auto',
@@ -2096,7 +2096,7 @@ const ls = {
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 'clamp(48px, 7vw, 78px)',
+    fontSize: 'clamp(calc(48px * var(--app-font-scale)), 7vw, calc(78px * var(--app-font-scale)))',
     fontWeight: 300,
     lineHeight: 1.02,
     letterSpacing: '-0.025em',
@@ -2108,7 +2108,7 @@ const ls = {
     fontWeight: 300
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 'calc(16px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     lineHeight: 1.6,
     maxWidth: 520,
@@ -2116,24 +2116,24 @@ const ls = {
   },
   ctaRow: {
     display: 'flex',
-    gap: 10,
-    marginTop: 36,
+    gap: 'calc(10px * var(--app-density-scale))',
+    marginTop: 'calc(36px * var(--app-density-scale))',
     flexWrap: 'wrap'
   },
   cta: {
     padding: '12px 18px',
-    fontSize: 14
+    fontSize: 'calc(14px * var(--app-font-scale))'
   },
   trustRow: {
-    marginTop: 44,
+    marginTop: 'calc(44px * var(--app-density-scale))',
     display: 'flex',
-    gap: 28,
+    gap: 'calc(28px * var(--app-density-scale))',
     color: 'var(--fg-3)',
-    fontSize: 11.5
+    fontSize: 'calc(11.5px * var(--app-font-scale))'
   },
   trustTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 21,
+    fontSize: 'calc(21px * var(--app-font-scale))',
     color: 'var(--fg-0)'
   },
   heroVisual: {
@@ -2152,27 +2152,27 @@ const ls = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    gap: 36,
-    marginBottom: 48
+    gap: 'calc(36px * var(--app-density-scale))',
+    marginBottom: 'calc(48px * var(--app-density-scale))'
   },
   sectionCopy: {
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     maxWidth: 340,
     textAlign: 'right',
     lineHeight: 1.6
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     letterSpacing: '0.14em',
     textTransform: 'uppercase',
     color: 'var(--accent)',
-    marginBottom: 14,
+    marginBottom: 'calc(14px * var(--app-density-scale))',
     fontWeight: 500
   },
   h2: {
     fontFamily: 'var(--font-display)',
-    fontSize: 'clamp(34px, 5vw, 48px)',
+    fontSize: 'clamp(calc(34px * var(--app-font-scale)), 5vw, calc(48px * var(--app-font-scale)))',
     fontWeight: 300,
     letterSpacing: '-0.02em',
     lineHeight: 1.1,
@@ -2182,10 +2182,10 @@ const ls = {
   methodGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: 16
+    gap: 'calc(16px * var(--app-density-scale))'
   },
   methodCard: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     minHeight: 220,
     display: 'flex',
     flexDirection: 'column'
@@ -2194,22 +2194,22 @@ const ls = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 22
+    marginBottom: 'calc(22px * var(--app-density-scale))'
   },
   cardNum: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em'
   },
   cardTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 22,
+    fontSize: 'calc(22px * var(--app-font-scale))',
     margin: '0 0 10px',
     fontWeight: 400,
     letterSpacing: '-0.01em'
   },
   cardText: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     margin: 0,
     lineHeight: 1.55
@@ -2242,49 +2242,49 @@ const ls = {
     minHeight: 430
   },
   previewSource: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     borderRight: '1px solid var(--line)'
   },
   previewPanel: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     background: 'var(--bg-2)',
     display: 'flex',
     flexDirection: 'column',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     justifyContent: 'center'
   },
   previewEyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
-    marginBottom: 12
+    marginBottom: 'calc(12px * var(--app-density-scale))'
   },
   previewTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 24,
+    fontSize: 'calc(24px * var(--app-font-scale))',
     margin: '0 0 14px',
     fontWeight: 400
   },
   previewText: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     lineHeight: 1.7,
     margin: 0
   },
   previewTags: {
-    marginTop: 20,
+    marginTop: 'calc(20px * var(--app-density-scale))',
     display: 'flex',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     flexWrap: 'wrap'
   },
   previewNode: {
-    padding: 14,
+    padding: 'calc(14px * var(--app-density-scale))',
     borderRadius: 'var(--r-md)',
     border: '1px solid var(--line)',
     background: 'var(--bg-1)',
     display: 'flex',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     alignItems: 'center',
     transition: 'transform 200ms var(--ease-out)'
   },
@@ -2349,18 +2349,18 @@ const ls = {
     justifyContent: 'center',
     color: 'var(--bg-0)',
     fontFamily: 'var(--font-display)',
-    fontSize: 30
+    fontSize: 'calc(30px * var(--app-font-scale))'
   },
   orbitChip: {
     position: 'absolute',
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     padding: '5px 10px',
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
     borderRadius: 999,
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     whiteSpace: 'nowrap',
     boxShadow: 'var(--shadow-sm)'
@@ -2466,7 +2466,7 @@ const Auth = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 10
+      gap: 'calc(10px * var(--app-density-scale))'
     }
   }, mode === 'signup' && React.createElement("div", {
     style: as.field
@@ -2503,21 +2503,21 @@ const Auth = ({
   }))), error && React.createElement("div", {
     style: {
       color: 'var(--err)',
-      fontSize: 12,
-      marginTop: 12
+      fontSize: 'calc(12px * var(--app-font-scale))',
+      marginTop: 'calc(12px * var(--app-density-scale))'
     }
   }, error), success && React.createElement("div", {
     style: {
       color: 'var(--ok)',
-      fontSize: 12,
-      marginTop: 12
+      fontSize: 'calc(12px * var(--app-font-scale))',
+      marginTop: 'calc(12px * var(--app-density-scale))'
     }
   }, success), React.createElement("button", {
     type: "submit",
     className: "btn btn-primary",
     disabled: busy,
     style: {
-      marginTop: 20,
+      marginTop: 'calc(20px * var(--app-density-scale))',
       padding: '12px 14px',
       justifyContent: 'center',
       opacity: busy ? 0.6 : 1
@@ -2526,8 +2526,8 @@ const Auth = ({
     size: 14
   })), React.createElement("div", {
     style: {
-      marginTop: 24,
-      fontSize: 12.5,
+      marginTop: 'calc(24px * var(--app-density-scale))',
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, mode === 'signin' ? 'New here?' : 'Already have an account?', ' ', React.createElement("a", {
@@ -2543,7 +2543,7 @@ const Auth = ({
     }
   }, mode === 'signin' ? 'Create an account' : 'Sign in'))), React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, "Authentication is handled by the Noesis backend session layer.")), React.createElement("div", {
@@ -2560,7 +2560,7 @@ const Auth = ({
     style: as.quoteText
   }, "Noesis turns OOP and Data Structures material into notes, flashcards, quizzes, and guided tutor sessions."), React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, "A local-first learning workspace for core Computer Science study."))));
@@ -2575,13 +2575,13 @@ const as = {
     padding: '40px 56px',
     display: 'flex',
     flexDirection: 'column',
-    gap: 24
+    gap: 'calc(24px * var(--app-density-scale))'
   },
   top: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 16
+    gap: 'calc(16px * var(--app-density-scale))'
   },
   right: {
     background: 'var(--bg-1)',
@@ -2589,7 +2589,7 @@ const as = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 56,
+    padding: 'calc(56px * var(--app-density-scale))',
     backgroundImage: 'radial-gradient(ellipse at 30% 20%, var(--accent-glow), transparent 60%)'
   },
   quote: {
@@ -2597,38 +2597,38 @@ const as = {
   },
   quoteText: {
     fontFamily: 'var(--font-display)',
-    fontSize: 32,
+    fontSize: 'calc(32px * var(--app-font-scale))',
     fontWeight: 300,
     lineHeight: 1.3,
     letterSpacing: '-0.015em',
     margin: '18px 0'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
     color: 'var(--accent)',
-    marginBottom: 14
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 40,
+    fontSize: 'calc(40px * var(--app-font-scale))',
     fontWeight: 300,
     margin: '0 0 12px',
     letterSpacing: '-0.02em'
   },
   sub: {
-    fontSize: 14,
+    fontSize: 'calc(14px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     margin: '0 0 32px'
   },
   field: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 6
+    gap: 'calc(6px * var(--app-density-scale))'
   },
   label: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.04em'
   }
@@ -2729,7 +2729,7 @@ const Onboarding = ({
   }))), React.createElement("span", {
     className: "mono",
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, step + 1, " / ", steps.length)), React.createElement("main", {
@@ -2749,7 +2749,7 @@ const Onboarding = ({
     style: os.sub
   }, steps[step].sub), React.createElement("div", {
     style: {
-      marginTop: 36
+      marginTop: 'calc(36px * var(--app-density-scale))'
     }
   }, step === 0 && React.createElement("div", {
     style: os.grid3
@@ -2782,7 +2782,7 @@ const Onboarding = ({
       }
     }), React.createElement("span", {
       style: {
-        fontSize: 13,
+        fontSize: 'calc(13px * var(--app-font-scale))',
         color: active ? 'var(--fg-0)' : 'var(--fg-1)'
       }
     }, o.label));
@@ -2790,7 +2790,7 @@ const Onboarding = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 8
+      gap: 'calc(8px * var(--app-density-scale))'
     }
   }, [{
     id: 'oop',
@@ -2827,15 +2827,15 @@ const Onboarding = ({
       }
     }, React.createElement("div", {
       style: {
-        fontSize: 13,
+        fontSize: 'calc(13px * var(--app-font-scale))',
         color: 'var(--fg-0)',
         fontWeight: 500
       }
     }, c.label), React.createElement("div", {
       style: {
-        fontSize: 11.5,
+        fontSize: 'calc(11.5px * var(--app-font-scale))',
         color: 'var(--fg-3)',
-        marginTop: 2
+        marginTop: 'calc(2px * var(--app-density-scale))'
       }
     }, c.prof)));
   })), step === 2 && React.createElement("div", {
@@ -2881,34 +2881,34 @@ const Onboarding = ({
       }
     }, React.createElement("div", {
       style: {
-        fontSize: 14,
+        fontSize: 'calc(14px * var(--app-font-scale))',
         color: 'var(--fg-0)',
         fontWeight: 500
       }
     }, o.label), React.createElement("div", {
       style: {
-        fontSize: 12,
+        fontSize: 'calc(12px * var(--app-font-scale))',
         color: 'var(--fg-2)',
-        marginTop: 3
+        marginTop: 'calc(3px * var(--app-density-scale))'
       }
     }, o.sub)));
   })), step === 3 && React.createElement("div", null, React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'baseline',
-      gap: 10,
-      marginBottom: 20
+      gap: 'calc(10px * var(--app-density-scale))',
+      marginBottom: 'calc(20px * var(--app-density-scale))'
     }
   }, React.createElement("span", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 72,
+      fontSize: 'calc(72px * var(--app-font-scale))',
       fontWeight: 300,
       color: 'var(--fg-0)'
     }
   }, time), React.createElement("span", {
     style: {
-      fontSize: 15,
+      fontSize: 'calc(15px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, "minutes / day")), React.createElement("input", {
@@ -2926,37 +2926,37 @@ const Onboarding = ({
     style: {
       display: 'flex',
       justifyContent: 'space-between',
-      marginTop: 8,
-      fontSize: 11,
+      marginTop: 'calc(8px * var(--app-density-scale))',
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     },
     className: "mono"
   }, React.createElement("span", null, "15m"), React.createElement("span", null, "60m"), React.createElement("span", null, "120m")), React.createElement("div", {
     style: {
-      marginTop: 28,
-      padding: 16,
+      marginTop: 'calc(28px * var(--app-density-scale))',
+      padding: 'calc(16px * var(--app-density-scale))',
       border: '1px solid var(--line)',
       borderRadius: 'var(--r-md)',
       background: 'var(--bg-1)'
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--accent)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase',
-      marginBottom: 6
+      marginBottom: 'calc(6px * var(--app-density-scale))'
     }
   }, "Your plan"), React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-1)'
     }
   }, "Roughly ", React.createElement("b", null, time, "m/day"), ": one tutor session, one flashcard review, and one quiz cycle each week."))), step === 4 && React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: '1fr 1fr',
-      gap: 12
+      gap: 'calc(12px * var(--app-density-scale))'
     }
   }, React.createElement("label", {
     style: os.formField
@@ -3054,15 +3054,15 @@ const Onboarding = ({
     placeholder: "e.g. polymorphism, linked list pointers, Big-O"
   })))), error && React.createElement("div", {
     style: {
-      marginTop: 16,
+      marginTop: 'calc(16px * var(--app-density-scale))',
       color: 'var(--err)',
-      fontSize: 12
+      fontSize: 'calc(12px * var(--app-font-scale))'
     }
   }, error), React.createElement("div", {
     style: {
       display: 'flex',
       justifyContent: 'space-between',
-      marginTop: 48
+      marginTop: 'calc(48px * var(--app-density-scale))'
     }
   }, React.createElement("button", {
     className: "btn btn-bare",
@@ -3090,14 +3090,14 @@ const os = {
   header: {
     display: 'flex',
     alignItems: 'center',
-    gap: 24,
+    gap: 'calc(24px * var(--app-density-scale))',
     padding: '20px 56px',
     borderBottom: '1px solid var(--line-soft)'
   },
   progress: {
     flex: 1,
     display: 'flex',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     maxWidth: 360
   },
   main: {
@@ -3105,41 +3105,41 @@ const os = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 56
+    padding: 'calc(56px * var(--app-density-scale))'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     letterSpacing: '0.14em',
     textTransform: 'uppercase',
     color: 'var(--accent)',
-    marginBottom: 14
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 44,
+    fontSize: 'calc(44px * var(--app-font-scale))',
     fontWeight: 300,
     letterSpacing: '-0.02em',
     margin: '0 0 10px'
   },
   sub: {
-    fontSize: 15,
+    fontSize: 'calc(15px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     margin: 0
   },
   grid3: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: 10
+    gap: 'calc(10px * var(--app-density-scale))'
   },
   grid2: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
-    gap: 10
+    gap: 'calc(10px * var(--app-density-scale))'
   },
   tile: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     alignItems: 'flex-start',
     padding: '20px 16px',
     borderRadius: 'var(--r-md)',
@@ -3155,7 +3155,7 @@ const os = {
   },
   goalTile: {
     display: 'flex',
-    gap: 14,
+    gap: 'calc(14px * var(--app-density-scale))',
     alignItems: 'flex-start',
     padding: '18px 18px',
     borderRadius: 'var(--r-md)',
@@ -3166,7 +3166,7 @@ const os = {
   course: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     padding: '14px 16px',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)',
@@ -3180,10 +3180,10 @@ const os = {
   formField: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 6
+    gap: 'calc(6px * var(--app-density-scale))'
   },
   formLabel: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.04em',
     textTransform: 'uppercase'
@@ -3318,8 +3318,8 @@ const Dashboard = ({
   }, "You're at ", totalWeek, "h this week of ", goalH, "h goal. Pick up where you left, or start a new tutor session."), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 10,
-      marginTop: 24
+      gap: 'calc(10px * var(--app-density-scale))',
+      marginTop: 'calc(24px * var(--app-density-scale))'
     }
   }, React.createElement("button", {
     className: "btn btn-accent",
@@ -3378,7 +3378,7 @@ const Dashboard = ({
   }, React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ds.cardHead
@@ -3390,18 +3390,18 @@ const Dashboard = ({
     style: {
       display: 'flex',
       alignItems: 'baseline',
-      gap: 8,
-      marginTop: 14
+      gap: 'calc(8px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, React.createElement("span", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 44,
+      fontSize: 'calc(44px * var(--app-font-scale))',
       fontWeight: 300
     }
   }, xp.level || 1), React.createElement("span", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, "level")), React.createElement("div", {
@@ -3413,14 +3413,14 @@ const Dashboard = ({
     }
   })), React.createElement("div", {
     style: {
-      marginTop: 10,
-      fontSize: 11.5,
+      marginTop: 'calc(10px * var(--app-density-scale))',
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, xp.xp_to_next_level || 0, " XP to next level")), React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ds.cardHead
@@ -3434,9 +3434,9 @@ const Dashboard = ({
   })), React.createElement("div", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 36,
+      fontSize: 'calc(36px * var(--app-font-scale))',
       fontWeight: 300,
-      marginTop: 14
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, dailyGoal ? dailyGoal.completed_xp : 0, "/", dailyGoal ? dailyGoal.target_xp : 50), React.createElement("div", {
     style: ds.progress
@@ -3447,14 +3447,14 @@ const Dashboard = ({
     }
   })), React.createElement("div", {
     style: {
-      marginTop: 10,
-      fontSize: 11.5,
+      marginTop: 'calc(10px * var(--app-density-scale))',
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, dailyGoal && dailyGoal.status === 'completed' ? 'Goal complete' : 'XP target for today')), React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ds.cardHead
@@ -3464,7 +3464,7 @@ const Dashboard = ({
     className: "btn btn-bare",
     onClick: () => onNav('community'),
     style: {
-      fontSize: 11.5
+      fontSize: 'calc(11.5px * var(--app-font-scale))'
     }
   }, "Open ", React.createElement(Icon.ArrowRight, {
     size: 11
@@ -3472,8 +3472,8 @@ const Dashboard = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 8,
-      marginTop: 14
+      gap: 'calc(8px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, (leaderboardPreview.length ? leaderboardPreview : [{
     rank: '-',
@@ -3507,7 +3507,7 @@ const Dashboard = ({
   }, React.createElement("div", {
     className: "card",
     style: {
-      padding: 22,
+      padding: 'calc(22px * var(--app-density-scale))',
       gridColumn: 'span 2'
     }
   }, React.createElement("div", {
@@ -3518,7 +3518,7 @@ const Dashboard = ({
     className: "btn btn-bare",
     onClick: () => onNav('materials'),
     style: {
-      fontSize: 11.5
+      fontSize: 'calc(11.5px * var(--app-font-scale))'
     }
   }, "See library ", React.createElement(Icon.ArrowRight, {
     size: 11
@@ -3526,8 +3526,8 @@ const Dashboard = ({
     style: {
       display: 'grid',
       gridTemplateColumns: '1fr 1fr',
-      gap: 10,
-      marginTop: 14
+      gap: 'calc(10px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, (resumeItems.length ? resumeItems : [{
     t: 'Upload material to get started',
@@ -3545,20 +3545,20 @@ const Dashboard = ({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 8
+      gap: 'calc(8px * var(--app-density-scale))'
     }
   }, React.createElement("span", {
     className: "chip"
   }, c.chip), React.createElement("span", {
     className: "mono",
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, c.prog, "%")), React.createElement("div", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 20,
+      fontSize: 'calc(20px * var(--app-font-scale))',
       fontWeight: 400,
       color: 'var(--fg-0)',
       margin: '10px 0 6px',
@@ -3567,7 +3567,7 @@ const Dashboard = ({
     }
   }, c.t), React.createElement("div", {
     style: {
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       textAlign: 'left'
     }
@@ -3581,7 +3581,7 @@ const Dashboard = ({
   })))))), React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ds.cardHead
@@ -3596,25 +3596,25 @@ const Dashboard = ({
     style: {
       display: 'flex',
       alignItems: 'baseline',
-      gap: 8,
-      marginTop: 14
+      gap: 'calc(8px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, React.createElement("span", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 46,
+      fontSize: 'calc(46px * var(--app-font-scale))',
       fontWeight: 300
     }
   }, totalWeek), React.createElement("span", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, "hrs focused")), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 4,
-      marginTop: 12
+      gap: 'calc(4px * var(--app-density-scale))',
+      marginTop: 'calc(12px * var(--app-density-scale))'
     }
   }, weekly.map((h, i) => React.createElement("div", {
     key: i,
@@ -3627,24 +3627,24 @@ const Dashboard = ({
       minHeight: 3,
       background: i === 6 ? 'var(--accent)' : 'var(--fg-4)',
       borderRadius: 2,
-      marginBottom: 6,
+      marginBottom: 'calc(6px * var(--app-density-scale))',
       transition: 'all 300ms var(--ease-out)'
     }
   }), React.createElement("div", {
     className: "mono",
     style: {
-      fontSize: 9,
+      fontSize: 'calc(9px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       textAlign: 'center'
     }
   }, ['M', 'T', 'W', 'T', 'F', 'S', 'S'][i])))), React.createElement("div", {
     style: {
-      marginTop: 16,
-      paddingTop: 14,
+      marginTop: 'calc(16px * var(--app-density-scale))',
+      paddingTop: 'calc(14px * var(--app-density-scale))',
       borderTop: '1px solid var(--line)',
       display: 'flex',
       justifyContent: 'space-between',
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, React.createElement("div", null, "Streak: ", React.createElement("span", {
@@ -3656,7 +3656,7 @@ const Dashboard = ({
   }, React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ds.cardHead
@@ -3668,8 +3668,8 @@ const Dashboard = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 10,
-      marginTop: 14
+      gap: 'calc(10px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, (dueRows.length ? dueRows : [{
     q: 'Generate flashcards from a material to start reviewing.',
@@ -3685,13 +3685,13 @@ const Dashboard = ({
     }
   }), React.createElement("span", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-1)',
       flex: 1
     }
   }, r.q), React.createElement("span", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     },
     className: "mono"
@@ -3699,7 +3699,7 @@ const Dashboard = ({
     className: "btn btn-ghost",
     onClick: () => onNav('flashcards'),
     style: {
-      marginTop: 14,
+      marginTop: 'calc(14px * var(--app-density-scale))',
       width: '100%',
       justifyContent: 'center'
     }
@@ -3708,7 +3708,7 @@ const Dashboard = ({
   }))), React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ds.cardHead
@@ -3717,7 +3717,7 @@ const Dashboard = ({
   }, "Concept mastery"), React.createElement("button", {
     className: "btn btn-bare",
     style: {
-      fontSize: 11.5
+      fontSize: 'calc(11.5px * var(--app-font-scale))'
     },
     onClick: () => onNav('progress')
   }, "Open ", React.createElement(Icon.ArrowUpRight, {
@@ -3727,7 +3727,7 @@ const Dashboard = ({
   })), React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ds.cardHead
@@ -3737,8 +3737,8 @@ const Dashboard = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 12,
-      marginTop: 14
+      gap: 'calc(12px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, (upcomingItems.length ? upcomingItems : [{
     d: 'Course',
@@ -3757,7 +3757,7 @@ const Dashboard = ({
   }, React.createElement("div", {
     className: "mono",
     style: {
-      fontSize: 9,
+      fontSize: 'calc(9px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase'
@@ -3765,7 +3765,7 @@ const Dashboard = ({
   }, u.d), React.createElement("div", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 22,
+      fontSize: 'calc(22px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       lineHeight: 1
     }
@@ -3776,21 +3776,21 @@ const Dashboard = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       fontWeight: 500
     }
   }, u.t), React.createElement("div", {
     style: {
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
-      marginTop: 2
+      marginTop: 'calc(2px * var(--app-density-scale))'
     }
   }, u.sub))))))), React.createElement("section", {
     className: "card",
     style: {
-      padding: 22,
-      marginBottom: 40
+      padding: 'calc(22px * var(--app-density-scale))',
+      marginBottom: 'calc(40px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ds.cardHead
@@ -3803,15 +3803,15 @@ const Dashboard = ({
     }
   }), " No\u0113sis noticed"), React.createElement("span", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, recentActivity.length, " recent event", recentActivity.length === 1 ? '' : 's')), React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(3, 1fr)',
-      gap: 12,
-      marginTop: 14
+      gap: 'calc(12px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, insightItems.map((s, i) => {
     const C = Icon[s.icon] || Icon.Sparkle;
@@ -3825,23 +3825,23 @@ const Dashboard = ({
       }
     }), React.createElement("div", {
       style: {
-        fontSize: 13,
+        fontSize: 'calc(13px * var(--app-font-scale))',
         color: 'var(--fg-0)',
         fontWeight: 500,
         margin: '8px 0 4px'
       }
     }, s.t), React.createElement("div", {
       style: {
-        fontSize: 12,
+        fontSize: 'calc(12px * var(--app-font-scale))',
         color: 'var(--fg-2)'
       }
     }, s.d), React.createElement("button", {
       className: "btn btn-bare",
       onClick: () => s.route && onNav(s.route),
       style: {
-        marginTop: 10,
+        marginTop: 'calc(10px * var(--app-density-scale))',
         padding: '4px 0',
-        fontSize: 12,
+        fontSize: 'calc(12px * var(--app-font-scale))',
         color: 'var(--accent)'
       }
     }, s.cta, " ", React.createElement(Icon.ArrowRight, {
@@ -3849,17 +3849,17 @@ const Dashboard = ({
     })));
   })), recentActivity.length > 0 && React.createElement("div", {
     style: {
-      marginTop: 16,
-      paddingTop: 14,
+      marginTop: 'calc(16px * var(--app-density-scale))',
+      paddingTop: 'calc(14px * var(--app-density-scale))',
       borderTop: '1px solid var(--line)',
       display: 'grid',
       gridTemplateColumns: 'repeat(4, 1fr)',
-      gap: 10
+      gap: 'calc(10px * var(--app-density-scale))'
     }
   }, recentActivity.slice(0, 4).map((a, i) => React.createElement("div", {
     key: i,
     style: {
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, React.createElement("span", {
@@ -3869,7 +3869,7 @@ const Dashboard = ({
     }
   }, a.kind), React.createElement("div", {
     style: {
-      marginTop: 3,
+      marginTop: 'calc(3px * var(--app-density-scale))',
       color: 'var(--fg-3)',
       overflow: 'hidden',
       textOverflow: 'ellipsis',
@@ -3878,8 +3878,8 @@ const Dashboard = ({
   }, a.title || 'Activity'))))), recentBadges.length > 0 && React.createElement("section", {
     className: "card",
     style: {
-      padding: 22,
-      marginBottom: 40
+      padding: 'calc(22px * var(--app-density-scale))',
+      marginBottom: 'calc(40px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: ds.cardHead
@@ -3889,7 +3889,7 @@ const Dashboard = ({
     className: "btn btn-bare",
     onClick: () => onNav('community'),
     style: {
-      fontSize: 11.5
+      fontSize: 'calc(11.5px * var(--app-font-scale))'
     }
   }, "Community ", React.createElement(Icon.ArrowRight, {
     size: 11
@@ -3897,8 +3897,8 @@ const Dashboard = ({
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(5, 1fr)',
-      gap: 10,
-      marginTop: 14
+      gap: 'calc(10px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, recentBadges.slice(0, 5).map(b => {
     const C = Icon[b.icon] || Icon.Star;
@@ -3912,16 +3912,16 @@ const Dashboard = ({
       }
     }), React.createElement("div", {
       style: {
-        fontSize: 12.5,
+        fontSize: 'calc(12.5px * var(--app-font-scale))',
         color: 'var(--fg-0)',
-        marginTop: 8,
+        marginTop: 'calc(8px * var(--app-density-scale))',
         fontWeight: 500
       }
     }, b.name), React.createElement("div", {
       style: {
-        fontSize: 11,
+        fontSize: 'calc(11px * var(--app-font-scale))',
         color: 'var(--fg-3)',
-        marginTop: 4
+        marginTop: 'calc(4px * var(--app-density-scale))'
       }
     }, b.description));
   })))));
@@ -3985,23 +3985,23 @@ const FocusRing = ({
   }, React.createElement("div", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 44,
+      fontSize: 'calc(44px * var(--app-font-scale))',
       fontWeight: 300,
       color: 'var(--fg-0)',
       lineHeight: 1
     }
   }, v, React.createElement("span", {
     style: {
-      fontSize: 18,
+      fontSize: 'calc(18px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, "%")), React.createElement("div", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase',
-      marginTop: 4
+      marginTop: 'calc(4px * var(--app-density-scale))'
     }
   }, "Weekly focus")));
 };
@@ -4050,7 +4050,7 @@ const ConceptMap = ({
         alignItems: 'center',
         justifyContent: 'center',
         color: 'var(--fg-3)',
-        fontSize: 12
+        fontSize: 'calc(12px * var(--app-font-scale))'
       }
     }, "No concept data yet.");
   }
@@ -4064,7 +4064,7 @@ const ConceptMap = ({
     style: {
       position: 'relative',
       height: 180,
-      marginTop: 10
+      marginTop: 'calc(10px * var(--app-density-scale))'
     }
   }, React.createElement("svg", {
     width: "100%",
@@ -4110,8 +4110,8 @@ const ConceptMap = ({
     style: {
       position: 'absolute',
       top: '100%',
-      marginTop: 4,
-      fontSize: 9.5,
+      marginTop: 'calc(4px * var(--app-density-scale))',
+      fontSize: 'calc(9.5px * var(--app-font-scale))',
       color: 'var(--fg-2)',
       whiteSpace: 'nowrap'
     },
@@ -4127,54 +4127,54 @@ const ds = {
   errorBanner: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     padding: '10px 12px',
-    marginBottom: 14,
+    marginBottom: 'calc(14px * var(--app-density-scale))',
     borderRadius: 'var(--r-sm)',
     border: '1px solid var(--err)',
     color: 'var(--err)',
     background: 'color-mix(in oklab, var(--err) 10%, transparent)',
-    fontSize: 12.5
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   },
   hero: {
     display: 'grid',
     gridTemplateColumns: '1fr auto',
-    gap: 40,
+    gap: 'calc(40px * var(--app-density-scale))',
     alignItems: 'center',
     padding: '24px 0 32px'
   },
   metrics: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
-    gap: 10,
-    marginBottom: 14
+    gap: 'calc(10px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   metricCard: {
     padding: '14px 16px'
   },
   metricValue: {
     fontFamily: 'var(--font-display)',
-    fontSize: 28,
+    fontSize: 'calc(28px * var(--app-font-scale))',
     fontWeight: 300,
     color: 'var(--fg-0)'
   },
   metricLabel: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
-    marginTop: 4
+    marginTop: 'calc(4px * var(--app-density-scale))'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
-    marginBottom: 14
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   heroTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 44,
+    fontSize: 'calc(44px * var(--app-font-scale))',
     fontWeight: 300,
     letterSpacing: '-0.02em',
     lineHeight: 1.1,
@@ -4182,7 +4182,7 @@ const ds = {
     maxWidth: 680
   },
   heroSub: {
-    fontSize: 14,
+    fontSize: 'calc(14px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     margin: 0,
     maxWidth: 560
@@ -4193,13 +4193,13 @@ const ds = {
     borderBottom: '1px dotted var(--accent-soft)'
   },
   focusWrap: {
-    padding: 10
+    padding: 'calc(10px * var(--app-density-scale))'
   },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: 14,
-    marginBottom: 14
+    gap: 'calc(14px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   cardHead: {
     display: 'flex',
@@ -4207,15 +4207,15 @@ const ds = {
     justifyContent: 'space-between'
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     fontWeight: 500,
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 8
+    gap: 'calc(8px * var(--app-density-scale))'
   },
   resumeCard: {
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)',
     border: '1px solid var(--line)',
@@ -4225,7 +4225,7 @@ const ds = {
     transition: 'all 180ms var(--ease-out)'
   },
   progress: {
-    marginTop: 14,
+    marginTop: 'calc(14px * var(--app-density-scale))',
     height: 3,
     background: 'var(--line)',
     borderRadius: 2,
@@ -4240,7 +4240,7 @@ const ds = {
   reviewRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10
+    gap: 'calc(10px * var(--app-density-scale))'
   },
   dot: {
     width: 6,
@@ -4250,7 +4250,7 @@ const ds = {
   },
   upcoming: {
     display: 'flex',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     alignItems: 'center'
   },
   dateBox: {
@@ -4262,12 +4262,12 @@ const ds = {
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
+    gap: 'calc(2px * var(--app-density-scale))',
     flexShrink: 0,
     background: 'var(--bg-1)'
   },
   insight: {
-    padding: 14,
+    padding: 'calc(14px * var(--app-density-scale))',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)',
     border: '1px solid var(--line)'
@@ -4275,13 +4275,13 @@ const ds = {
   leaderRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     padding: '8px 0',
     borderBottom: '1px solid var(--line-soft)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   badgeCard: {
-    padding: 14,
+    padding: 'calc(14px * var(--app-density-scale))',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)',
     border: '1px solid var(--line)'
@@ -4395,21 +4395,21 @@ const Materials = ({
     style: ms.title
   }, "What are we learning?"), err && React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--err)',
-      marginTop: 4
+      marginTop: 'calc(4px * var(--app-density-scale))'
     }
   }, err), uploadStatus && React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: uploadStatus.includes('ready') ? 'var(--ok)' : 'var(--fg-3)',
-      marginTop: 4
+      marginTop: 'calc(4px * var(--app-density-scale))'
     }
   }, uploadStatus)), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 4,
-      padding: 2,
+      gap: 'calc(4px * var(--app-density-scale))',
+      padding: 'calc(2px * var(--app-density-scale))',
       background: 'var(--bg-2)',
       borderRadius: 'var(--r-md)',
       border: '1px solid var(--line)'
@@ -4419,7 +4419,7 @@ const Materials = ({
     onClick: () => setView(v),
     style: {
       padding: '6px 12px',
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       borderRadius: 6,
       background: view === v ? 'var(--bg-0)' : 'transparent',
       color: view === v ? 'var(--fg-0)' : 'var(--fg-2)',
@@ -4431,7 +4431,7 @@ const Materials = ({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 14
+      gap: 'calc(14px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: {
@@ -4451,15 +4451,15 @@ const Materials = ({
     }
   })), React.createElement("div", null, React.createElement("div", {
     style: {
-      fontSize: 13.5,
+      fontSize: 'calc(13.5px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       fontWeight: 500
     }
   }, "Drop a PDF, DOCX, TXT, Markdown, or PPTX file"), React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-2)',
-      marginTop: 2
+      marginTop: 'calc(2px * var(--app-density-scale))'
     }
   }, "Noesis extracts documents and PowerPoint slides for notes, flashcards, quizzes, and tutoring. Save legacy PPT decks as PPTX first."))), React.createElement("button", {
     className: "btn btn-ghost",
@@ -4482,7 +4482,7 @@ const Materials = ({
         height: 120,
         background: `linear-gradient(135deg, ${m.color}22, transparent 70%), var(--bg-2)`,
         borderRadius: 'var(--r-md)',
-        marginBottom: 14,
+        marginBottom: 'calc(14px * var(--app-density-scale))',
         position: 'relative',
         overflow: 'hidden',
         border: '1px solid var(--line-soft)'
@@ -4501,7 +4501,7 @@ const Materials = ({
         position: 'absolute',
         bottom: 10,
         right: 10,
-        fontSize: 10,
+        fontSize: 'calc(10px * var(--app-font-scale))',
         color: 'var(--fg-3)'
       },
       className: "mono"
@@ -4509,7 +4509,7 @@ const Materials = ({
       style: {
         display: 'flex',
         alignItems: view === 'grid' ? 'flex-start' : 'center',
-        gap: 12,
+        gap: 'calc(12px * var(--app-density-scale))',
         flex: 1
       }
     }, view === 'list' && React.createElement(Ti, {
@@ -4526,18 +4526,18 @@ const Materials = ({
     }, React.createElement("div", {
       style: {
         fontFamily: 'var(--font-display)',
-        fontSize: 16,
+        fontSize: 'calc(16px * var(--app-font-scale))',
         color: 'var(--fg-0)',
-        marginBottom: 4,
+        marginBottom: 'calc(4px * var(--app-density-scale))',
         fontWeight: 400,
         letterSpacing: '-0.005em'
       }
     }, m.t), React.createElement("div", {
       style: {
-        fontSize: 11.5,
+        fontSize: 'calc(11.5px * var(--app-font-scale))',
         color: 'var(--fg-3)',
         display: 'flex',
-        gap: 10
+        gap: 'calc(10px * var(--app-density-scale))'
       }
     }, React.createElement("span", null, m.course), React.createElement("span", null, "\xB7"), React.createElement("span", null, m.chapters, " ch"), React.createElement("span", null, "\xB7"), React.createElement("span", null, m.updated))), view === 'list' && React.createElement("div", {
       style: {
@@ -4559,14 +4559,14 @@ const Materials = ({
     })), React.createElement("div", {
       className: "mono",
       style: {
-        fontSize: 10,
+        fontSize: 'calc(10px * var(--app-font-scale))',
         color: 'var(--fg-3)',
-        marginTop: 3,
+        marginTop: 'calc(3px * var(--app-density-scale))',
         textAlign: 'right'
       }
     }, m.progress, "%"))), view === 'grid' && React.createElement("div", {
       style: {
-        marginTop: 10
+        marginTop: 'calc(10px * var(--app-density-scale))'
       }
     }, React.createElement("div", {
       style: {
@@ -4585,8 +4585,8 @@ const Materials = ({
       style: {
         display: 'flex',
         justifyContent: 'space-between',
-        marginTop: 6,
-        fontSize: 10.5,
+        marginTop: 'calc(6px * var(--app-density-scale))',
+        fontSize: 'calc(10.5px * var(--app-font-scale))',
         color: 'var(--fg-3)'
       },
       className: "mono"
@@ -4595,7 +4595,7 @@ const Materials = ({
 };
 const ms = {
   page: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     maxWidth: 1400,
     margin: '0 auto'
   },
@@ -4603,18 +4603,18 @@ const ms = {
     display: 'flex',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    marginBottom: 28
+    marginBottom: 'calc(28px * var(--app-density-scale))'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
-    marginBottom: 10
+    marginBottom: 'calc(10px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 40,
+    fontSize: 'calc(40px * var(--app-font-scale))',
     fontWeight: 300,
     letterSpacing: '-0.02em',
     margin: 0
@@ -4627,20 +4627,20 @@ const ms = {
     borderRadius: 'var(--r-lg)',
     border: '1px dashed var(--line-strong)',
     background: 'var(--bg-1)',
-    marginBottom: 28
+    marginBottom: 'calc(28px * var(--app-density-scale))'
   },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: 14
+    gap: 'calc(14px * var(--app-density-scale))'
   },
   list: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 6
+    gap: 'calc(6px * var(--app-density-scale))'
   },
   card: {
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     display: 'flex',
     flexDirection: 'column',
     textAlign: 'left'
@@ -4649,7 +4649,7 @@ const ms = {
     padding: '14px 16px',
     display: 'flex',
     alignItems: 'center',
-    gap: 12
+    gap: 'calc(12px * var(--app-density-scale))'
   }
 };
 const MaterialDetail = ({
@@ -4666,6 +4666,7 @@ const MaterialDetail = ({
   const [activeAction, setActiveAction] = React.useState('');
   const [video, setVideo] = React.useState(null);
   const [learningMap, setLearningMap] = React.useState(null);
+  const [sourceScope, setSourceScope] = React.useState('material');
   const id = parseInt(sessionStorage.getItem('noesis.materialId') || '0', 10);
   React.useEffect(() => {
     if (!id) {
@@ -4693,7 +4694,16 @@ const MaterialDetail = ({
     if (!id) return;
     window.NoesisAPI.study.learningMap(id).then(d => setLearningMap(d.learning_map || null)).catch(() => setLearningMap(null));
   }, [id]);
-  const generate = async kind => {
+  const currentScopePayload = React.useCallback(() => {
+    const payload = {
+      sourceScope
+    };
+    if (sourceScope === 'chapter' && chapterIds[active]) payload.chapter_id = chapterIds[active];
+    if (sourceScope === 'chunk' && chunks[0] && chunks[0].id) payload.chunk_id = chunks[0].id;
+    return payload;
+  }, [sourceScope, chapterIds, active, chunks]);
+  const sourceScopeLabel = sourceScope === 'chapter' ? 'Current chapter' : sourceScope === 'chunk' ? 'Current section' : 'Entire material';
+  const generate = async (kind, options = {}) => {
     if (!id || busy) return false;
     const labels = {
       notes: 'notes',
@@ -4702,25 +4712,34 @@ const MaterialDetail = ({
     };
     setActiveAction(kind);
     setBusy(true);
-    setGenStatus(`Generating ${labels[kind] || kind}...`);
+    setGenStatus(`Generating ${labels[kind] || kind} from ${sourceScopeLabel.toLowerCase()}...`);
     try {
+      const scopePayload = currentScopePayload();
       if (kind === 'notes') await window.NoesisAPI.notes.generate({
         material_id: id,
-        chapter_id: chapterIds[active]
+        ...scopePayload
       });
-      if (kind === 'flashcards') await window.NoesisAPI.flashcards.generate({
+      let flashcardResult = null;
+      if (kind === 'flashcards') flashcardResult = await window.NoesisAPI.flashcards.generate({
         material_id: id,
-        count: 8
+        count: 6,
+        regenerate: !!options.regenerate,
+        ...scopePayload
       });
       if (kind === 'quiz') {
         const r = await window.NoesisAPI.quizzes.generate({
           material_id: id,
           count: 6,
-          difficulty: 'medium'
+          difficulty: 'medium',
+          ...scopePayload
         });
         sessionStorage.setItem('noesis.quizId', String(r.quiz_id));
       }
-      setGenStatus(`${labels[kind] || kind} generated successfully.`);
+      if (kind === 'flashcards' && flashcardResult) {
+        if (flashcardResult.reused) setGenStatus('Using existing flashcards for this material.');else if (flashcardResult.fallback) setGenStatus(flashcardResult.message || 'Created fallback flashcards from source material.');else setGenStatus(`${flashcardResult.created || 0} flashcards generated successfully.`);
+      } else {
+        setGenStatus(`${labels[kind] || kind} generated successfully.`);
+      }
       return true;
     } catch (e) {
       setGenStatus('Failed: ' + (e.message || 'error'));
@@ -4736,10 +4755,11 @@ const MaterialDetail = ({
     setBusy(true);
     setGenStatus('Generating storyboard for review...');
     try {
-      const concept = chapters[active] || null;
+      const concept = sourceScope === 'material' ? material && material.title : chapters[active] || null;
       const r = await window.NoesisAPI.videos.createStoryboard({
         material_id: id,
-        concept
+        concept,
+        ...currentScopePayload()
       });
       const storyboardId = r.storyboard_id || r.storyboard && r.storyboard.id;
       if (!storyboardId) throw new Error('storyboard_not_created');
@@ -4800,7 +4820,7 @@ const MaterialDetail = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase'
@@ -4809,7 +4829,7 @@ const MaterialDetail = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 1,
+      gap: 'calc(1px * var(--app-density-scale))',
       padding: '0 8px'
     }
   }, chapters.map((c, i) => React.createElement("button", {
@@ -4818,18 +4838,18 @@ const MaterialDetail = ({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 10,
+      gap: 'calc(10px * var(--app-density-scale))',
       padding: '8px 10px',
       borderRadius: 'var(--r-sm)',
       background: active === i ? 'var(--bg-2)' : 'transparent',
       color: active === i ? 'var(--fg-0)' : 'var(--fg-2)',
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       textAlign: 'left'
     }
   }, React.createElement("span", {
     className: "mono",
     style: {
-      fontSize: 9.5,
+      fontSize: 'calc(9.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       width: 20
     }
@@ -4843,7 +4863,7 @@ const MaterialDetail = ({
     style: mds.readerHead
   }, React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase'
@@ -4851,14 +4871,14 @@ const MaterialDetail = ({
   }, "Chapter ", active + 1, " \xB7 ", chunks.length, " chunks"), React.createElement("h1", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 42,
+      fontSize: 'calc(42px * var(--app-font-scale))',
       fontWeight: 300,
       letterSpacing: '-0.02em',
       margin: '8px 0 6px'
     }
   }, chapters[active] || material && material.title || 'Material'), React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, material && material.status === 'ready' ? 'Indexed for tutor and quizzes.' : material ? `Status: ${material.status}` : 'Loading…')), React.createElement("div", {
@@ -4881,7 +4901,7 @@ const MaterialDetail = ({
     compact: true
   }) : React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       padding: '4px 0'
     }
@@ -4895,12 +4915,12 @@ const MaterialDetail = ({
   }, React.createElement("span", null, c.name), React.createElement("span", {
     className: "mono",
     style: {
-      fontSize: 10,
+      fontSize: 'calc(10px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, c.mastery_pct || 0, "%"))) : React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       padding: '4px 0'
     }
@@ -4908,7 +4928,23 @@ const MaterialDetail = ({
     style: mds.railBlock
   }, React.createElement("div", {
     style: mds.railHead
-  }, "Generate (AI)"), React.createElement("button", {
+  }, "Generate (AI)"), React.createElement("div", {
+    style: mds.scopeBox
+  }, React.createElement("label", {
+    style: mds.scopeLabel
+  }, "Source"), React.createElement("select", {
+    value: sourceScope,
+    onChange: e => setSourceScope(e.target.value),
+    style: mds.scopeSelect
+  }, React.createElement("option", {
+    value: "material"
+  }, "Entire material"), React.createElement("option", {
+    value: "chapter",
+    disabled: !chapterIds[active]
+  }, "Current chapter"), React.createElement("option", {
+    value: "chunk",
+    disabled: !chunks[0]
+  }, "Current section"))), React.createElement("button", {
     style: mds.gen,
     disabled: busy,
     onClick: () => generate('notes')
@@ -4924,19 +4960,21 @@ const MaterialDetail = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-0)'
     }
   }, activeAction === 'notes' ? 'Generating notes...' : 'Summary notes'), React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
-  }, "From this chapter"))), React.createElement("button", {
+  }, "From ", sourceScopeLabel.toLowerCase()))), React.createElement("button", {
     style: mds.gen,
     disabled: busy,
     onClick: async () => {
-      const ok = await generate('flashcards');
+      const ok = await generate('flashcards', {
+        regenerate: true
+      });
       if (ok) onNav('flashcards');
     }
   }, React.createElement(Icon.Cards, {
@@ -4951,15 +4989,15 @@ const MaterialDetail = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-0)'
     }
   }, activeAction === 'flashcards' ? 'Generating flashcards...' : 'Flashcards'), React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
-  }, "Generate 8 cards"))), React.createElement("button", {
+  }, "Create 6 cards from ", sourceScopeLabel.toLowerCase()))), React.createElement("button", {
     style: mds.gen,
     disabled: busy,
     onClick: async () => {
@@ -4978,15 +5016,15 @@ const MaterialDetail = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-0)'
     }
   }, activeAction === 'quiz' ? 'Generating quiz...' : 'Practice quiz'), React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
-  }, "6 questions"))), React.createElement("button", {
+  }, "6 questions from ", sourceScopeLabel.toLowerCase()))), React.createElement("button", {
     style: mds.gen,
     disabled: busy,
     onClick: generateVideo
@@ -5002,17 +5040,17 @@ const MaterialDetail = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-0)'
     }
   }, activeAction === 'video' ? 'Creating storyboard...' : 'Tutor video storyboard'), React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
-  }, "Review scenes before MP4 rendering"))), genStatus && React.createElement("div", {
+  }, "Storyboard from ", sourceScopeLabel.toLowerCase()))), genStatus && React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       padding: '4px 4px 0'
     }
@@ -5022,7 +5060,7 @@ const MaterialDetail = ({
     crossOrigin: "use-credentials",
     style: {
       width: '100%',
-      marginTop: 8,
+      marginTop: 'calc(8px * var(--app-density-scale))',
       borderRadius: 'var(--r-sm)'
     }
   })), React.createElement("div", {
@@ -5031,7 +5069,7 @@ const MaterialDetail = ({
     style: mds.railHead
   }, "Your highlights"), React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       padding: '4px 0'
     }
@@ -5053,10 +5091,10 @@ const mds = {
     margin: '0 auto'
   },
   readerHead: {
-    marginBottom: 36
+    marginBottom: 'calc(36px * var(--app-density-scale))'
   },
   article: {
-    fontSize: 14.5,
+    fontSize: 'calc(14.5px * var(--app-font-scale))',
     lineHeight: 1.75,
     color: 'var(--fg-1)'
   },
@@ -5065,7 +5103,7 @@ const mds = {
   },
   h2: {
     fontFamily: 'var(--font-display)',
-    fontSize: 26,
+    fontSize: 'calc(26px * var(--app-font-scale))',
     fontWeight: 400,
     letterSpacing: '-0.01em',
     margin: '36px 0 14px',
@@ -5079,7 +5117,7 @@ const mds = {
   },
   code: {
     fontFamily: 'var(--font-mono)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     background: 'var(--bg-2)',
     padding: '1px 5px',
     borderRadius: 3,
@@ -5087,10 +5125,10 @@ const mds = {
   },
   pre: {
     fontFamily: 'var(--font-mono)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
-    padding: 18,
+    padding: 'calc(18px * var(--app-density-scale))',
     borderRadius: 'var(--r-md)',
     overflow: 'auto',
     lineHeight: 1.6,
@@ -5099,8 +5137,8 @@ const mds = {
   },
   callout: {
     display: 'flex',
-    gap: 12,
-    padding: 16,
+    gap: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(16px * var(--app-density-scale))',
     borderRadius: 'var(--r-md)',
     background: 'var(--accent-glow)',
     border: '1px solid var(--accent-soft)',
@@ -5108,23 +5146,44 @@ const mds = {
   },
   rail: {
     borderLeft: '1px solid var(--line)',
-    padding: 20,
+    padding: 'calc(20px * var(--app-density-scale))',
     display: 'flex',
     flexDirection: 'column',
-    gap: 20,
+    gap: 'calc(20px * var(--app-density-scale))',
     background: 'var(--bg-0)'
   },
   railBlock: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 4
+    gap: 'calc(4px * var(--app-density-scale))'
   },
   railHead: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
-    marginBottom: 8
+    marginBottom: 'calc(8px * var(--app-density-scale))'
+  },
+  scopeBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginBottom: 'calc(6px * var(--app-density-scale))'
+  },
+  scopeLabel: {
+    fontSize: 'calc(11px * var(--app-font-scale))',
+    color: 'var(--fg-3)'
+  },
+  scopeSelect: {
+    flex: 1,
+    minWidth: 0,
+    height: 30,
+    borderRadius: 'var(--r-sm)',
+    border: '1px solid var(--line)',
+    background: 'var(--bg-1)',
+    color: 'var(--fg-1)',
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    padding: '0 8px'
   },
   concept: {
     display: 'flex',
@@ -5132,14 +5191,14 @@ const mds = {
     justifyContent: 'space-between',
     padding: '8px 10px',
     borderRadius: 'var(--r-sm)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     textAlign: 'left',
     transition: 'background 140ms var(--ease-out)'
   },
   gen: {
     display: 'flex',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     alignItems: 'center',
     padding: '10px 12px',
     borderRadius: 'var(--r-sm)',
@@ -5149,7 +5208,7 @@ const mds = {
   },
   highlight: {
     display: 'flex',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     padding: '6px 0'
   }
 };
@@ -5323,7 +5382,7 @@ const NoesisTutorResponse = (() => {
     }, React.createElement("span", {
       className: "mono",
       style: {
-        fontSize: 10,
+        fontSize: 'calc(10px * var(--app-font-scale))',
         color: 'var(--accent)'
       }
     }, i + 1), React.createElement("span", null, item)))), msg.example && React.createElement("div", {
@@ -5342,7 +5401,7 @@ const NoesisTutorResponse = (() => {
     }, React.createElement("span", {
       className: "mono",
       style: {
-        fontSize: 10,
+        fontSize: 'calc(10px * var(--app-font-scale))',
         color: 'var(--fg-3)'
       }
     }, w.lineRange || w.line || i + 1), React.createElement("span", null, w.text || w)))), visual && window.TopicVisual && React.createElement(window.TopicVisual, {
@@ -5354,15 +5413,15 @@ const NoesisTutorResponse = (() => {
       style: tu.questionBox
     }, React.createElement("div", {
       style: {
-        fontSize: 10.5,
+        fontSize: 'calc(10.5px * var(--app-font-scale))',
         color: 'var(--accent)',
         letterSpacing: '0.1em',
         textTransform: 'uppercase',
-        marginBottom: 7
+        marginBottom: 'calc(7px * var(--app-density-scale))'
       }
     }, "Checkpoint"), React.createElement("div", {
       style: {
-        fontSize: 13.5,
+        fontSize: 'calc(13.5px * var(--app-font-scale))',
         color: 'var(--fg-0)',
         lineHeight: 1.55
       }
@@ -5391,6 +5450,12 @@ const Tutor = ({
   const [action, setAction] = React.useState('');
   const [materials, setMaterials] = React.useState([]);
   const [selectedMaterialId, setSelectedMaterialId] = React.useState('');
+  const [sourcePreview, setSourcePreview] = React.useState({
+    materialId: null,
+    title: '',
+    sources: [],
+    loading: false
+  });
   const [conceptInput, setConceptInput] = React.useState('');
   const [activeRailTab, setActiveRailTab] = React.useState('Notes');
   const [notebook, setNotebook] = React.useState([]);
@@ -5422,7 +5487,8 @@ const Tutor = ({
   const busy = ['starting_session', 'retrieving_context', 'generating_step', 'continuing', 'saving_note'].includes(tutorState) || !!action;
   const steps = session && Array.isArray(session.steps) ? session.steps : [];
   const currentStep = steps[step] || null;
-  const sources = session && (session.sources || session.source_chunks || []) || [];
+  const sessionSources = session && (session.sources || session.source_chunks || []) || [];
+  const sources = sessionSources.length ? sessionSources : sourcePreview.sources || [];
   const trace = session && session.trace || {};
   const persistedFeedback = currentStep && (currentStep.feedback || currentStep.feedback_md) || '';
   const visibleTurns = guidedTurns.filter(t => (t.stepIndex == null ? step : t.stepIndex) === step);
@@ -5460,11 +5526,81 @@ const Tutor = ({
   };
   const refreshSession = React.useCallback(id => {
     if (!id) return Promise.resolve(null);
-    return window.NoesisAPI.tutor.get(id).then(d => {
-      setSessionReady(d);
-      return d;
+    return window.NoesisAPI.tutor.get(id).then(async d => {
+      const base = d && d.session ? d.session : d;
+      let merged = d;
+      const currentSources = base && (base.sources || base.source_chunks) || [];
+      if (base && base.id && !currentSources.length) {
+        try {
+          const s = await window.NoesisAPI.tutor.sources(base.id);
+          const withSources = {
+            ...base,
+            sources: s.sources || [],
+            source_chunks: s.sources || []
+          };
+          merged = d && d.session ? {
+            ...d,
+            session: withSources
+          } : withSources;
+        } catch (_) {}
+      }
+      setSessionReady(merged);
+      return merged;
     });
   }, []);
+  React.useEffect(() => {
+    if (!selectedMaterialId) {
+      setSourcePreview({
+        materialId: null,
+        title: '',
+        sources: [],
+        loading: false
+      });
+      return undefined;
+    }
+    let alive = true;
+    const materialId = parseInt(selectedMaterialId, 10);
+    const selected = materials.find(m => String(m.id) === String(selectedMaterialId));
+    setSourcePreview(prev => ({
+      materialId,
+      title: selected ? materialLabel(selected) : prev.title,
+      sources: prev.materialId === materialId ? prev.sources : [],
+      loading: true
+    }));
+    Promise.all([window.NoesisAPI.materials.get(materialId).catch(() => selected || null), window.NoesisAPI.materials.chunks(materialId).catch(() => ({
+      chunks: []
+    }))]).then(([material, chunkResult]) => {
+      if (!alive) return;
+      const chunks = (chunkResult && chunkResult.chunks || []).slice(0, 5);
+      setSourcePreview({
+        materialId,
+        title: materialLabel(material || selected || {
+          id: materialId
+        }),
+        loading: false,
+        sources: chunks.map((chunk, index) => ({
+          id: chunk.id || `preview-${materialId}-${index}`,
+          chunkId: chunk.id || null,
+          materialTitle: materialLabel(material || selected || {
+            id: materialId
+          }),
+          heading: chunk.heading || chunk.section_title || chunk.slide_title || chunk.chapter_title || `Material excerpt ${index + 1}`,
+          location: [chunk.source_page != null ? `Page ${chunk.source_page}` : '', chunk.slide_number != null ? `Slide ${chunk.slide_number}` : ''].filter(Boolean).join(' / '),
+          excerpt: String(chunk.text || '').replace(/\s+/g, ' ').trim().slice(0, 520),
+          text: String(chunk.text || '').replace(/\s+/g, ' ').trim().slice(0, 520)
+        })).filter(item => item.excerpt || item.heading)
+      });
+    }).catch(() => {
+      if (!alive) return;
+      setSourcePreview(prev => ({
+        ...prev,
+        loading: false
+      }));
+    });
+    return () => {
+      alive = false;
+    };
+  }, [selectedMaterialId, materials]);
   const pollSession = async sessionId => {
     for (let i = 0; i < 120; i += 1) {
       const s = await window.NoesisAPI.tutor.status(sessionId);
@@ -5889,8 +6025,8 @@ const Tutor = ({
     right: React.createElement(React.Fragment, null, React.createElement("div", {
       style: {
         display: 'flex',
-        gap: 2,
-        padding: 2,
+        gap: 'calc(2px * var(--app-density-scale))',
+        padding: 'calc(2px * var(--app-density-scale))',
         background: 'var(--bg-2)',
         borderRadius: 'var(--r-md)',
         border: '1px solid var(--line)'
@@ -5916,9 +6052,9 @@ const Tutor = ({
         style: {
           display: 'flex',
           alignItems: 'center',
-          gap: 6,
+          gap: 'calc(6px * var(--app-density-scale))',
           padding: '5px 10px',
-          fontSize: 11.5,
+          fontSize: 'calc(11.5px * var(--app-font-scale))',
           background: mode === m.id ? 'var(--bg-0)' : 'transparent',
           color: mode === m.id ? 'var(--fg-0)' : 'var(--fg-2)',
           borderRadius: 6
@@ -5948,25 +6084,25 @@ const Tutor = ({
     style: tu.contextBar
   }, React.createElement("div", null, React.createElement("div", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase',
-      marginBottom: 4
+      marginBottom: 'calc(4px * var(--app-density-scale))'
     }
   }, "Tutor source"), React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-1)'
     }
-  }, tutorState === 'material_loading' ? 'Loading your indexed materials...' : 'Choose a material and Noesis will resolve the real topic.')), React.createElement("select", {
+  }, tutorState === 'material_loading' ? 'Loading your indexed materials...' : sourcePreview.title ? `${sourcePreview.title}${sourcePreview.sources.length ? ` / ${sourcePreview.sources.length} excerpts ready` : ''}` : 'Choose a material and Noesis will resolve the real topic.')), React.createElement("select", {
     className: "input",
     value: selectedMaterialId,
     disabled: busy || !materials.length,
     onChange: e => setSelectedMaterialId(e.target.value),
     style: {
       width: 300,
-      fontSize: 12.5
+      fontSize: 'calc(12.5px * var(--app-font-scale))'
     }
   }, !materials.length && React.createElement("option", {
     value: ""
@@ -5980,7 +6116,7 @@ const Tutor = ({
     onChange: e => setConceptInput(e.target.value),
     style: {
       width: 240,
-      fontSize: 12.5
+      fontSize: 'calc(12.5px * var(--app-font-scale))'
     }
   }), React.createElement("button", {
     className: "btn btn-accent",
@@ -6015,23 +6151,23 @@ const Tutor = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase'
     }
   }, "Session plan"), React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-1)',
-      marginTop: 6
+      marginTop: 'calc(6px * var(--app-density-scale))'
     }
   }, session ? topTitle : 'No active session yet')), React.createElement("div", {
     style: {
       padding: '12px 14px',
       display: 'flex',
       flexDirection: 'column',
-      gap: 2,
+      gap: 'calc(2px * var(--app-density-scale))',
       position: 'relative'
     }
   }, steps.length > 0 ? React.createElement(React.Fragment, null, React.createElement("div", {
@@ -6055,7 +6191,7 @@ const Tutor = ({
       disabled: busy,
       style: {
         display: 'flex',
-        gap: 12,
+        gap: 'calc(12px * var(--app-density-scale))',
         alignItems: 'flex-start',
         padding: '10px 10px',
         borderRadius: 'var(--r-sm)',
@@ -6076,7 +6212,7 @@ const Tutor = ({
         justifyContent: 'center',
         color: done ? 'var(--bg-0)' : 'var(--accent)',
         zIndex: 1,
-        marginTop: 2
+        marginTop: 'calc(2px * var(--app-density-scale))'
       }
     }, done ? React.createElement(Icon.Check, {
       size: 11
@@ -6091,40 +6227,40 @@ const Tutor = ({
     }) : React.createElement("span", {
       className: "mono",
       style: {
-        fontSize: 10,
+        fontSize: 'calc(10px * var(--app-font-scale))',
         color: 'var(--fg-3)'
       }
     }, i + 1)), React.createElement("div", {
       style: {
         flex: 1,
         minWidth: 0,
-        paddingTop: 1
+        paddingTop: 'calc(1px * var(--app-density-scale))'
       }
     }, React.createElement("div", {
       style: {
-        fontSize: 10.5,
+        fontSize: 'calc(10.5px * var(--app-font-scale))',
         letterSpacing: '0.1em',
         textTransform: 'uppercase',
         color: active ? 'var(--accent)' : 'var(--fg-3)'
       }
     }, s.label || s.t), React.createElement("div", {
       style: {
-        fontSize: 12.5,
+        fontSize: 'calc(12.5px * var(--app-font-scale))',
         color: active ? 'var(--fg-0)' : done ? 'var(--fg-2)' : 'var(--fg-3)',
-        marginTop: 3,
+        marginTop: 'calc(3px * var(--app-density-scale))',
         lineHeight: 1.4
       }
     }, s.title || s.question)));
   })) : React.createElement("div", {
     style: {
-      padding: 12,
+      padding: 'calc(12px * var(--app-density-scale))',
       color: 'var(--fg-3)',
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       lineHeight: 1.6
     }
   }, "Pick a material and start a tutor session. Noesis will build the plan after it retrieves context.")), session && session.learningMap && window.LearningMap && React.createElement("div", {
     style: {
-      padding: 14,
+      padding: 'calc(14px * var(--app-density-scale))',
       borderTop: '1px solid var(--line)'
     }
   }, React.createElement(window.LearningMap, {
@@ -6133,30 +6269,30 @@ const Tutor = ({
   })), React.createElement("div", {
     style: {
       marginTop: 'auto',
-      padding: 14,
+      padding: 'calc(14px * var(--app-density-scale))',
       borderTop: '1px solid var(--line)'
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)',
-      marginBottom: 6
+      marginBottom: 'calc(6px * var(--app-density-scale))'
     }
   }, "Session time"), React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'baseline',
-      gap: 6
+      gap: 'calc(6px * var(--app-density-scale))'
     }
   }, React.createElement("span", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 26,
+      fontSize: 'calc(26px * var(--app-font-scale))',
       fontWeight: 300
     }
   }, fmtTime(elapsedS)), React.createElement("span", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, "/ 20:00")))), React.createElement("main", {
@@ -6201,16 +6337,16 @@ const Tutor = ({
     size: 12
   }), " Retry")), session && currentStep && React.createElement(React.Fragment, null, React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--accent)',
       letterSpacing: '0.14em',
       textTransform: 'uppercase',
-      marginBottom: 10
+      marginBottom: 'calc(10px * var(--app-density-scale))'
     }
   }, "Step ", String(step + 1).padStart(2, '0'), " \xB7 ", currentStep.label || currentStep.t), React.createElement("h1", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 34,
+      fontSize: 'calc(34px * var(--app-font-scale))',
       fontWeight: 300,
       margin: '0 0 18px',
       lineHeight: 1.2
@@ -6243,27 +6379,27 @@ const Tutor = ({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 8,
+      gap: 'calc(8px * var(--app-density-scale))',
       flexWrap: 'wrap'
     }
   }, React.createElement("b", {
     style: {
       color: 'var(--fg-0)',
-      fontSize: 13.5
+      fontSize: 'calc(13.5px * var(--app-font-scale))'
     }
   }, "Professor Tutor"), React.createElement("span", {
     style: tu.statePill
   }, professorCopy.label)), React.createElement("div", {
     style: {
-      marginTop: 4,
+      marginTop: 'calc(4px * var(--app-density-scale))',
       color: 'var(--fg-2)',
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       lineHeight: 1.5
     }
   }, professorCopy.text))), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 10,
+      gap: 'calc(10px * var(--app-density-scale))',
       alignItems: 'flex-start'
     }
   }, React.createElement("div", {
@@ -6279,7 +6415,7 @@ const Tutor = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 14,
+      fontSize: 'calc(14px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       lineHeight: 1.75,
       whiteSpace: 'pre-wrap'
@@ -6288,7 +6424,7 @@ const Tutor = ({
     style: tu.exampleBox
   }, React.createElement("b", null, "Example:"), " ", currentStep.example))), currentStep.visual && window.TopicVisual && React.createElement("div", {
     style: {
-      marginTop: 18
+      marginTop: 'calc(18px * var(--app-density-scale))'
     }
   }, React.createElement(window.TopicVisual, {
     template: currentStep.visual.type,
@@ -6308,30 +6444,30 @@ const Tutor = ({
     style: tu.questionBox
   }, React.createElement("div", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--accent)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase',
-      marginBottom: 7
+      marginBottom: 'calc(7px * var(--app-density-scale))'
     }
   }, "Check your understanding"), React.createElement("div", {
     style: {
-      fontSize: 14,
+      fontSize: 'calc(14px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       lineHeight: 1.55
     }
   }, currentStep.question), currentStep.hint && React.createElement("div", {
     style: {
-      marginTop: 8,
-      fontSize: 12.5,
+      marginTop: 'calc(8px * var(--app-density-scale))',
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, "Hint: ", currentStep.hint)), currentStep.options && React.createElement("div", {
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 8,
-      marginTop: 16
+      gap: 'calc(8px * var(--app-density-scale))',
+      marginTop: 'calc(16px * var(--app-density-scale))'
     }
   }, currentStep.options.map((label, i) => React.createElement("button", {
     key: i,
@@ -6341,14 +6477,14 @@ const Tutor = ({
   }, React.createElement("span", {
     className: "mono",
     style: {
-      fontSize: 10,
+      fontSize: 'calc(10px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       width: 14
     }
   }, String.fromCharCode(65 + i)), React.createElement("span", {
     style: {
       flex: 1,
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-0)'
     }
   }, label)))), !currentStep.options && React.createElement("textarea", {
@@ -6362,8 +6498,8 @@ const Tutor = ({
     style: {
       width: '100%',
       minHeight: 82,
-      marginTop: 16,
-      fontSize: 13,
+      marginTop: 'calc(16px * var(--app-density-scale))',
+      fontSize: 'calc(13px * var(--app-font-scale))',
       resize: 'vertical'
     }
   }), React.createElement("div", {
@@ -6422,7 +6558,7 @@ const Tutor = ({
     className: "btn btn-ghost",
     style: {
       padding: '5px 9px',
-      fontSize: 11
+      fontSize: 'calc(11px * var(--app-font-scale))'
     },
     disabled: !voiceAudioUrl || voiceBusy,
     onClick: toggleTutorAudio
@@ -6443,9 +6579,9 @@ const Tutor = ({
     text: feedback || persistedFeedback
   }))), React.createElement("div", {
     style: {
-      marginTop: 20,
+      marginTop: 'calc(20px * var(--app-density-scale))',
       display: 'flex',
-      gap: 10,
+      gap: 'calc(10px * var(--app-density-scale))',
       flexWrap: 'wrap'
     }
   }, React.createElement("button", {
@@ -6479,15 +6615,15 @@ const Tutor = ({
     }
   }, "New session")), status && React.createElement("div", {
     style: {
-      marginTop: 12,
+      marginTop: 'calc(12px * var(--app-density-scale))',
       color: 'var(--fg-3)',
-      fontSize: 12
+      fontSize: 'calc(12px * var(--app-font-scale))'
     }
   }, status), error && React.createElement("div", {
     style: {
-      marginTop: 12,
+      marginTop: 'calc(12px * var(--app-density-scale))',
       color: 'var(--err)',
-      fontSize: 12
+      fontSize: 'calc(12px * var(--app-font-scale))'
     }
   }, error))))), React.createElement("aside", {
     style: tu.rail
@@ -6499,8 +6635,8 @@ const Tutor = ({
   }, React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 2,
-      padding: 2,
+      gap: 'calc(2px * var(--app-density-scale))',
+      padding: 'calc(2px * var(--app-density-scale))',
       background: 'var(--bg-2)',
       borderRadius: 'var(--r-sm)',
       border: '1px solid var(--line)'
@@ -6511,14 +6647,14 @@ const Tutor = ({
     style: {
       flex: 1,
       padding: '5px 8px',
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       background: activeRailTab === t ? 'var(--bg-0)' : 'transparent',
       color: activeRailTab === t ? 'var(--fg-0)' : 'var(--fg-2)',
       borderRadius: 4
     }
   }, t)))), React.createElement("div", {
     style: {
-      padding: 18,
+      padding: 'calc(18px * var(--app-density-scale))',
       overflow: 'auto',
       flex: 1
     }
@@ -6558,26 +6694,26 @@ const Tutor = ({
     title: "Grounding sources"
   }), sources.length === 0 && React.createElement("div", {
     style: tu.emptyRail
-  }, "Sources will appear after the tutor retrieves material context."), sources.map((c, i) => React.createElement("div", {
+  }, sourcePreview.loading ? 'Loading source excerpts...' : 'Sources will appear after the tutor retrieves material context.'), sources.map((c, i) => React.createElement("div", {
     key: `${c.id || c.chunkId}-${i}`,
     style: tu.sourceEntry
   }, React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--accent)',
       letterSpacing: '0.08em',
       textTransform: 'uppercase',
-      marginBottom: 6
+      marginBottom: 'calc(6px * var(--app-density-scale))'
     }
   }, "Source ", i + 1, " \xB7 ", c.location || c.heading || 'Material excerpt'), React.createElement("div", {
     style: {
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-0)',
-      marginBottom: 6
+      marginBottom: 'calc(6px * var(--app-density-scale))'
     }
   }, c.heading || c.materialTitle), React.createElement("div", {
     style: {
-      fontSize: 12.2,
+      fontSize: 'calc(12.2px * var(--app-font-scale))',
       color: 'var(--fg-2)',
       lineHeight: 1.55
     }
@@ -6597,26 +6733,26 @@ const Tutor = ({
   }, React.createElement("div", {
     className: "mono",
     style: {
-      fontSize: 10,
+      fontSize: 'calc(10px * var(--app-font-scale))',
       color: n.flashcard_worthy ? 'var(--accent)' : 'var(--fg-3)',
-      marginBottom: 4
+      marginBottom: 'calc(4px * var(--app-density-scale))'
     }
   }, new Date(n.created_at).toLocaleTimeString([], {
     hour: '2-digit',
     minute: '2-digit'
   })), React.createElement("div", {
     style: {
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-1)',
       lineHeight: 1.55,
       whiteSpace: 'pre-wrap'
     }
   }, n.body))))), React.createElement("div", {
     style: {
-      padding: 14,
+      padding: 'calc(14px * var(--app-density-scale))',
       borderTop: '1px solid var(--line)',
       display: 'flex',
-      gap: 8
+      gap: 'calc(8px * var(--app-density-scale))'
     }
   }, React.createElement("input", {
     className: "input",
@@ -6627,12 +6763,12 @@ const Tutor = ({
     disabled: paused || !session || busy,
     style: {
       flex: 1,
-      fontSize: 12.5
+      fontSize: 'calc(12.5px * var(--app-font-scale))'
     }
   }), React.createElement("button", {
     className: "btn btn-bare",
     style: {
-      padding: 8
+      padding: 'calc(8px * var(--app-density-scale))'
     },
     disabled: paused || !session || busy,
     onClick: () => addManualNote()
@@ -6674,11 +6810,11 @@ const RailTitle = ({
   title
 }) => React.createElement("div", {
   style: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
-    marginBottom: 10
+    marginBottom: 'calc(10px * var(--app-density-scale))'
   }
 }, title);
 const TraceRow = ({
@@ -6697,7 +6833,7 @@ const tu = {
   contextBar: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     flexWrap: 'wrap',
     padding: '12px 18px',
     borderBottom: '1px solid var(--line)',
@@ -6747,30 +6883,30 @@ const tu = {
     alignItems: 'center',
     justifyContent: 'center',
     textAlign: 'center',
-    gap: 14,
+    gap: 'calc(14px * var(--app-density-scale))',
     color: 'var(--fg-1)'
   },
   emptyTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 34,
+    fontSize: 'calc(34px * var(--app-font-scale))',
     fontWeight: 300,
     margin: 0
   },
   emptyText: {
     maxWidth: 480,
-    fontSize: 14,
+    fontSize: 'calc(14px * var(--app-font-scale))',
     lineHeight: 1.7,
     color: 'var(--fg-2)',
     margin: 0
   },
   skeletonStack: {
     display: 'grid',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     width: 360
   },
   lessonCard: {
-    marginTop: 22,
-    padding: 18,
+    marginTop: 'calc(22px * var(--app-density-scale))',
+    padding: 'calc(18px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)'
@@ -6778,9 +6914,9 @@ const tu = {
   professorPanel: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    marginBottom: 16,
+    gap: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
+    marginBottom: 'calc(16px * var(--app-density-scale))',
     borderRadius: 8,
     border: '1px solid var(--accent-soft)',
     background: 'var(--accent-glow)'
@@ -6810,47 +6946,47 @@ const tu = {
   statePill: {
     padding: '3px 7px',
     borderRadius: 999,
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--accent)',
     background: 'var(--bg-0)',
     border: '1px solid var(--accent-soft)'
   },
   exampleBox: {
-    marginTop: 12,
-    padding: 12,
+    marginTop: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
     borderRadius: 8,
     background: 'var(--bg-2)',
     border: '1px solid var(--line)',
     color: 'var(--fg-1)',
-    fontSize: 13
+    fontSize: 'calc(13px * var(--app-font-scale))'
   },
   codeBlock: {
-    marginTop: 16,
-    padding: 16,
+    marginTop: 'calc(16px * var(--app-density-scale))',
+    padding: 'calc(16px * var(--app-density-scale))',
     borderRadius: 8,
     background: '#0f172a',
     color: '#dbeafe',
     overflow: 'auto',
     fontFamily: 'var(--font-mono)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.6
   },
   walkthrough: {
     display: 'grid',
-    gap: 8,
-    marginTop: 10
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginTop: 'calc(10px * var(--app-density-scale))'
   },
   walkItem: {
     display: 'flex',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     alignItems: 'flex-start',
     color: 'var(--fg-2)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.5
   },
   questionBox: {
-    marginTop: 16,
-    padding: 14,
+    marginTop: 'calc(16px * var(--app-density-scale))',
+    padding: 'calc(14px * var(--app-density-scale))',
     borderRadius: 8,
     border: '1px solid var(--accent-soft)',
     background: 'var(--accent-glow)'
@@ -6858,7 +6994,7 @@ const tu = {
   choice: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     padding: '12px 14px',
     borderRadius: 'var(--r-md)',
     border: '1px solid var(--line)',
@@ -6867,20 +7003,20 @@ const tu = {
   },
   quickActions: {
     display: 'flex',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     flexWrap: 'wrap',
-    marginTop: 12
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   conversation: {
     display: 'grid',
-    gap: 10,
-    marginTop: 16
+    gap: 'calc(10px * var(--app-density-scale))',
+    marginTop: 'calc(16px * var(--app-density-scale))'
   },
   bubble: {
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     borderRadius: 8,
     lineHeight: 1.6,
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     border: '1px solid var(--line)'
   },
   studentBubble: {
@@ -6899,11 +7035,11 @@ const tu = {
   turnHeader: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   },
   turnAction: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--accent)',
     border: '1px solid var(--accent-soft)',
     background: 'var(--accent-glow)',
@@ -6911,51 +7047,51 @@ const tu = {
     padding: '2px 7px'
   },
   tutorMarkdown: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     lineHeight: 1.65,
     color: 'var(--fg-1)'
   },
   structuredMessage: {
     display: 'grid',
-    gap: 10
+    gap: 'calc(10px * var(--app-density-scale))'
   },
   structuredTitle: {
-    fontSize: 14,
+    fontSize: 'calc(14px * var(--app-font-scale))',
     fontWeight: 700,
     color: 'var(--fg-0)',
-    marginBottom: 2
+    marginBottom: 'calc(2px * var(--app-density-scale))'
   },
   hintBox: {
-    padding: 11,
+    padding: 'calc(11px * var(--app-density-scale))',
     borderRadius: 8,
     background: 'var(--accent-glow)',
     border: '1px solid var(--accent-soft)',
     color: 'var(--fg-1)',
-    fontSize: 12.8,
+    fontSize: 'calc(12.8px * var(--app-font-scale))',
     lineHeight: 1.55
   },
   followUp: {
-    marginTop: 8,
+    marginTop: 'calc(8px * var(--app-density-scale))',
     color: 'var(--fg-2)',
-    fontSize: 12.5
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   },
   failedTurn: {
-    marginTop: 8,
+    marginTop: 'calc(8px * var(--app-density-scale))',
     color: 'var(--warn)',
     lineHeight: 1.55
   },
   voiceRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     flexWrap: 'wrap',
-    marginTop: 10,
+    marginTop: 'calc(10px * var(--app-density-scale))',
     color: 'var(--fg-3)',
-    fontSize: 11.5
+    fontSize: 'calc(11.5px * var(--app-font-scale))'
   },
   feedback: {
-    marginTop: 16,
-    padding: 14,
+    marginTop: 'calc(16px * var(--app-density-scale))',
+    padding: 'calc(14px * var(--app-density-scale))',
     borderRadius: 8,
     background: 'var(--bg-2)',
     border: '1px solid var(--line)',
@@ -6963,36 +7099,38 @@ const tu = {
     lineHeight: 1.6
   },
   noteEntry: {
-    marginBottom: 16
+    marginBottom: 'calc(16px * var(--app-density-scale))'
   },
   sourceEntry: {
-    marginBottom: 14,
-    padding: 12,
+    marginBottom: 'calc(14px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
     borderRadius: 'var(--r-sm)',
     background: 'var(--bg-1)',
-    border: '1px solid var(--line)'
+    border: '1px solid var(--line)',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   emptyRail: {
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     lineHeight: 1.6
   },
   traceRow: {
     display: 'flex',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     padding: '9px 0',
     borderBottom: '1px solid var(--line)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-2)'
   },
   traceWarn: {
-    marginTop: 10,
-    padding: 10,
+    marginTop: 'calc(10px * var(--app-density-scale))',
+    padding: 'calc(10px * var(--app-density-scale))',
     borderRadius: 8,
     background: 'color-mix(in oklab, var(--warn) 12%, transparent)',
     color: 'var(--fg-1)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     lineHeight: 1.5
   }
 };
@@ -7650,11 +7788,19 @@ const TutorChat = ({
         created_at: new Date().toISOString()
       }]);
     } catch (e) {
-      setError(e.message || 'The tutor could not answer right now.');
+      const code = e && (e.code || e.data && e.data.error);
+      const friendly = {
+        ai_model_missing: 'The selected tutor model is unavailable. Noesis tried the fallback provider, but no model was ready.',
+        ai_unavailable: 'The tutor provider is not reachable right now. Check provider settings or try again shortly.',
+        ai_auth_failed: 'The tutor provider rejected the API key. Check credentials or switch providers.',
+        ai_timeout: 'The tutor provider timed out. Try a shorter message or use the fallback provider.',
+        ai_rate_limited: 'The tutor provider is rate limited. Please try again shortly.'
+      }[code] || e.message || 'The tutor could not answer right now.';
+      setError(friendly);
       setMessages(prev => [...prev, {
         id: `local-error-${Date.now()}`,
         role: 'assistant',
-        content: 'I could not reach the tutor service. Please try again in a moment.',
+        content: friendly,
         error: true,
         created_at: new Date().toISOString()
       }]);
@@ -8250,7 +8396,7 @@ const ActionResult = ({
       style: tc.quizDetails
     }, q.expectedAnswer && React.createElement("div", null, q.expectedAnswer), q.explanation && React.createElement("div", {
       style: {
-        marginTop: 6,
+        marginTop: 'calc(6px * var(--app-density-scale))',
         color: 'var(--fg-2)'
       }
     }, q.explanation)));
@@ -8343,7 +8489,7 @@ const tc = {
   contextBar: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     padding: '12px 22px',
     borderBottom: '1px solid var(--line)',
     background: 'var(--bg-1)',
@@ -8352,24 +8498,24 @@ const tc = {
   contextMeta: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10
+    gap: 'calc(10px * var(--app-density-scale))'
   },
   kicker: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
     color: 'var(--fg-3)',
-    marginBottom: 3
+    marginBottom: 'calc(3px * var(--app-density-scale))'
   },
   materialSelect: {
     width: 280,
     maxWidth: '48vw',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     padding: '8px 10px'
   },
   contextHint: {
     color: 'var(--fg-2)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     minWidth: 0,
     flex: 1,
     overflow: 'hidden',
@@ -8392,22 +8538,22 @@ const tc = {
   avatarPanel: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     padding: '14px clamp(18px, 4vw, 56px)',
     borderBottom: '1px solid var(--line)',
     background: 'var(--bg-0)'
   },
   avatarTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 18,
+    fontSize: 'calc(18px * var(--app-font-scale))',
     color: 'var(--fg-0)',
     lineHeight: 1.2
   },
   avatarStatus: {
     color: 'var(--fg-2)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.45,
-    marginTop: 3
+    marginTop: 'calc(3px * var(--app-density-scale))'
   },
   messages: {
     flex: 1,
@@ -8415,7 +8561,7 @@ const tc = {
     padding: '24px clamp(18px, 4vw, 56px)',
     display: 'flex',
     flexDirection: 'column',
-    gap: 14
+    gap: 'calc(14px * var(--app-density-scale))'
   },
   emptyState: {
     minHeight: 430,
@@ -8424,7 +8570,7 @@ const tc = {
     alignItems: 'center',
     justifyContent: 'center',
     textAlign: 'center',
-    gap: 14
+    gap: 'calc(14px * var(--app-density-scale))'
   },
   avatarLarge: {
     width: 72,
@@ -8440,7 +8586,7 @@ const tc = {
   emptyTitle: {
     margin: 0,
     fontFamily: 'var(--font-display)',
-    fontSize: 36,
+    fontSize: 'calc(36px * var(--app-font-scale))',
     fontWeight: 300,
     color: 'var(--fg-0)'
   },
@@ -8448,14 +8594,14 @@ const tc = {
     margin: 0,
     maxWidth: 560,
     color: 'var(--fg-2)',
-    fontSize: 14,
+    fontSize: 'calc(14px * var(--app-font-scale))',
     lineHeight: 1.7
   },
   emptySourcePanel: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    padding: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
+    padding: 'calc(8px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)',
@@ -8463,7 +8609,7 @@ const tc = {
   },
   emptySourceLabel: {
     color: 'var(--fg-3)',
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
     whiteSpace: 'nowrap'
@@ -8471,15 +8617,15 @@ const tc = {
   emptySourceSelect: {
     minWidth: 260,
     maxWidth: '62vw',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     padding: '8px 10px'
   },
   sampleGrid: {
     display: 'flex',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 'calc(8px * var(--app-density-scale))',
     maxWidth: 760
   },
   sampleChip: {
@@ -8488,11 +8634,11 @@ const tc = {
     border: '1px solid var(--line)',
     background: 'var(--bg-1)',
     color: 'var(--fg-1)',
-    fontSize: 12.5
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   },
   messageRow: {
     display: 'flex',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     alignItems: 'flex-start'
   },
   bubbleAvatar: {
@@ -8506,7 +8652,7 @@ const tc = {
     border: '1px solid var(--accent-soft)',
     color: 'var(--accent)',
     flexShrink: 0,
-    marginTop: 3
+    marginTop: 'calc(3px * var(--app-density-scale))'
   },
   bubble: {
     maxWidth: 'min(760px, 82%)',
@@ -8532,19 +8678,19 @@ const tc = {
   bubbleMeta: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
-    fontSize: 10.5,
+    gap: 'calc(6px * var(--app-density-scale))',
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
     color: 'inherit',
     opacity: 0.78,
-    marginBottom: 5
+    marginBottom: 'calc(5px * var(--app-density-scale))'
   },
   messageTime: {
     letterSpacing: 0,
     textTransform: 'none',
     color: 'var(--fg-3)',
-    fontSize: 10.5
+    fontSize: 'calc(10.5px * var(--app-font-scale))'
   },
   groundingDot: {
     width: 7,
@@ -8555,13 +8701,13 @@ const tc = {
   inlineGroundingBadge: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 5,
+    gap: 'calc(5px * var(--app-density-scale))',
     padding: '3px 7px',
     borderRadius: 999,
     border: '1px solid currentColor',
     background: 'var(--bg-0)',
     color: 'inherit',
-    fontSize: 10,
+    fontSize: 'calc(10px * var(--app-font-scale))',
     letterSpacing: '0.04em',
     textTransform: 'uppercase',
     cursor: 'pointer'
@@ -8573,7 +8719,7 @@ const tc = {
     border: '1px solid color-mix(in oklab, var(--err) 44%, var(--line))',
     background: 'color-mix(in oklab, var(--err) 9%, var(--bg-1))',
     color: 'var(--fg-1)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     lineHeight: 1.45
   },
   messageIconButton: {
@@ -8596,32 +8742,32 @@ const tc = {
     background: 'var(--accent-glow)'
   },
   markdown: {
-    fontSize: 13.5,
+    fontSize: 'calc(13.5px * var(--app-font-scale))',
     lineHeight: 1.65,
     color: 'inherit'
   },
   replyCard: {
     display: 'grid',
-    gap: 11
+    gap: 'calc(11px * var(--app-density-scale))'
   },
   replyTitle: {
-    fontSize: 15,
+    fontSize: 'calc(15px * var(--app-font-scale))',
     color: 'var(--fg-0)',
     fontWeight: 700,
     lineHeight: 1.35
   },
   replySection: {
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     borderRadius: 8,
     border: '1px solid var(--line)',
     background: 'var(--bg-0)'
   },
   replySectionTitle: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--accent)',
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
-    marginBottom: 7,
+    marginBottom: 'calc(7px * var(--app-density-scale))',
     fontWeight: 700
   },
   exampleCard: {
@@ -8630,14 +8776,14 @@ const tc = {
   },
   keyPointGrid: {
     display: 'grid',
-    gap: 7
+    gap: 'calc(7px * var(--app-density-scale))'
   },
   keyPoint: {
     display: 'flex',
-    gap: 9,
+    gap: 'calc(9px * var(--app-density-scale))',
     alignItems: 'flex-start',
     color: 'var(--fg-1)',
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     lineHeight: 1.5
   },
   keyPointNumber: {
@@ -8650,7 +8796,7 @@ const tc = {
     background: 'var(--accent-glow)',
     color: 'var(--accent)',
     flexShrink: 0,
-    fontSize: 10
+    fontSize: 'calc(10px * var(--app-font-scale))'
   },
   codeCard: {
     borderRadius: 8,
@@ -8662,72 +8808,72 @@ const tc = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     padding: '9px 12px',
     color: '#bfdbfe',
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     borderBottom: '1px solid rgba(191,219,254,0.18)'
   },
   codeCopyButton: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 5,
+    gap: 'calc(5px * var(--app-density-scale))',
     padding: '5px 8px',
     borderRadius: 7,
     border: '1px solid rgba(191,219,254,0.25)',
     background: 'rgba(15,23,42,0.72)',
     color: '#dbeafe',
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     cursor: 'pointer'
   },
   replyCode: {
     margin: 0,
-    padding: 14,
+    padding: 'calc(14px * var(--app-density-scale))',
     maxHeight: 320,
     overflow: 'auto',
     color: '#dbeafe',
     fontFamily: 'var(--font-mono)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.6
   },
   visualCard: {
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     borderRadius: 8,
     border: '1px dashed var(--accent-soft)',
     background: 'var(--bg-0)',
     color: 'var(--fg-1)',
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     lineHeight: 1.55
   },
   checkpointCard: {
     display: 'grid',
-    gap: 8,
-    padding: 12,
+    gap: 'calc(8px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
     borderRadius: 8,
     border: '1px solid var(--accent-soft)',
     background: 'var(--accent-glow)',
     color: 'var(--fg-1)',
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     lineHeight: 1.55
   },
   replyActions: {
     display: 'flex',
-    gap: 7,
+    gap: 'calc(7px * var(--app-density-scale))',
     flexWrap: 'wrap',
-    marginTop: 12,
-    paddingTop: 10,
+    marginTop: 'calc(12px * var(--app-density-scale))',
+    paddingTop: 'calc(10px * var(--app-density-scale))',
     borderTop: '1px solid var(--line)'
   },
   replyActionButton: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 5,
+    gap: 'calc(5px * var(--app-density-scale))',
     padding: '6px 9px',
     borderRadius: 999,
     border: '1px solid var(--line)',
     background: 'var(--bg-0)',
     color: 'var(--fg-1)',
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     cursor: 'pointer'
   },
   scrollFab: {
@@ -8736,7 +8882,7 @@ const tc = {
     bottom: 126,
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     padding: '8px 11px',
     borderRadius: 999,
     border: '1px solid var(--accent-soft)',
@@ -8744,11 +8890,11 @@ const tc = {
     color: 'var(--accent)',
     boxShadow: '0 14px 36px rgba(0,0,0,0.16)',
     zIndex: 4,
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   suggestions: {
     display: 'flex',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     overflowX: 'auto',
     padding: '8px clamp(18px, 4vw, 56px) 0'
   },
@@ -8758,11 +8904,11 @@ const tc = {
     background: 'var(--bg-2)',
     border: '1px solid var(--line)',
     color: 'var(--fg-1)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   actionChips: {
     display: 'flex',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     overflowX: 'auto',
     padding: '10px clamp(18px, 4vw, 56px) 0',
     borderTop: '1px solid var(--line)'
@@ -8770,49 +8916,49 @@ const tc = {
   actionChip: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     padding: '8px 11px',
     borderRadius: 999,
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
     color: 'var(--fg-1)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     whiteSpace: 'nowrap'
   },
   actionResult: {
-    marginTop: 12,
-    padding: 12,
+    marginTop: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
     borderRadius: 8,
     background: 'var(--bg-2)',
     border: '1px solid var(--line)'
   },
   actionResultTitle: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--accent)',
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
-    marginBottom: 5
+    marginBottom: 'calc(5px * var(--app-density-scale))'
   },
   actionResultText: {
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.5,
     color: 'var(--fg-1)'
   },
   quizOptions: {
     display: 'grid',
-    gap: 6,
-    marginTop: 9
+    gap: 'calc(6px * var(--app-density-scale))',
+    marginTop: 'calc(9px * var(--app-density-scale))'
   },
   quizOption: {
     display: 'flex',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     alignItems: 'flex-start',
     padding: '7px 8px',
     borderRadius: 7,
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
     color: 'var(--fg-1)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     textAlign: 'left'
   },
   quizOptionCorrect: {
@@ -8824,9 +8970,9 @@ const tc = {
     background: 'color-mix(in srgb, var(--err) 9%, var(--bg-1))'
   },
   quizDetails: {
-    marginTop: 9,
+    marginTop: 'calc(9px * var(--app-density-scale))',
     color: 'var(--fg-1)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.5
   },
   composerWrap: {
@@ -8836,8 +8982,8 @@ const tc = {
   composer: {
     display: 'flex',
     alignItems: 'flex-end',
-    gap: 8,
-    padding: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
+    padding: 'calc(8px * var(--app-density-scale))',
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-md)'
@@ -8866,7 +9012,7 @@ const tc = {
     outline: 'none',
     background: 'transparent',
     color: 'var(--fg-0)',
-    fontSize: 13.5,
+    fontSize: 'calc(13.5px * var(--app-font-scale))',
     lineHeight: 1.5,
     minHeight: 36,
     maxHeight: 140,
@@ -8876,14 +9022,14 @@ const tc = {
     minHeight: 36
   },
   error: {
-    marginBottom: 8,
+    marginBottom: 'calc(8px * var(--app-density-scale))',
     color: 'var(--err)',
-    fontSize: 12.5
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   },
   speechHint: {
-    marginBottom: 8,
+    marginBottom: 'calc(8px * var(--app-density-scale))',
     color: 'var(--warn)',
-    fontSize: 12.5
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   },
   rail: {
     borderLeft: '1px solid var(--line)',
@@ -8904,41 +9050,41 @@ const tc = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 10,
-    padding: 16,
+    gap: 'calc(10px * var(--app-density-scale))',
+    padding: 'calc(16px * var(--app-density-scale))',
     borderBottom: '1px solid var(--line)'
   },
   railTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 20,
+    fontSize: 'calc(20px * var(--app-font-scale))',
     color: 'var(--fg-0)'
   },
   railBody: {
     height: 'calc(100vh - 143px)',
     overflow: 'auto',
-    padding: 16
+    padding: 'calc(16px * var(--app-density-scale))'
   },
   badge: {
     padding: '4px 7px',
     borderRadius: 999,
     border: '1px solid var(--line)',
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     whiteSpace: 'nowrap'
   },
   emptyRail: {
     color: 'var(--fg-3)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.6,
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     border: '1px dashed var(--line)',
     borderRadius: 8
   },
   sourceCard: {
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    marginBottom: 12
+    marginBottom: 'calc(12px * var(--app-density-scale))'
   },
   sourceCardActive: {
     borderColor: 'var(--accent)',
@@ -8948,34 +9094,34 @@ const tc = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 5
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginBottom: 'calc(5px * var(--app-density-scale))'
   },
   sourceKicker: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--accent)',
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
-    marginBottom: 5
+    marginBottom: 'calc(5px * var(--app-density-scale))'
   },
   sourceScore: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     fontVariantNumeric: 'tabular-nums'
   },
   sourceTitle: {
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-0)',
-    marginBottom: 6,
+    marginBottom: 'calc(6px * var(--app-density-scale))',
     fontWeight: 600
   },
   sourceExcerpt: {
     color: 'var(--fg-2)',
-    fontSize: 12.2,
+    fontSize: 'calc(12.2px * var(--app-font-scale))',
     lineHeight: 1.55
   },
   scoreBar: {
-    marginTop: 10,
+    marginTop: 'calc(10px * var(--app-density-scale))',
     height: 4,
     background: 'var(--bg-2)',
     borderRadius: 999,
@@ -8987,17 +9133,17 @@ const tc = {
     background: 'var(--accent)'
   },
   sourceLink: {
-    marginTop: 10,
+    marginTop: 'calc(10px * var(--app-density-scale))',
     padding: 0,
     border: 0,
     background: 'transparent',
     color: 'var(--accent)',
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     cursor: 'pointer'
   },
   traceBox: {
-    marginTop: 14,
-    padding: 12,
+    marginTop: 'calc(14px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)'
@@ -9005,10 +9151,10 @@ const tc = {
   tracePair: {
     display: 'flex',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     padding: '6px 0',
     color: 'var(--fg-2)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   loadingLine: {
     height: 9,
@@ -9021,17 +9167,17 @@ const tc = {
   typingBubble: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 9,
+    gap: 'calc(9px * var(--app-density-scale))',
     width: 'auto'
   },
   typingLabel: {
     color: 'var(--fg-2)',
-    fontSize: 12.5
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   },
   typingDots: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 3
+    gap: 'calc(3px * var(--app-density-scale))'
   }
 };
 window.TutorChat = TutorChat;
@@ -9206,9 +9352,9 @@ const th = {
   hero: {
     display: 'grid',
     gridTemplateColumns: '76px 1fr',
-    gap: 18,
+    gap: 'calc(18px * var(--app-density-scale))',
     alignItems: 'center',
-    marginBottom: 24
+    marginBottom: 'calc(24px * var(--app-density-scale))'
   },
   avatar: {
     width: 76,
@@ -9222,16 +9368,16 @@ const th = {
     color: 'var(--accent)'
   },
   kicker: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     letterSpacing: '0.12em',
     color: 'var(--fg-3)',
     textTransform: 'uppercase',
-    marginBottom: 6
+    marginBottom: 'calc(6px * var(--app-density-scale))'
   },
   title: {
     margin: 0,
     fontFamily: 'var(--font-display)',
-    fontSize: 'clamp(34px, 5vw, 58px)',
+    fontSize: 'clamp(calc(34px * var(--app-font-scale)), 5vw, calc(58px * var(--app-font-scale)))',
     fontWeight: 300,
     letterSpacing: 0
   },
@@ -9239,30 +9385,30 @@ const th = {
     margin: '10px 0 0',
     maxWidth: 680,
     color: 'var(--fg-2)',
-    fontSize: 15,
+    fontSize: 'calc(15px * var(--app-font-scale))',
     lineHeight: 1.7
   },
   continueButton: {
-    marginTop: 16,
+    marginTop: 'calc(16px * var(--app-density-scale))',
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 7,
+    gap: 'calc(7px * var(--app-density-scale))',
     padding: '9px 12px',
     borderRadius: 999,
     border: '1px solid var(--accent-soft)',
     background: 'var(--accent-glow)',
     color: 'var(--accent)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     fontWeight: 600
   },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-    gap: 16
+    gap: 'calc(16px * var(--app-density-scale))'
   },
   card: {
     minHeight: 260,
-    padding: 22,
+    padding: 'calc(22px * var(--app-density-scale))',
     textAlign: 'left',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)',
@@ -9271,7 +9417,7 @@ const th = {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-start',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     transition: 'transform 180ms var(--ease-out), border-color 180ms var(--ease-out), background 180ms var(--ease-out)'
   },
   cardAccent: {
@@ -9296,12 +9442,12 @@ const th = {
   },
   cardTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 26,
+    fontSize: 'calc(26px * var(--app-font-scale))',
     color: 'var(--fg-0)'
   },
   cardDesc: {
     color: 'var(--fg-2)',
-    fontSize: 13.5,
+    fontSize: 'calc(13.5px * var(--app-font-scale))',
     lineHeight: 1.65,
     maxWidth: 420
   },
@@ -9309,13 +9455,13 @@ const th = {
     marginTop: 'auto',
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     color: 'var(--accent)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     fontWeight: 600
   },
   recentPanel: {
-    marginTop: 18,
+    marginTop: 'calc(18px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)',
@@ -9325,13 +9471,13 @@ const th = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12,
-    padding: 16,
+    gap: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(16px * var(--app-density-scale))',
     borderBottom: '1px solid var(--line)'
   },
   recentTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 22,
+    fontSize: 'calc(22px * var(--app-font-scale))',
     color: 'var(--fg-0)'
   },
   recentList: {
@@ -9341,7 +9487,7 @@ const th = {
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 1fr) auto auto',
     alignItems: 'center',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     padding: '13px 16px',
     border: 0,
     borderBottom: '1px solid var(--line)',
@@ -9354,28 +9500,28 @@ const th = {
   },
   recentItemTitle: {
     color: 'var(--fg-0)',
-    fontSize: 13.5,
+    fontSize: 'calc(13.5px * var(--app-font-scale))',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis'
   },
   recentItemMeta: {
     color: 'var(--fg-3)',
-    fontSize: 12,
-    marginTop: 3,
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    marginTop: 'calc(3px * var(--app-density-scale))',
     whiteSpace: 'nowrap',
     overflow: 'hidden',
     textOverflow: 'ellipsis'
   },
   recentTime: {
     color: 'var(--fg-3)',
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     whiteSpace: 'nowrap'
   },
   recentEmpty: {
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     color: 'var(--fg-3)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.6
   }
 };
@@ -9440,6 +9586,15 @@ const TopicVisual = ({
     code: code,
     compact: compact
   });
+  if (resolved === 'no_visual') return React.createElement(NoVisualPreview, {
+    compact: compact
+  });
+  if (['concept_cards', 'classification_table', 'comparison_table', 'source_page_reference', 'source_slide_reference'].includes(resolved)) {
+    return React.createElement(MiniMindmap, {
+      nodes: nodes.length ? nodes : ['Source concept', 'Supporting detail', 'Review question'],
+      compact: compact
+    });
+  }
   if (['concept_map', 'learning_objectives', 'summary_path', 'process_flow', 'comparison_contrast'].includes(resolved)) {
     return React.createElement(MiniMindmap, {
       nodes: nodes.length ? nodes : ['Start', 'Prerequisites', 'Core idea', 'Example', 'Practice'],
@@ -9468,6 +9623,12 @@ const TOPIC_VISUALS = {
   code_walkthrough: ['code', 'code_visual', 'line_highlight', 'code_example'],
   process_flow: ['flow', 'step_by_step', 'operation_flow', 'algorithm_flow'],
   comparison_contrast: ['comparison', 'compare', 'before_after', 'mistake_correction'],
+  concept_cards: ['cards', 'study_cards', 'source_cards'],
+  classification_table: ['table', 'classification', 'source_table'],
+  comparison_table: ['compare_table', 'comparison_table'],
+  source_page_reference: ['source_page', 'page_reference', 'source_page_image', 'source_diagram'],
+  source_slide_reference: ['source_slide', 'slide_reference', 'source_slide_image'],
+  no_visual: ['none', 'no_visual', 'text_only', 'source_text'],
   learning_objectives: ['objectives'],
   summary_path: ['summary', 'recap', 'summary_visual'],
   concept_map: ['mindmap', 'mind_map', 'learning_map']
@@ -9484,6 +9645,68 @@ function resolveTopicVisual(value, context = '') {
   if (key === 'stack_queue') return /\bqueue|fifo|enqueue|dequeue|front|rear\b/i.test(context) ? 'queue_operation' : 'stack_operation';
   return TOPIC_VISUAL_ALIASES[key] || '';
 }
+function wrapSvgLabel(value, maxChars = 16, maxLines = 2) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return [''];
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  const pushCurrent = () => {
+    if (current) {
+      lines.push(current);
+      current = '';
+    }
+  };
+  for (const word of words) {
+    if (word.length > maxChars) {
+      pushCurrent();
+      const clipped = word.slice(0, Math.max(3, maxChars - 1));
+      lines.push(lines.length === maxLines - 1 ? `${clipped}...` : clipped);
+      if (lines.length >= maxLines) break;
+      continue;
+    }
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars) {
+      pushCurrent();
+      current = word;
+    } else {
+      current = next;
+    }
+    if (lines.length >= maxLines) break;
+  }
+  if (lines.length < maxLines) pushCurrent();
+  if (lines.length > maxLines) lines.length = maxLines;
+  if (lines.length === maxLines && words.join(' ').length > lines.join(' ').length) {
+    lines[maxLines - 1] = `${lines[maxLines - 1].slice(0, Math.max(3, maxChars - 3)).trim()}...`;
+  }
+  return lines.length ? lines : [''];
+}
+const SvgTextLines = ({
+  x,
+  y,
+  text,
+  width = 120,
+  fontSize = 13,
+  lineHeight = 15,
+  fontWeight = 700,
+  fill = '#111827',
+  anchor = 'middle',
+  maxLines = 2
+}) => {
+  const maxChars = Math.max(6, Math.floor(width / Math.max(6, fontSize * 0.58)));
+  const lines = wrapSvgLabel(text, maxChars, maxLines);
+  const startY = y - (lines.length - 1) * lineHeight / 2;
+  return React.createElement("text", {
+    textAnchor: anchor,
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    fill: fill
+  }, lines.map((line, index) => React.createElement("tspan", {
+    key: `${line}-${index}`,
+    x: x,
+    y: startY + index * lineHeight
+  }, line)));
+};
 function nodeColor(n) {
   if (n.type === 'weak' || n.status === 'weak') return 'var(--err)';
   if (n.status === 'mastered') return 'var(--ok)';
@@ -9977,7 +10200,7 @@ const LearningMap = ({
       }, React.createElement("span", {
         style: {
           ...lm.rootLabel,
-          fontSize: compact ? 14 : 18
+          fontSize: `calc(${compact ? 14 : 18}px * var(--app-font-scale))`
         }
       }, n.label), recIdx && React.createElement("span", {
         style: lm.recBadge
@@ -10020,7 +10243,7 @@ const LearningMap = ({
       }), React.createElement("span", {
         style: {
           ...lm.branchTitle,
-          fontSize: compact ? 11.5 : 13
+          fontSize: `calc(${compact ? 11.5 : 13}px * var(--app-font-scale))`
         }
       }, n.label), recIdx && React.createElement("span", {
         style: lm.recBadge
@@ -10114,14 +10337,16 @@ const MiniMindmap = ({
   fill: "#dbeafe",
   stroke: "#2563eb",
   strokeWidth: "2"
-}), React.createElement("text", {
-  x: "320",
-  y: "136",
-  textAnchor: "middle",
-  fontSize: "15",
-  fontWeight: "700",
+}), React.createElement(SvgTextLines, {
+  x: 320,
+  y: 132,
+  width: 104,
+  text: nodes[0] || 'Topic',
+  fontSize: 14,
+  lineHeight: 15,
+  maxLines: 3,
   fill: "#0f172a"
-}, nodes[0] || 'Topic'), nodes.slice(1, 7).map((n, i) => {
+}), nodes.slice(1, 7).map((n, i) => {
   const pts = [[70, 30], [455, 30], [70, 180], [455, 180], [240, 20], [270, 200]];
   const p = pts[i];
   return React.createElement("g", {
@@ -10142,14 +10367,15 @@ const MiniMindmap = ({
     fill: ['#dcfce7', '#fef3c7', '#fce7f3'][i % 3],
     stroke: "#94a3b8",
     strokeWidth: "1.5"
-  }), React.createElement("text", {
+  }), React.createElement(SvgTextLines, {
     x: p[0] + 58,
-    y: p[1] + 34,
-    textAnchor: "middle",
-    fontSize: "13",
-    fontWeight: "700",
-    fill: "#111827"
-  }, n));
+    y: p[1] + 30,
+    width: 100,
+    text: n,
+    fontSize: 12,
+    lineHeight: 13,
+    maxLines: 3
+  }));
 })));
 const DispatchVisual = ({
   compact
@@ -10251,14 +10477,17 @@ const EncapsulationVisual = ({
     stroke: "#2563eb",
     strokeWidth: "3",
     strokeDasharray: "8 7"
-  }), React.createElement("text", {
-    x: "365",
-    y: "66",
-    textAnchor: "middle",
-    fontSize: "17",
-    fontWeight: "800",
-    fill: "#0f172a"
-  }, className), React.createElement(TextBox, {
+  }), React.createElement(SvgTextLines, {
+    x: 365,
+    y: 62,
+    width: 180,
+    text: className,
+    fontSize: 16,
+    lineHeight: 17,
+    fontWeight: 800,
+    fill: "#0f172a",
+    maxLines: 2
+  }), React.createElement(TextBox, {
     x: 294,
     y: 88,
     w: 142,
@@ -10317,14 +10546,16 @@ const EncapsulationVisual = ({
     x2: 294,
     y2: 176,
     label: "allowed"
-  }), React.createElement("text", {
-    x: "365",
-    y: "250",
-    textAnchor: "middle",
-    fontSize: "14",
-    fontWeight: "700",
-    fill: "#475569"
-  }, "private state, public API")));
+  }), React.createElement(SvgTextLines, {
+    x: 365,
+    y: 250,
+    width: 220,
+    text: "private state, public API",
+    fontSize: 14,
+    lineHeight: 15,
+    fill: "#475569",
+    maxLines: 2
+  })));
 };
 const UmlVisual = ({
   nodes,
@@ -10754,6 +10985,39 @@ const CodeVisual = ({
     maxHeight: compact ? 180 : 260
   }
 }, code && code.content || 'Code preview appears here.');
+const NoVisualPreview = ({
+  compact
+}) => React.createElement("div", {
+  style: {
+    ...tv.box,
+    minHeight: compact ? 120 : 180,
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: 'center'
+  }
+}, React.createElement("div", {
+  style: {
+    color: '#2563eb',
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    fontWeight: 800,
+    letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    marginBottom: 'calc(8px * var(--app-density-scale))'
+  }
+}, "No diagram needed"), React.createElement("div", {
+  style: {
+    color: '#111827',
+    fontSize: 'calc(16px * var(--app-font-scale))',
+    fontWeight: 700
+  }
+}, "Source-led explanation"), React.createElement("p", {
+  style: {
+    color: '#64748b',
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    lineHeight: 1.45,
+    margin: '8px 0 0'
+  }
+}, "This scene is clearer as narration, source text, or review cards."));
 const UnsupportedTopicVisual = ({
   visualType,
   compact
@@ -10767,22 +11031,22 @@ const UnsupportedTopicVisual = ({
 }, React.createElement("div", {
   style: {
     color: '#991b1b',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     fontWeight: 800,
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
-    marginBottom: 8
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   }
 }, "Unsupported visual"), React.createElement("div", {
   style: {
     color: '#7f1d1d',
-    fontSize: 18,
+    fontSize: 'calc(18px * var(--app-font-scale))',
     fontWeight: 800
   }
 }, String(visualType || 'missing')), React.createElement("p", {
   style: {
     color: '#7f1d1d',
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     lineHeight: 1.45
   }
 }, "Regenerate this scene with a supported concrete CS visual."));
@@ -10803,14 +11067,15 @@ const TextBox = ({
   fill: fill,
   stroke: stroke,
   strokeWidth: "2"
-}), React.createElement("text", {
+}), React.createElement(SvgTextLines, {
   x: x + w / 2,
-  y: y + h / 2 + 5,
-  textAnchor: "middle",
-  fontSize: "15",
-  fontWeight: "700",
-  fill: "#111827"
-}, text));
+  y: y + h / 2 + 4,
+  width: Math.max(24, w - 16),
+  text: text,
+  fontSize: Math.min(15, Math.max(11, h / 3.5)),
+  lineHeight: 14,
+  maxLines: Math.max(1, Math.floor((h - 10) / 14))
+}));
 const ClassBox = ({
   x,
   y,
@@ -10825,26 +11090,33 @@ const ClassBox = ({
   fill: "#dbeafe",
   stroke: "#2563eb",
   strokeWidth: "2"
-}), React.createElement("text", {
+}), React.createElement(SvgTextLines, {
   x: x + 80,
-  y: y + 24,
-  textAnchor: "middle",
-  fontSize: "16",
-  fontWeight: "700"
-}, name), React.createElement("line", {
+  y: y + 21,
+  width: 138,
+  text: name,
+  fontSize: 14,
+  lineHeight: 14,
+  maxLines: 2
+}), React.createElement("line", {
   x1: x,
   y1: y + 34,
   x2: x + 160,
   y2: y + 34,
   stroke: "#2563eb",
   strokeWidth: "2"
-}), rows.map((r, i) => React.createElement("text", {
+}), rows.map((r, i) => React.createElement(SvgTextLines, {
   key: r,
   x: x + 14,
-  y: y + 56 + i * 20,
-  fontSize: "13",
-  fill: "#111827"
-}, r)));
+  y: y + 54 + i * 20,
+  width: 132,
+  text: r,
+  fontSize: 12,
+  lineHeight: 12,
+  fontWeight: 600,
+  anchor: "start",
+  maxLines: 1
+})));
 const Node = ({
   x,
   y,
@@ -10865,19 +11137,23 @@ const Node = ({
   y2: y + 86,
   stroke: "#16a34a",
   strokeWidth: "2"
-}), React.createElement("text", {
+}), React.createElement(SvgTextLines, {
   x: x + 34,
-  y: y + 49,
-  textAnchor: "middle",
-  fontSize: "18",
-  fontWeight: "700"
-}, value), React.createElement("text", {
+  y: y + 47,
+  width: 54,
+  text: value,
+  fontSize: 16,
+  lineHeight: 16,
+  maxLines: 2
+}), React.createElement(SvgTextLines, {
   x: x + 92,
-  y: y + 49,
-  textAnchor: "middle",
-  fontSize: "13",
-  fontWeight: "700"
-}, "next"));
+  y: y + 47,
+  width: 38,
+  text: "next",
+  fontSize: 12,
+  lineHeight: 12,
+  maxLines: 1
+}));
 const Arrow = ({
   x1,
   y1,
@@ -10902,21 +11178,23 @@ const Arrow = ({
   stroke: "#ef4444",
   strokeWidth: "3",
   markerEnd: "url(#arrowHead)"
-}), label && React.createElement("text", {
+}), label && React.createElement(SvgTextLines, {
   x: (x1 + x2) / 2,
   y: (y1 + y2) / 2 - 8,
-  textAnchor: "middle",
-  fontSize: "12",
-  fontWeight: "700",
+  width: 72,
+  text: label,
+  fontSize: 11,
+  lineHeight: 11,
+  maxLines: 2,
   fill: "#991b1b"
-}, label));
+}));
 const tv = {
   box: {
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-0)',
     overflow: 'hidden',
-    padding: 10
+    padding: 'calc(10px * var(--app-density-scale))'
   },
   svg: {
     width: '100%',
@@ -10929,10 +11207,10 @@ const tv = {
     color: '#dbeafe',
     border: '1px solid #38bdf8',
     borderRadius: 8,
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     overflow: 'auto',
     fontFamily: 'var(--font-mono)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.55
   }
 };
@@ -10941,41 +11219,41 @@ const lm = {
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)',
-    padding: 18,
+    padding: 'calc(18px * var(--app-density-scale))',
     overflow: 'visible'
   },
   compactShell: {
-    padding: 12
+    padding: 'calc(12px * var(--app-density-scale))'
   },
   head: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 14,
+    gap: 'calc(14px * var(--app-density-scale))',
     flexWrap: 'wrap'
   },
   compactHead: {
-    gap: 8
+    gap: 'calc(8px * var(--app-density-scale))'
   },
   eyebrow: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--accent)',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    marginBottom: 6
+    marginBottom: 'calc(6px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
     fontWeight: 300,
-    fontSize: 26,
+    fontSize: 'calc(26px * var(--app-font-scale))',
     margin: 0
   },
   compactTitle: {
-    fontSize: 19,
+    fontSize: 'calc(19px * var(--app-font-scale))',
     lineHeight: 1.12
   },
   startBadge: {
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     background: 'var(--accent-glow)',
     border: '1px solid var(--accent-soft)',
@@ -10984,7 +11262,7 @@ const lm = {
     whiteSpace: 'nowrap'
   },
   compactStartBadge: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     padding: '5px 8px',
     maxWidth: '100%',
     overflow: 'hidden',
@@ -10993,11 +11271,11 @@ const lm = {
   path: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 12
+    gap: 'calc(6px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   pathChip: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     border: '1px solid var(--line)',
     borderRadius: 999,
@@ -11005,11 +11283,11 @@ const lm = {
     background: 'var(--bg-2)'
   },
   compactPath: {
-    gap: 4,
-    marginTop: 8
+    gap: 'calc(4px * var(--app-density-scale))',
+    marginTop: 'calc(8px * var(--app-density-scale))'
   },
   compactPathChip: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     padding: '3px 6px',
     maxWidth: '100%',
     overflow: 'hidden',
@@ -11018,16 +11296,16 @@ const lm = {
   },
   canvas: {
     position: 'relative',
-    marginTop: 10,
+    marginTop: 'calc(10px * var(--app-density-scale))',
     overflowY: 'auto',
     overflowX: 'hidden',
     WebkitOverflowScrolling: 'touch',
     scrollbarWidth: 'thin'
   },
   compactCanvas: {
-    marginTop: 8,
+    marginTop: 'calc(8px * var(--app-density-scale))',
     borderTop: '1px solid var(--line-soft)',
-    paddingTop: 6
+    paddingTop: 'calc(6px * var(--app-density-scale))'
   },
   canvasInner: {
     position: 'relative',
@@ -11055,9 +11333,9 @@ const lm = {
     willChange: 'left, top'
   },
   emptyMsg: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     color: 'var(--fg-3)',
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     textAlign: 'center'
   },
   dot: {
@@ -11077,7 +11355,7 @@ const lm = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     padding: '0 16px',
     position: 'relative',
     boxShadow: '0 10px 24px #00000022',
@@ -11110,7 +11388,7 @@ const lm = {
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
-    gap: 4,
+    gap: 'calc(4px * var(--app-density-scale))',
     textAlign: 'left',
     transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease'
   },
@@ -11122,7 +11400,7 @@ const lm = {
   branchTop: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6
+    gap: 'calc(6px * var(--app-density-scale))'
   },
   branchTitle: {
     fontWeight: 700,
@@ -11138,11 +11416,11 @@ const lm = {
   branchBottom: {
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 1
+    gap: 'calc(6px * var(--app-density-scale))',
+    marginTop: 'calc(1px * var(--app-density-scale))'
   },
   statusChip: {
-    fontSize: 10,
+    fontSize: 'calc(10px * var(--app-font-scale))',
     textTransform: 'capitalize',
     fontWeight: 700,
     whiteSpace: 'nowrap'
@@ -11160,15 +11438,15 @@ const lm = {
     transition: 'width 0.3s ease'
   },
   masteryLabel: {
-    fontSize: 10,
+    fontSize: 'calc(10px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     fontVariantNumeric: 'tabular-nums'
   },
   chevron: {
-    fontSize: 0,
+    fontSize: 'calc(0px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     cursor: 'pointer',
-    padding: 3,
+    padding: 'calc(3px * var(--app-density-scale))',
     borderRadius: 5,
     border: '1px solid var(--line)',
     background: 'var(--bg-2)',
@@ -11179,7 +11457,7 @@ const lm = {
     justifyContent: 'center'
   },
   recBadge: {
-    fontSize: 9,
+    fontSize: 'calc(9px * var(--app-font-scale))',
     fontWeight: 700,
     color: 'var(--bg-0)',
     background: 'var(--accent)',
@@ -11196,7 +11474,7 @@ const lm = {
     position: 'absolute',
     top: -10,
     right: 6,
-    fontSize: 9,
+    fontSize: 'calc(9px * var(--app-font-scale))',
     fontWeight: 800,
     color: 'var(--accent)',
     background: 'var(--bg-0)',
@@ -11218,12 +11496,12 @@ const lm = {
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     textAlign: 'left',
     transition: 'border-color 180ms ease, box-shadow 180ms ease'
   },
   leafTitle: {
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     fontWeight: 600,
     lineHeight: 1.2,
@@ -11242,7 +11520,8 @@ window.NoesisVisualRegistry = {
 window.NoesisLearningMapInternals = {
   layoutTree,
   edgePath,
-  normalizeMapId
+  normalizeMapId,
+  wrapSvgLabel
 };
 window.TopicVisual = TopicVisual;
 window.LearningMap = LearningMap;
@@ -11273,19 +11552,18 @@ const summarizeStatus = (record, quality) => {
   return 'Needs review';
 };
 const evidenceLabel = (item, index) => {
-  const parts = [];
-  if (item && item.chunkId != null) parts.push(`Chunk ${item.chunkId}`);
+  const parts = [`Evidence ${index + 1}`];
   if (item && item.slideNumber != null) parts.push(`Slide ${item.slideNumber}`);
   if (item && item.sourcePage != null) parts.push(`Page ${item.sourcePage}`);
   if (item && item.chapterTitle) parts.push(item.chapterTitle);
-  return parts.length ? parts.join(' / ') : `Evidence ${index + 1}`;
+  return parts.join(' / ');
 };
 const evidenceScoreLabel = item => {
   const score = Number(item && item.score);
   return Number.isFinite(score) ? ` / score ${score.toFixed(2)}` : '';
 };
 const visualWarningKeys = new Set(['unsupported_visual_type', 'unrelated_diagram', 'vague_visual', 'decorative_only_visual', 'narration_visual_mismatch', 'missing_visual_elements', 'generic_fallback_not_allowed', 'concept_map_nodes_not_source_backed', 'visual_type_payload_mismatch', 'generic_visual_template', 'abstract_chip_only_visual', 'missing_concrete_visual_payload', 'missing_visual_purpose', 'missing_visual_grounding']);
-const normalizeWarning = (warning = '') => String(warning).split(':').pop() || String(warning);
+const normalizeWarning = (warning = '') => String(warning).split(':').pop().replace(/_/g, ' ') || String(warning);
 const isVisualWarning = (warning = '') => {
   const text = String(warning || '');
   return [...visualWarningKeys].some(key => text.includes(key));
@@ -11309,7 +11587,7 @@ const visualStatusLabel = (validation, warnings) => {
   return 'Visual needs review';
 };
 const visualStatusStyle = (validation, warnings) => validation && validation.passed === true && !warnings.length ? sr.statusGood : sr.statusNeedsReview;
-const isCriticalStoryboardWarning = (code = '') => /^domain:missing_required_visual:/.test(String(code || '')) || /storyboard:too_few_scenes|domain:oop_missing_class_object_visual|domain:data_structure_missing_operation_visual|domain:algorithm_missing_flow_or_complexity_visual/.test(String(code || ''));
+const isCriticalStoryboardWarning = (code = '') => /^domain:missing_required_visual:/.test(String(code || '')) || /storyboard:too_few_scenes|domain:oop_missing_class_object_visual|domain:data_structure_missing_operation_visual|domain:algorithm_missing_flow_or_complexity_visual|domain:missing_code_scene|domain:unrelated_cs_injection/.test(String(code || ''));
 const targetVisualTypeFromWarning = (code = '') => {
   const match = String(code || '').match(/missing_required_visual:([a-z0-9_]+)/i);
   return match ? match[1] : '';
@@ -11426,7 +11704,7 @@ const ApprovalPanel = ({
       label: code.replace(/_/g, ' ')
     };
     const sceneId = detail.sceneId || sceneIdFromWarning(code);
-    const canFix = severity === 'critical' && /missing_required_visual|missing_concrete_visual_payload|generic_visual_template|visual_type_payload_mismatch/.test(code);
+    const canFix = (severity === 'critical' || isVisualWarning(code)) && /missing_required_visual|missing_concrete_visual_payload|generic_visual_template|visual_type_payload_mismatch|generic_fallback_not_allowed|missing_visual_elements|vague_visual|narration_visual_mismatch/.test(code);
     const targetVisualType = targetVisualTypeFromWarning(code);
     return React.createElement("div", {
       key: code,
@@ -11445,7 +11723,7 @@ const ApprovalPanel = ({
     }, detail.fix)), canFix && React.createElement("button", {
       className: "btn btn-ghost",
       style: {
-        fontSize: 11,
+        fontSize: 'calc(11px * var(--app-font-scale))',
         whiteSpace: 'nowrap'
       },
       disabled: !!busy,
@@ -11478,7 +11756,7 @@ const ApprovalPanel = ({
   }, critical.length ? 'Fix critical issues before approval.' : 'You can approve anyway or fix these warnings.')), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 8
+      gap: 'calc(8px * var(--app-density-scale))'
     }
   }, React.createElement("button", {
     className: "btn btn-ghost",
@@ -11710,7 +11988,7 @@ const StoryboardReview = ({
     style: sr.title
   }, board.topic || storyboard.topic), React.createElement("p", {
     style: sr.sub
-  }, "Check the teaching goal, narration, code, and visual for each scene before spending time on MP4 rendering.")), React.createElement("div", {
+  }, "Check the learning point, narration, code, and visual for each scene before spending time on MP4 rendering.")), React.createElement("div", {
     style: sr.statusBox
   }, React.createElement("span", {
     className: "chip chip-accent"
@@ -11752,7 +12030,7 @@ const StoryboardReview = ({
     style: {
       width: '100%',
       borderRadius: 8,
-      marginTop: 10
+      marginTop: 'calc(10px * var(--app-density-scale))'
     }
   }))));
 };
@@ -11775,7 +12053,7 @@ const SceneCard = ({
   const validation = scene.visualValidation || visualResult || {};
   const warn = [...new Set([...(scene.qualityWarnings || []), ...(validation.warnings || [])])];
   const split = splitWarnings(warn);
-  const keyIdea = scene.learningPoint || scene.studentFacingGoal || scene.teachingGoal || scene.title || '';
+  const keyIdea = scene.learningPoint || scene.studentFacingGoal || scene.title || '';
   const title = scene.sceneTitle || scene.title || `Scene ${index + 1}`;
   const visualType = scene.visualType || scene.visualTemplate || 'missing';
   const visualData = scene.visualElements || scene.visualData || {};
@@ -11787,6 +12065,7 @@ const SceneCard = ({
   const code = scene.code || (scene.codeSnippet ? {
     content: scene.codeSnippet
   } : null);
+  const hasVisualPreview = visualType && !['none', 'no_visual'].includes(String(visualType).toLowerCase()) && (nodes.length || edges.length || operations.length || code && code.content);
   const evidence = safeArray(scene.sourceEvidence);
   const enrichment = scene.enrichment || {
     used: false
@@ -11817,7 +12096,7 @@ const SceneCard = ({
   }, visualStatusLabel(validation, split.visual)), split.visual.length > 0 && onFix && React.createElement("button", {
     className: "btn btn-ghost",
     style: {
-      fontSize: 11
+      fontSize: 'calc(11px * var(--app-font-scale))'
     },
     disabled: busy,
     onClick: () => onFix(scene.id, 'fix_auto')
@@ -11873,7 +12152,7 @@ const SceneCard = ({
     style: sr.visualWarnings
   }, React.createElement(Icon.Target, {
     size: 13
-  }), React.createElement("span", null, split.visual.map(normalizeWarning).join(', ')))), React.createElement(TopicVisual, {
+  }), React.createElement("span", null, split.visual.map(normalizeWarning).join(', ')))), hasVisualPreview && React.createElement(TopicVisual, {
     template: visualType,
     data: visualData,
     code: code,
@@ -11884,7 +12163,7 @@ const SceneCard = ({
     style: sr.narration
   }, scene.narration), split.content.length > 0 && React.createElement("div", {
     style: sr.sceneWarn
-  }, "Content warnings: ", split.content.join(', ')), React.createElement("div", {
+  }, "Content warnings: ", split.content.map(normalizeWarning).join(', ')), React.createElement("div", {
     style: sr.metaToggle
   }, React.createElement("button", {
     className: "btn btn-bare",
@@ -11929,19 +12208,15 @@ const SceneCard = ({
     style: sr.metaValue
   }, truncate(enrichment.content, 240))) : React.createElement("div", {
     style: sr.metaValue
-  }, "No enrichment used for this scene."), scene.teachingGoal && React.createElement(React.Fragment, null, React.createElement("div", {
-    style: sr.metaLabel
-  }, "Teaching goal"), React.createElement("div", {
-    style: sr.metaValue
-  }, scene.teachingGoal)), scene.qualityWarnings && scene.qualityWarnings.length > 0 && React.createElement(React.Fragment, null, React.createElement("div", {
+  }, "No enrichment used for this scene."), scene.qualityWarnings && scene.qualityWarnings.length > 0 && React.createElement(React.Fragment, null, React.createElement("div", {
     style: sr.metaLabel
   }, "Quality warnings"), React.createElement("div", {
     style: sr.metaValue
-  }, split.content.length ? split.content.join(', ') : 'No content warnings.'), React.createElement("div", {
+  }, split.content.length ? split.content.map(normalizeWarning).join(', ') : 'No content warnings.'), React.createElement("div", {
     style: sr.metaLabel
   }, "Visual warnings"), React.createElement("div", {
     style: sr.metaValue
-  }, split.visual.length ? split.visual.join(', ') : 'No visual warnings.')))), open && React.createElement("div", {
+  }, split.visual.length ? split.visual.map(normalizeWarning).join(', ') : 'No visual warnings.')))), open && React.createElement("div", {
     style: sr.edit
   }, React.createElement("label", {
     style: sr.label
@@ -11994,7 +12269,7 @@ const EmptyStoryboard = ({
   className: "btn btn-accent",
   onClick: () => onNav && onNav('materials'),
   style: {
-    marginTop: 12
+    marginTop: 'calc(12px * var(--app-density-scale))'
   }
 }, "Open materials"));
 const sr = {
@@ -12007,7 +12282,7 @@ const sr = {
     color: 'var(--fg-2)'
   },
   page: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     maxWidth: 1380,
     margin: '0 auto'
   },
@@ -12015,24 +12290,24 @@ const sr = {
     display: 'flex',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    gap: 20,
-    marginBottom: 18
+    gap: 'calc(20px * var(--app-density-scale))',
+    marginBottom: 'calc(18px * var(--app-density-scale))'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--accent)',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    marginBottom: 8
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 42,
+    fontSize: 'calc(42px * var(--app-font-scale))',
     fontWeight: 300,
     margin: 0
   },
   sub: {
-    fontSize: 13.5,
+    fontSize: 'calc(13.5px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     maxWidth: 650,
     lineHeight: 1.6
@@ -12040,66 +12315,68 @@ const sr = {
   statusBox: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     color: 'var(--fg-2)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   notice: {
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     background: 'var(--bg-1)',
     borderRadius: 8,
     color: 'var(--fg-2)',
-    marginBottom: 12
+    marginBottom: 'calc(12px * var(--app-density-scale))'
   },
   warn: {
     display: 'flex',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     alignItems: 'center',
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     border: '1px solid var(--warn)',
     color: 'var(--warn)',
     borderRadius: 8,
-    marginBottom: 12
+    marginBottom: 'calc(12px * var(--app-density-scale))'
   },
   summary: {
     border: '1px solid var(--line)',
     background: 'var(--bg-1)',
     borderRadius: 8,
-    padding: 16,
-    marginBottom: 16
+    padding: 'calc(16px * var(--app-density-scale))',
+    marginBottom: 'calc(16px * var(--app-density-scale))'
   },
   summaryHead: {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 14,
-    marginBottom: 14
+    gap: 'calc(14px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   summaryTitleRow: {
     display: 'flex',
     alignItems: 'flex-start',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     minWidth: 0
   },
   summaryEyebrow: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
-    marginBottom: 4
+    marginBottom: 'calc(4px * var(--app-density-scale))'
   },
   summaryTitle: {
     margin: 0,
-    fontSize: 20,
+    fontSize: 'calc(20px * var(--app-font-scale))',
     fontWeight: 500,
-    color: 'var(--fg-0)'
+    color: 'var(--fg-0)',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   statusPill: {
     flex: '0 0 auto',
     borderRadius: 999,
     padding: '5px 9px',
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     fontWeight: 700,
     textTransform: 'uppercase',
     letterSpacing: '0.06em'
@@ -12117,8 +12394,8 @@ const sr = {
   summaryGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
-    gap: 10,
-    marginBottom: 14
+    gap: 'calc(10px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   summaryItem: {
     minWidth: 0,
@@ -12128,55 +12405,59 @@ const sr = {
     background: 'var(--bg-2)'
   },
   summaryLabel: {
-    fontSize: 10,
+    fontSize: 'calc(10px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     textTransform: 'uppercase',
     letterSpacing: '0.09em',
-    marginBottom: 5
+    marginBottom: 'calc(5px * var(--app-density-scale))'
   },
   summaryValue: {
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-0)',
     lineHeight: 1.45,
-    overflowWrap: 'anywhere'
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   conceptsRow: {
     display: 'flex',
     alignItems: 'flex-start',
-    gap: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
     borderTop: '1px solid var(--line)',
-    paddingTop: 12
+    paddingTop: 'calc(12px * var(--app-density-scale))'
   },
   concepts: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     flex: 1
   },
   conceptChip: {
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     border: '1px solid var(--line)',
     background: 'var(--bg-0)',
     borderRadius: 999,
-    padding: '5px 8px'
+    padding: '5px 8px',
+    maxWidth: '100%',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   muted: {
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-3)'
   },
   enrichmentNote: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-    fontSize: 12.5,
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))',
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     lineHeight: 1.5
   },
   visualSummary: {
-    marginTop: 12,
-    padding: 10,
+    marginTop: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(10px * var(--app-density-scale))',
     borderRadius: 8,
     border: '1px solid var(--line)',
     background: 'var(--bg-2)'
@@ -12184,115 +12465,124 @@ const sr = {
   visualCoverageRows: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     color: 'var(--fg-2)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     lineHeight: 1.45
   },
   warnText: {
     color: 'var(--warn)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     fontWeight: 700
   },
   okText: {
     color: 'var(--ok)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     fontWeight: 700
   },
   summaryWarnings: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-    padding: 10,
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(10px * var(--app-density-scale))',
     borderRadius: 8,
     border: '1px solid var(--warn)',
     color: 'var(--warn)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     lineHeight: 1.45
   },
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: 14
+    gap: 'calc(14px * var(--app-density-scale))'
   },
   scene: {
     border: '1px solid var(--line)',
     background: 'var(--bg-1)',
     borderRadius: 8,
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     display: 'flex',
     flexDirection: 'column',
-    gap: 12
+    gap: 'calc(12px * var(--app-density-scale))'
   },
   sceneHead: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12
+    gap: 'calc(12px * var(--app-density-scale))'
   },
   sceneNo: {
     color: 'var(--accent)',
-    fontSize: 11
+    fontSize: 'calc(11px * var(--app-font-scale))'
   },
   sceneTitle: {
-    fontSize: 17,
+    fontSize: 'calc(17px * var(--app-font-scale))',
     margin: 0,
-    color: 'var(--fg-0)'
+    color: 'var(--fg-0)',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   sceneMeta: {
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
-    marginTop: 3
+    marginTop: 'calc(3px * var(--app-density-scale))'
   },
   keyIdea: {
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     lineHeight: 1.5,
-    padding: 10,
+    padding: 'calc(10px * var(--app-density-scale))',
     background: 'var(--bg-2)',
     borderRadius: 8,
-    border: '1px solid var(--line)'
+    border: '1px solid var(--line)',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   visualPanel: {
     border: '1px solid var(--line)',
     background: 'var(--bg-2)',
     borderRadius: 8,
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     display: 'flex',
     flexDirection: 'column',
-    gap: 9
+    gap: 'calc(9px * var(--app-density-scale))'
   },
   visualPanelHead: {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 12
+    gap: 'calc(12px * var(--app-density-scale))'
   },
   visualTypeName: {
     color: 'var(--fg-0)',
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     fontWeight: 700,
-    overflowWrap: 'anywhere'
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   visualPurpose: {
     color: 'var(--fg-1)',
-    fontSize: 12.5,
-    lineHeight: 1.5
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    lineHeight: 1.5,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   visualReason: {
     color: 'var(--fg-3)',
-    fontSize: 11.5,
-    lineHeight: 1.45
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
+    lineHeight: 1.45,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   visualFacts: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: 10
+    gap: 'calc(10px * var(--app-density-scale))'
   },
   visualElementGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-    gap: 8
+    gap: 'calc(8px * var(--app-density-scale))'
   },
   visualList: {
     minWidth: 0
@@ -12300,88 +12590,94 @@ const sr = {
   visualChips: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: 5
+    gap: 'calc(5px * var(--app-density-scale))'
   },
   visualChip: {
     border: '1px solid var(--line)',
     background: 'var(--bg-0)',
     color: 'var(--fg-2)',
-    borderRadius: 999,
+    borderRadius: 8,
     padding: '4px 7px',
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     maxWidth: '100%',
-    overflowWrap: 'anywhere'
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    lineHeight: 1.25
   },
   visualWarnings: {
     display: 'flex',
     alignItems: 'center',
-    gap: 7,
-    padding: 8,
+    gap: 'calc(7px * var(--app-density-scale))',
+    padding: 'calc(8px * var(--app-density-scale))',
     borderRadius: 8,
     border: '1px solid var(--warn)',
     color: 'var(--warn)',
     background: 'color-mix(in srgb, var(--warn) 8%, transparent)',
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     lineHeight: 1.45
   },
   metaToggle: {
-    marginTop: 2
+    marginTop: 'calc(2px * var(--app-density-scale))'
   },
   metaBtn: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
+    gap: 'calc(4px * var(--app-density-scale))',
     padding: 0
   },
   metaContent: {
     padding: '8px 10px',
     background: 'var(--bg-2)',
     borderRadius: 6,
-    marginTop: 6,
+    marginTop: 'calc(6px * var(--app-density-scale))',
     border: '1px dashed var(--line)'
   },
   metaCols: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: 10
+    gap: 'calc(10px * var(--app-density-scale))'
   },
   metaLabel: {
-    fontSize: 10,
+    fontSize: 'calc(10px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
-    marginBottom: 2,
-    marginTop: 6
+    marginBottom: 'calc(2px * var(--app-density-scale))',
+    marginTop: 'calc(6px * var(--app-density-scale))'
   },
   metaValue: {
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--fg-2)',
-    lineHeight: 1.5
+    lineHeight: 1.5,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   evidenceItem: {
     border: '1px solid var(--line)',
     background: 'var(--bg-0)',
     borderRadius: 6,
     padding: '7px 8px',
-    marginTop: 6
+    marginTop: 'calc(6px * var(--app-density-scale))'
   },
   evidenceHeader: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--accent)',
     textTransform: 'uppercase',
     letterSpacing: '0.08em',
-    marginBottom: 3
+    marginBottom: 'calc(3px * var(--app-density-scale))'
   },
   narration: {
     color: 'var(--fg-2)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.65,
-    margin: 0
+    margin: 0,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   sceneWarn: {
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--warn)'
   },
   code: {
@@ -12390,17 +12686,17 @@ const sr = {
     background: '#0f172a',
     color: '#dbeafe',
     borderRadius: 8,
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     fontFamily: 'var(--font-mono)',
-    fontSize: 11.5
+    fontSize: 'calc(11.5px * var(--app-font-scale))'
   },
   edit: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 8
+    gap: 'calc(8px * var(--app-density-scale))'
   },
   label: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     textTransform: 'uppercase',
     letterSpacing: '0.1em'
@@ -12410,21 +12706,21 @@ const sr = {
     resize: 'vertical',
     border: '1px solid var(--line)',
     borderRadius: 8,
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     background: 'var(--bg-0)',
     color: 'var(--fg-0)',
     font: 'inherit',
     lineHeight: 1.55
   },
   videoBox: {
-    marginTop: 18,
+    marginTop: 'calc(18px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     background: 'var(--bg-1)',
     borderRadius: 8,
-    padding: 16
+    padding: 'calc(16px * var(--app-density-scale))'
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     fontWeight: 600
   },
@@ -12432,73 +12728,73 @@ const sr = {
     border: '1px dashed var(--line)',
     background: 'var(--bg-2)',
     borderRadius: 8,
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'center',
-    gap: 4
+    gap: 'calc(4px * var(--app-density-scale))'
   },
   approvalPanel: {
     border: '1px solid var(--warn)',
     background: 'color-mix(in srgb, var(--warn) 5%, var(--bg-1))',
     borderRadius: 8,
-    padding: 16,
-    marginBottom: 16
+    padding: 'calc(16px * var(--app-density-scale))',
+    marginBottom: 'calc(16px * var(--app-density-scale))'
   },
   approvalHead: {
     display: 'flex',
     alignItems: 'flex-start',
-    gap: 12,
-    marginBottom: 12
+    gap: 'calc(12px * var(--app-density-scale))',
+    marginBottom: 'calc(12px * var(--app-density-scale))'
   },
   approvalTitle: {
-    fontSize: 15,
+    fontSize: 'calc(15px * var(--app-font-scale))',
     fontWeight: 600,
     color: 'var(--fg-0)'
   },
   approvalSub: {
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-2)',
-    marginTop: 2
+    marginTop: 'calc(2px * var(--app-density-scale))'
   },
   approvalSection: {
-    marginTop: 10,
+    marginTop: 'calc(10px * var(--app-density-scale))',
     padding: '10px 0 0',
     borderTop: '1px solid var(--line)'
   },
   approvalSectionTitle: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     textTransform: 'uppercase',
     letterSpacing: '0.1em',
     fontWeight: 700,
-    marginBottom: 8
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   },
   approvalItem: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     padding: '8px 10px',
     borderRadius: 6,
     border: '1px solid var(--line)',
     background: 'var(--bg-0)',
-    marginBottom: 6
+    marginBottom: 'calc(6px * var(--app-density-scale))'
   },
   approvalCode: {
-    fontSize: 10,
+    fontSize: 'calc(10px * var(--app-font-scale))',
     color: 'var(--accent)',
     textTransform: 'uppercase',
     letterSpacing: '0.08em'
   },
   approvalLabel: {
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     lineHeight: 1.4,
-    marginTop: 2
+    marginTop: 'calc(2px * var(--app-density-scale))'
   },
   approvalFix: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
-    marginTop: 2
+    marginTop: 'calc(2px * var(--app-density-scale))'
   }
 };
 window.StoryboardReview = StoryboardReview;
@@ -12615,8 +12911,8 @@ const StudyPlan = ({
   }, "Noesis combines your onboarding profile, quiz misses, concept mastery, and uploaded material into a daily plan."), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 8,
-      marginTop: 18,
+      gap: 'calc(8px * var(--app-density-scale))',
+      marginTop: 'calc(18px * var(--app-density-scale))',
       flexWrap: 'wrap'
     }
   }, planJson && React.createElement("span", {
@@ -12631,20 +12927,20 @@ const StudyPlan = ({
     style: sp.actionCard
   }, React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-3)',
-      marginBottom: 8
+      marginBottom: 'calc(8px * var(--app-density-scale))'
     }
   }, "Next action"), React.createElement("div", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 24,
+      fontSize: 'calc(24px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       lineHeight: 1.15
     }
   }, today ? today.focusTopic : 'Generate your first plan'), React.createElement("p", {
     style: {
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-2)',
       lineHeight: 1.5
     }
@@ -12663,7 +12959,7 @@ const StudyPlan = ({
   }, React.createElement("div", {
     className: "card",
     style: {
-      padding: 22,
+      padding: 'calc(22px * var(--app-density-scale))',
       gridColumn: 'span 2'
     }
   }, React.createElement("div", {
@@ -12674,7 +12970,7 @@ const StudyPlan = ({
     className: "btn btn-bare",
     onClick: load,
     style: {
-      fontSize: 11.5
+      fontSize: 'calc(11.5px * var(--app-font-scale))'
     }
   }, "Refresh ", React.createElement(Icon.ArrowRight, {
     size: 11
@@ -12687,7 +12983,7 @@ const StudyPlan = ({
   }, "Learning map renderer is not loaded.")), React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: sp.cardHead
@@ -12702,8 +12998,8 @@ const StudyPlan = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 8,
-      marginTop: 14
+      gap: 'calc(8px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, weakTopics.length ? weakTopics.slice(0, 7).map(t => React.createElement("button", {
     key: t,
@@ -12721,8 +13017,8 @@ const StudyPlan = ({
   }, "No weak topics yet. Take a quiz to calibrate the map.")))), React.createElement("section", {
     className: "card",
     style: {
-      padding: 22,
-      marginBottom: 40
+      padding: 'calc(22px * var(--app-density-scale))',
+      marginBottom: 'calc(40px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: sp.cardHead
@@ -12730,7 +13026,7 @@ const StudyPlan = ({
     style: sp.cardTitle
   }, "Daily plan"), React.createElement("span", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, days.length, " day preview")), !days.length ? React.createElement("div", {
@@ -12747,7 +13043,7 @@ const StudyPlan = ({
     style: sp.dayNumber
   }, "Day ", day.day), React.createElement("span", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, day.estimatedMinutes, " min")), React.createElement("div", {
@@ -12756,8 +13052,8 @@ const StudyPlan = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 7,
-      marginTop: 12
+      gap: 'calc(7px * var(--app-density-scale))',
+      marginTop: 'calc(12px * var(--app-density-scale))'
     }
   }, (taskByDay[day.day] || []).map(row => {
     const t = row.task || {};
@@ -12782,12 +13078,12 @@ const StudyPlan = ({
     }, t.title), React.createElement("span", {
       className: "chip chip-accent",
       style: {
-        fontSize: 10
+        fontSize: 'calc(10px * var(--app-font-scale))'
       }
     }, "+20 XP"), React.createElement("span", {
       className: "mono",
       style: {
-        fontSize: 10,
+        fontSize: 'calc(10px * var(--app-font-scale))',
         color: 'var(--fg-3)'
       }
     }, t.estimatedMinutes || 0, "m"));
@@ -12814,7 +13110,7 @@ function taskIcon(type, Icon) {
 }
 const sp = {
   page: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     maxWidth: 1440,
     margin: '0 auto'
   },
@@ -12824,39 +13120,39 @@ const sp = {
     border: '1px solid var(--line)',
     background: 'var(--bg-1)',
     color: 'var(--fg-2)',
-    fontSize: 12.5,
-    marginBottom: 14
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   hero: {
     display: 'grid',
     gridTemplateColumns: '1fr 320px',
-    gap: 18,
+    gap: 'calc(18px * var(--app-density-scale))',
     alignItems: 'stretch',
-    marginBottom: 14
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--accent)',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    marginBottom: 10
+    marginBottom: 'calc(10px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 44,
+    fontSize: 'calc(44px * var(--app-font-scale))',
     fontWeight: 300,
     letterSpacing: '-0.02em',
     margin: 0,
     lineHeight: 1.08
   },
   sub: {
-    fontSize: 14,
+    fontSize: 'calc(14px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     maxWidth: 680,
     lineHeight: 1.6
   },
   actionCard: {
-    padding: 20,
+    padding: 'calc(20px * var(--app-density-scale))',
     borderRadius: 'var(--r-lg)',
     background: 'var(--bg-1)',
     border: '1px solid var(--line)'
@@ -12864,38 +13160,38 @@ const sp = {
   grid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: 14,
-    marginBottom: 14
+    gap: 'calc(14px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   cardHead: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 12
+    gap: 'calc(12px * var(--app-density-scale))'
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     fontWeight: 500
   },
   empty: {
-    padding: 18,
+    padding: 'calc(18px * var(--app-density-scale))',
     color: 'var(--fg-3)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     textAlign: 'center'
   },
   topicRow: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     width: '100%',
     padding: '9px 10px',
     borderRadius: 'var(--r-sm)',
     background: 'var(--bg-2)',
     border: '1px solid var(--line)',
     color: 'var(--fg-1)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     cursor: 'pointer',
     textAlign: 'left'
   },
@@ -12907,11 +13203,11 @@ const sp = {
   days: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: 12,
-    marginTop: 14
+    gap: 'calc(12px * var(--app-density-scale))',
+    marginTop: 'calc(14px * var(--app-density-scale))'
   },
   dayCard: {
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)',
     border: '1px solid var(--line)'
@@ -12923,27 +13219,27 @@ const sp = {
   },
   dayNumber: {
     color: 'var(--accent)',
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     letterSpacing: '0.08em',
     textTransform: 'uppercase'
   },
   focus: {
     fontFamily: 'var(--font-display)',
-    fontSize: 22,
+    fontSize: 'calc(22px * var(--app-font-scale))',
     color: 'var(--fg-0)',
-    marginTop: 8
+    marginTop: 'calc(8px * var(--app-density-scale))'
   },
   task: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     width: '100%',
     padding: '8px 9px',
     borderRadius: 'var(--r-sm)',
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
     color: 'var(--fg-1)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   taskDone: {
     opacity: 0.62,
@@ -12963,10 +13259,10 @@ const sp = {
   },
   success: {
     borderTop: '1px solid var(--line-soft)',
-    marginTop: 12,
-    paddingTop: 10,
+    marginTop: 'calc(12px * var(--app-density-scale))',
+    paddingTop: 'calc(10px * var(--app-density-scale))',
     color: 'var(--fg-3)',
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     lineHeight: 1.45
   }
 };
@@ -13241,10 +13537,9 @@ const Callouts = ({
     style: lr.callout
   }, React.createElement("strong", null, c.type || 'note', ":"), " ", c.text, c.sourceChunkIds && c.sourceChunkIds.length > 0 && React.createElement("span", {
     style: lr.sourceBadges
-  }, c.sourceChunkIds.slice(0, 4).map(id => React.createElement("span", {
-    key: id,
+  }, React.createElement("span", {
     style: lr.sourceBadge
-  }, "source ", id))))));
+  }, "source-backed")))));
 };
 const Diagram = ({
   diagram,
@@ -13340,14 +13635,17 @@ const MindmapDiagram = ({
     rx: "20",
     fill: "var(--accent-glow)",
     stroke: "var(--accent-soft)"
-  }), React.createElement("text", {
-    x: "250",
-    y: "151",
-    textAnchor: "middle",
+  }), React.createElement(SvgTextLines, {
+    x: 250,
+    y: 148,
+    width: 160,
+    text: center,
     fill: "var(--fg-0)",
-    fontSize: "15",
-    fontWeight: "700"
-  }, center), React.createElement("text", {
+    fontSize: 14,
+    lineHeight: 15,
+    fontWeight: 700,
+    maxLines: 3
+  }), React.createElement("text", {
     x: "250",
     y: "171",
     textAnchor: "middle",
@@ -13364,19 +13662,77 @@ const MindmapDiagram = ({
     rx: "16",
     fill: "var(--bg-2)",
     stroke: "var(--line)"
-  }), React.createElement("text", {
+  }), React.createElement(SvgTextLines, {
     x: points[i][0],
-    y: points[i][1] + 4,
-    textAnchor: "middle",
+    y: points[i][1],
+    width: 120,
+    text: node,
     fill: "var(--fg-1)",
-    fontSize: "12",
-    fontWeight: "600"
-  }, shortSvgLabel(node, 18))))));
+    fontSize: 11.5,
+    lineHeight: 12,
+    fontWeight: 600,
+    maxLines: 3
+  })))));
 };
-function shortSvgLabel(value, max) {
-  const text = String(value || '').trim();
-  return text.length > max ? text.slice(0, max).trim() : text;
+function wrapSvgLabel(value, maxChars = 16, maxLines = 2) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return [''];
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  const push = () => {
+    if (current) {
+      lines.push(current);
+      current = '';
+    }
+  };
+  for (const word of words) {
+    if (word.length > maxChars) {
+      push();
+      lines.push(`${word.slice(0, Math.max(3, maxChars - 3))}...`);
+    } else {
+      const next = current ? `${current} ${word}` : word;
+      if (next.length > maxChars) {
+        push();
+        current = word;
+      } else {
+        current = next;
+      }
+    }
+    if (lines.length >= maxLines) break;
+  }
+  if (lines.length < maxLines) push();
+  if (lines.length > maxLines) lines.length = maxLines;
+  if (lines.length === maxLines && text.length > lines.join(' ').length) {
+    lines[maxLines - 1] = `${lines[maxLines - 1].slice(0, Math.max(3, maxChars - 3)).trim()}...`;
+  }
+  return lines.length ? lines : [''];
 }
+const SvgTextLines = ({
+  x,
+  y,
+  text,
+  width = 120,
+  fontSize = 12,
+  lineHeight = 13,
+  fontWeight = 700,
+  fill = 'var(--fg-0)',
+  maxLines = 2
+}) => {
+  const maxChars = Math.max(6, Math.floor(width / Math.max(6, fontSize * 0.58)));
+  const lines = wrapSvgLabel(text, maxChars, maxLines);
+  const startY = y - (lines.length - 1) * lineHeight / 2;
+  return React.createElement("text", {
+    textAnchor: "middle",
+    fill: fill,
+    fontSize: fontSize,
+    fontWeight: fontWeight
+  }, lines.map((line, index) => React.createElement("tspan", {
+    key: `${line}-${index}`,
+    x: x,
+    y: startY + index * lineHeight
+  }, line)));
+};
 const UmlDiagram = ({
   diagram
 }) => {
@@ -13500,14 +13856,17 @@ const TreeDiagram = ({
       fill: i === 0 ? 'var(--accent-glow)' : 'var(--bg-2)',
       stroke: i === 0 ? 'var(--accent-soft)' : 'var(--line)',
       strokeWidth: "2"
-    }), React.createElement("text", {
+    }), React.createElement(SvgTextLines, {
       x: p.x,
-      y: p.y + 5,
-      textAnchor: "middle",
+      y: p.y + 1,
+      width: 52,
+      text: n,
       fill: "var(--fg-0)",
-      fontSize: "13",
-      fontWeight: "700"
-    }, shortSvgLabel(n, 8)));
+      fontSize: 11,
+      lineHeight: 11,
+      fontWeight: 700,
+      maxLines: 3
+    }));
   })));
 };
 function treePoint(i) {
@@ -13647,74 +14006,76 @@ const lr = {
   hero: {
     padding: '10px 0 24px',
     borderBottom: '1px solid var(--line-soft)',
-    marginBottom: 22
+    marginBottom: 'calc(22px * var(--app-density-scale))'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
     color: 'var(--accent)',
-    marginBottom: 8
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 38,
+    fontSize: 'calc(38px * var(--app-font-scale))',
     fontWeight: 300,
     lineHeight: 1.12,
     margin: 0,
     color: 'var(--fg-0)'
   },
   meta: {
-    marginTop: 10,
-    fontSize: 12,
+    marginTop: 'calc(10px * var(--app-density-scale))',
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-3)'
   },
   objectives: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
-    gap: 10,
-    marginBottom: 22
+    gap: 'calc(10px * var(--app-density-scale))',
+    marginBottom: 'calc(22px * var(--app-density-scale))'
   },
   objectiveCard: {
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    padding: 14
+    padding: 'calc(14px * var(--app-density-scale))'
   },
   cardNumber: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--accent)',
     fontFamily: 'var(--font-mono)',
-    marginBottom: 8
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   },
   cardText: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     lineHeight: 1.45,
-    color: 'var(--fg-0)'
+    color: 'var(--fg-0)',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   startHere: {
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     borderRadius: 8,
     background: 'var(--accent-glow)',
     border: '1px solid var(--accent-soft)',
-    marginBottom: 18
+    marginBottom: 'calc(18px * var(--app-density-scale))'
   },
   startTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 24,
+    fontSize: 'calc(24px * var(--app-font-scale))',
     color: 'var(--fg-0)',
-    marginBottom: 10,
+    marginBottom: 'calc(10px * var(--app-density-scale))',
     lineHeight: 1.2
   },
   hook: {
-    padding: 20,
+    padding: 'calc(20px * var(--app-density-scale))',
     borderRadius: 8,
     background: 'linear-gradient(135deg, color-mix(in oklab, var(--accent) 12%, transparent), var(--bg-1))',
     border: '1px solid var(--line)',
-    marginBottom: 18
+    marginBottom: 'calc(18px * var(--app-density-scale))'
   },
   hookText: {
-    fontSize: 17,
+    fontSize: 'calc(17px * var(--app-font-scale))',
     lineHeight: 1.65,
     margin: 0,
     color: 'var(--fg-0)'
@@ -13724,21 +14085,21 @@ const lr = {
     borderBottom: '1px solid var(--line-soft)'
   },
   sectionLabel: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
     color: 'var(--fg-3)',
-    marginBottom: 7
+    marginBottom: 'calc(7px * var(--app-density-scale))'
   },
   h2: {
-    fontSize: 24,
+    fontSize: 'calc(24px * var(--app-font-scale))',
     fontWeight: 500,
     lineHeight: 1.22,
     margin: '0 0 10px',
     color: 'var(--fg-0)'
   },
   p: {
-    fontSize: 14.5,
+    fontSize: 'calc(14.5px * var(--app-font-scale))',
     lineHeight: 1.75,
     margin: '0 0 14px',
     color: 'var(--fg-1)'
@@ -13746,14 +14107,17 @@ const lr = {
   cardGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-    gap: 10,
-    marginTop: 12
+    gap: 'calc(10px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   infoCard: {
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    padding: 13
+    padding: 'calc(13px * var(--app-density-scale))',
+    minWidth: 0,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   warnCard: {
     borderColor: 'color-mix(in oklab, var(--warn) 36%, var(--line))',
@@ -13763,52 +14127,56 @@ const lr = {
     borderColor: 'color-mix(in oklab, var(--accent) 32%, var(--line))'
   },
   infoTitle: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-0)',
     fontWeight: 600,
-    marginBottom: 5
+    marginBottom: 'calc(5px * var(--app-density-scale))',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   infoText: {
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     color: 'var(--fg-2)',
-    lineHeight: 1.5
+    lineHeight: 1.5,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   pre: {
     background: '#0f172a',
     color: '#e2e8f0',
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     borderRadius: 8,
     overflow: 'auto',
     lineHeight: 1.55,
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     border: '1px solid var(--line)'
   },
   walkGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-    gap: 10,
-    marginTop: 12
+    gap: 'calc(10px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   walkCard: {
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    padding: 12,
-    fontSize: 12.5,
+    padding: 'calc(12px * var(--app-density-scale))',
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.5
   },
   lineRange: {
     fontFamily: 'var(--font-mono)',
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--accent)',
-    marginBottom: 6
+    marginBottom: 'calc(6px * var(--app-density-scale))'
   },
   diagram: {
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    padding: 18,
-    marginTop: 12,
+    padding: 'calc(18px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))',
     overflow: 'auto'
   },
   svg: {
@@ -13819,24 +14187,25 @@ const lr = {
   },
   umlChildren: {
     display: 'flex',
-    gap: 14,
+    gap: 'calc(14px * var(--app-density-scale))',
     justifyContent: 'center',
     flexWrap: 'wrap',
-    marginTop: 14
+    marginTop: 'calc(14px * var(--app-density-scale))'
   },
   umlChildWrap: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: 8
+    gap: 'calc(8px * var(--app-density-scale))'
   },
   umlArrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     fontFamily: 'var(--font-mono)'
   },
   classBox: {
     minWidth: 170,
+    maxWidth: 260,
     border: '1px solid var(--accent-soft)',
     borderRadius: 8,
     background: 'var(--bg-0)',
@@ -13847,25 +14216,29 @@ const lr = {
     textAlign: 'center',
     fontWeight: 700,
     color: 'var(--fg-0)',
-    borderBottom: '1px solid var(--line-soft)'
+    borderBottom: '1px solid var(--line-soft)',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   classPart: {
     padding: '8px 11px',
     borderTop: '1px solid var(--line-soft)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     fontFamily: 'var(--font-mono)',
-    color: 'var(--fg-2)'
+    color: 'var(--fg-2)',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   listDiagram: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     flexWrap: 'wrap',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    padding: 16,
-    marginTop: 12
+    padding: 'calc(16px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   headNode: {
     padding: '8px 12px',
@@ -13874,7 +14247,9 @@ const lr = {
     border: '1px solid var(--accent-soft)',
     color: 'var(--fg-0)',
     fontFamily: 'var(--font-mono)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   listNode: {
     padding: '8px 12px',
@@ -13883,7 +14258,10 @@ const lr = {
     border: '1px solid var(--line)',
     color: 'var(--fg-0)',
     fontFamily: 'var(--font-mono)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    maxWidth: 170,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   nodeData: {
     display: 'inline-block',
@@ -13901,23 +14279,23 @@ const lr = {
     border: '1px solid color-mix(in oklab, var(--warn) 35%, var(--line))',
     color: 'var(--fg-0)',
     fontFamily: 'var(--font-mono)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   arrow: {
     color: 'var(--fg-3)',
     fontFamily: 'var(--font-mono)',
-    fontSize: 13
+    fontSize: 'calc(13px * var(--app-font-scale))'
   },
   stack: {
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
-    gap: 6,
+    gap: 'calc(6px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    padding: 16,
-    marginTop: 12
+    padding: 'calc(16px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   stackTop: {
     width: 220,
@@ -13926,7 +14304,9 @@ const lr = {
     background: 'var(--accent-glow)',
     border: '1px solid var(--accent-soft)',
     textAlign: 'center',
-    fontFamily: 'var(--font-mono)'
+    fontFamily: 'var(--font-mono)',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   stackItem: {
     width: 220,
@@ -13935,18 +14315,20 @@ const lr = {
     background: 'var(--bg-2)',
     border: '1px solid var(--line)',
     textAlign: 'center',
-    fontFamily: 'var(--font-mono)'
+    fontFamily: 'var(--font-mono)',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   queue: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     flexWrap: 'wrap',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    padding: 16,
-    marginTop: 12
+    padding: 'calc(16px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   queueLabel: {
     padding: '8px 10px',
@@ -13954,11 +14336,12 @@ const lr = {
     background: 'var(--accent-glow)',
     border: '1px solid var(--accent-soft)',
     color: 'var(--fg-0)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     fontFamily: 'var(--font-mono)'
   },
   queueItem: {
     minWidth: 54,
+    maxWidth: 160,
     textAlign: 'center',
     padding: '9px 12px',
     borderRadius: 8,
@@ -13966,18 +14349,20 @@ const lr = {
     border: '1px solid var(--line)',
     color: 'var(--fg-0)',
     fontFamily: 'var(--font-mono)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   flow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     flexWrap: 'wrap',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    padding: 16,
-    marginTop: 12
+    padding: 'calc(16px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   flowRoot: {
     padding: '8px 12px',
@@ -13985,7 +14370,10 @@ const lr = {
     background: 'var(--accent-glow)',
     border: '1px solid var(--accent-soft)',
     color: 'var(--fg-0)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    maxWidth: 180,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   flowNode: {
     padding: '8px 12px',
@@ -13993,29 +14381,32 @@ const lr = {
     background: 'var(--bg-2)',
     border: '1px solid var(--line)',
     color: 'var(--fg-0)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    maxWidth: 180,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   caption: {
     margin: '8px 0 0',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-3)'
   },
   callouts: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 8,
-    marginTop: 12
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   callout: {
     borderLeft: '3px solid var(--accent)',
     background: 'var(--bg-1)',
     padding: '9px 11px',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.5
   },
   sourceBadges: {
     display: 'inline-flex',
-    gap: 5,
+    gap: 'calc(5px * var(--app-density-scale))',
     flexWrap: 'wrap',
     marginLeft: 8,
     verticalAlign: 'middle'
@@ -14024,7 +14415,7 @@ const lr = {
     border: '1px solid var(--line)',
     borderRadius: 999,
     padding: '1px 6px',
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     background: 'var(--bg-0)'
   },
@@ -14032,51 +14423,51 @@ const lr = {
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)',
-    padding: 14,
-    marginTop: 12
+    padding: 'calc(14px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   quizQ: {
-    fontSize: 14,
+    fontSize: 'calc(14px * var(--app-font-scale))',
     color: 'var(--fg-0)',
     fontWeight: 600,
-    marginBottom: 10
+    marginBottom: 'calc(10px * var(--app-density-scale))'
   },
   option: {
     padding: '8px 10px',
     background: 'var(--bg-2)',
     border: '1px solid var(--line-soft)',
     borderRadius: 6,
-    marginTop: 6,
-    fontSize: 12.5
+    marginTop: 'calc(6px * var(--app-density-scale))',
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   },
   answer: {
-    marginTop: 10,
+    marginTop: 'calc(10px * var(--app-density-scale))',
     color: 'var(--ok)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     fontWeight: 600
   },
   explain: {
-    marginTop: 4,
+    marginTop: 'calc(4px * var(--app-density-scale))',
     color: 'var(--fg-2)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     lineHeight: 1.45
   },
   chips: {
     display: 'flex',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     flexWrap: 'wrap'
   },
   chip: {
     border: '1px solid var(--line)',
     borderRadius: 999,
     padding: '5px 9px',
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     background: 'var(--bg-1)'
   },
   markdown: {
     minHeight: 420,
-    fontSize: 14.5,
+    fontSize: 'calc(14.5px * var(--app-font-scale))',
     lineHeight: 1.75,
     color: 'var(--fg-1)'
   }
@@ -14171,7 +14562,7 @@ const Notes = ({
       padding: '0 8px',
       display: 'flex',
       flexDirection: 'column',
-      gap: 1
+      gap: 'calc(1px * var(--app-density-scale))'
     }
   }, folders.length === 0 && React.createElement("div", {
     style: ns.emptySide
@@ -14191,7 +14582,7 @@ const Notes = ({
     }
   }, f.name), React.createElement("span", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     },
     className: "mono"
@@ -14204,21 +14595,21 @@ const Notes = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       fontWeight: 500
     }
   }, folders[0] && folders[0].name || 'All notes'), React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)',
-      marginTop: 2
+      marginTop: 'calc(2px * var(--app-density-scale))'
     }
   }, notes.length, " note", notes.length === 1 ? '' : 's', " sorted by recent"), status && React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)',
-      marginTop: 6
+      marginTop: 'calc(6px * var(--app-density-scale))'
     }
   }, status)), React.createElement("div", null, notes.length === 0 && React.createElement("div", {
     style: ns.emptyList
@@ -14232,16 +14623,16 @@ const Notes = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       fontWeight: 500
     }
   }, n.t), React.createElement("div", {
     style: {
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       display: 'flex',
-      gap: 8
+      gap: 'calc(8px * var(--app-density-scale))'
     }
   }, React.createElement("span", null, n.updated), React.createElement("span", null, n.tag)), React.createElement("div", {
     style: ns.preview
@@ -14355,9 +14746,9 @@ const NotesEditor = ({
     try {
       const r = await window.NoesisAPI.flashcards.generate({
         material_id: materialId,
-        count: 4
+        count: 6
       });
-      setStatus(`Created ${r.created} cards.`);
+      if (r.reused) setStatus('Using existing flashcards for this material.');else if (r.fallback) setStatus(r.message || 'Created fallback flashcards from source material.');else setStatus(`Created ${r.created} cards.`);
     } catch (e) {
       setStatus('Failed: ' + (e.message || 'error'));
     } finally {
@@ -14499,8 +14890,8 @@ const NotesEditor = ({
   }, "Generated and manual notes appear here with real backend persistence.")) : React.createElement(React.Fragment, null, React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 8,
-      marginBottom: 18,
+      gap: 'calc(8px * var(--app-density-scale))',
+      marginBottom: 'calc(18px * var(--app-density-scale))',
       alignItems: 'center',
       flexWrap: 'wrap'
     }
@@ -14512,15 +14903,15 @@ const NotesEditor = ({
   }, "#", t)), React.createElement("span", {
     style: {
       marginLeft: 'auto',
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, current.updated ? `Updated ${current.updated}` : '')), React.createElement("div", {
     style: {
       display: 'flex',
       alignItems: 'center',
-      marginBottom: 14,
-      gap: 8
+      marginBottom: 'calc(14px * var(--app-density-scale))',
+      gap: 'calc(8px * var(--app-density-scale))'
     }
   }, mode === 'edit' ? React.createElement("input", {
     className: "input",
@@ -14534,7 +14925,7 @@ const NotesEditor = ({
   }) : React.createElement("h1", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 32,
+      fontSize: 'calc(32px * var(--app-font-scale))',
       fontWeight: 300,
       margin: 0,
       flex: 1,
@@ -14544,7 +14935,7 @@ const NotesEditor = ({
     className: "btn btn-ghost",
     onClick: () => setMode(mode === 'read' ? 'edit' : 'read'),
     style: {
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       padding: '6px 12px',
       whiteSpace: 'nowrap'
     }
@@ -14585,7 +14976,7 @@ const NotesEditor = ({
       if (nextStyle !== 'none') checkNoteAudio(nextStyle);
     },
     style: {
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       width: '100%'
     }
   }, React.createElement("option", {
@@ -14616,8 +15007,8 @@ const NotesEditor = ({
   }, audioError || audioStatus)), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 10,
-      marginTop: 14,
+      gap: 'calc(10px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))',
       alignItems: 'center'
     }
   }, mode === 'edit' && React.createElement("button", {
@@ -14640,10 +15031,10 @@ const NotesEditor = ({
     }
   }, React.createElement(Icon.Cards, {
     size: 12
-  }), " ", status === 'Generating flashcards...' ? 'Generating flashcards...' : 'Generate 4 cards')), status && React.createElement("div", {
+  }), " ", status === 'Generating flashcards...' ? 'Generating flashcards...' : 'Generate 6 cards')), status && React.createElement("div", {
     style: {
-      marginTop: 12,
-      fontSize: 11,
+      marginTop: 'calc(12px * var(--app-density-scale))',
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, status))));
@@ -14670,42 +15061,42 @@ const ns = {
   },
   sideHead: {
     padding: '16px 14px 8px',
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em',
     textTransform: 'uppercase'
   },
   emptySide: {
     padding: '8px 10px',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-3)'
   },
   emptyList: {
-    padding: 18,
-    fontSize: 12,
+    padding: 'calc(18px * var(--app-density-scale))',
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-3)'
   },
   folderButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     padding: '8px 10px',
     borderRadius: 'var(--r-sm)',
-    fontSize: 12.5
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   },
   noteButton: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 4,
+    gap: 'calc(4px * var(--app-density-scale))',
     padding: '14px 18px',
     borderBottom: '1px solid var(--line-soft)',
     textAlign: 'left',
     width: '100%'
   },
   preview: {
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--fg-2)',
-    marginTop: 4,
+    marginTop: 'calc(4px * var(--app-density-scale))',
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap'
@@ -14720,55 +15111,55 @@ const ns = {
   },
   emptyTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 30,
+    fontSize: 'calc(30px * var(--app-font-scale))',
     fontWeight: 300,
     margin: '16px 0 8px'
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     margin: 0
   },
   titleInput: {
     width: '100%',
     fontFamily: 'var(--font-display)',
-    fontSize: 32,
-    marginBottom: 14
+    fontSize: 'calc(32px * var(--app-font-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   bodyInput: {
     width: '100%',
     minHeight: 420,
     resize: 'vertical',
-    fontSize: 14.5,
+    fontSize: 'calc(14.5px * var(--app-font-scale))',
     lineHeight: 1.7
   },
   mdBody: {
     minHeight: 420,
-    fontSize: 14.5,
+    fontSize: 'calc(14.5px * var(--app-font-scale))',
     lineHeight: 1.75,
     color: 'var(--fg-1)'
   },
   audioPanel: {
-    marginTop: 18,
-    padding: 12,
+    marginTop: 'calc(18px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
     borderRadius: 8,
     border: '1px solid var(--line)',
     background: 'var(--bg-1)',
     display: 'flex',
     alignItems: 'flex-end',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     flexWrap: 'wrap'
   },
   audioLabel: {
-    fontSize: 10.5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
-    marginBottom: 6
+    marginBottom: 'calc(6px * var(--app-density-scale))'
   },
   audioStatus: {
     width: '100%',
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     lineHeight: 1.45
   }
 };
@@ -14782,15 +15173,22 @@ const Flashcards = ({
   const [cards, setCards] = React.useState([]);
   const [error, setError] = React.useState('');
   const [reviewing, setReviewing] = React.useState(false);
+  const [mode, setMode] = React.useState('due');
   const [counts, setCounts] = React.useState({
     easy: 0,
     hard: 0,
     skipped: 0
   });
-  const refresh = React.useCallback(() => window.NoesisAPI.flashcards.due().then(d => {
-    setCards(d.cards || []);
-    setError('');
-  }).catch(e => setError(e.message || 'Failed to load cards')), []);
+  const refresh = React.useCallback(() => {
+    const materialId = parseInt(sessionStorage.getItem('noesis.materialId') || '0', 10) || null;
+    const request = mode === 'all' ? window.NoesisAPI.flashcards.list(materialId) : window.NoesisAPI.flashcards.due();
+    return request.then(d => {
+      setCards(d.cards || []);
+      setI(0);
+      setFlipped(false);
+      setError('');
+    }).catch(e => setError(e.message || 'Failed to load cards'));
+  }, [mode]);
   React.useEffect(() => {
     refresh();
   }, [refresh]);
@@ -14832,13 +15230,23 @@ const Flashcards = ({
   }, React.createElement(window.Topbar, {
     title: hasCards ? `Flashcards - ${c.deck || 'Review'}` : 'Flashcards',
     crumbs: ['Review'],
-    right: React.createElement("span", {
+    right: React.createElement(React.Fragment, null, React.createElement("button", {
+      className: "btn btn-ghost",
+      disabled: reviewing,
+      onClick: () => setMode(mode === 'due' ? 'all' : 'due')
+    }, mode === 'due' ? 'Review existing' : 'Due cards'), React.createElement("button", {
+      className: "btn btn-accent",
+      disabled: reviewing,
+      onClick: () => onNav('materials')
+    }, React.createElement(Icon.Folder, {
+      size: 12
+    }), " Create new set"), React.createElement("span", {
       style: {
-        fontSize: 11,
+        fontSize: 'calc(11px * var(--app-font-scale))',
         color: 'var(--fg-3)'
       },
       className: "mono"
-    }, hasCards ? `${i + 1} / ${cards.length}` : '0 / 0')
+    }, hasCards ? `${i + 1} / ${cards.length}` : '0 / 0'))
   }), React.createElement("div", {
     style: {
       flex: 1,
@@ -14853,7 +15261,7 @@ const Flashcards = ({
   }, React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 3
+      gap: 'calc(3px * var(--app-density-scale))'
     }
   }, (hasCards ? cards : [0]).map((_, k) => React.createElement("div", {
     key: k,
@@ -14867,21 +15275,21 @@ const Flashcards = ({
     style: {
       display: 'flex',
       justifyContent: 'space-between',
-      marginTop: 8,
-      fontSize: 11,
+      marginTop: 'calc(8px * var(--app-density-scale))',
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     },
     className: "mono"
   }, React.createElement("span", null, counts.easy, " easy | ", counts.hard, " hard | ", counts.skipped, " again"), React.createElement("span", null, c.topic || c.deck || 'No topic', " ", c.difficulty ? `| ${c.difficulty}` : '')), reviewing && React.createElement("div", {
     style: {
-      marginTop: 8,
-      fontSize: 11,
+      marginTop: 'calc(8px * var(--app-density-scale))',
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, "Saving review..."), error && React.createElement("div", {
     style: {
-      marginTop: 8,
-      fontSize: 11,
+      marginTop: 'calc(8px * var(--app-density-scale))',
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--err)'
     }
   }, error)), React.createElement("div", {
@@ -14890,7 +15298,7 @@ const Flashcards = ({
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: 40
+      padding: 'calc(40px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: {
@@ -14914,14 +15322,14 @@ const Flashcards = ({
   }, "Question"), React.createElement("div", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 34,
+      fontSize: 'calc(34px * var(--app-font-scale))',
       fontWeight: 300,
       letterSpacing: '-0.015em',
       lineHeight: 1.25
     }
   }, c.question), React.createElement("div", {
     style: fc.meta
-  }, hasCards ? 'Click to flip' : 'Open Materials to generate cards from real content.')), React.createElement("div", {
+  }, hasCards ? 'Click to flip' : mode === 'due' ? 'No due cards. Review existing cards or create a new set.' : 'No saved cards for this material yet.')), React.createElement("div", {
     style: {
       ...fc.face,
       transform: 'rotateY(180deg)',
@@ -14934,15 +15342,15 @@ const Flashcards = ({
     }
   }, "Answer"), React.createElement("div", {
     style: {
-      fontSize: 17,
+      fontSize: 'calc(17px * var(--app-font-scale))',
       lineHeight: 1.55,
       color: 'var(--fg-0)'
     }
   }, c.answer))), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 8,
-      marginTop: 32,
+      gap: 'calc(8px * var(--app-density-scale))',
+      marginTop: 'calc(32px * var(--app-density-scale))',
       justifyContent: 'center'
     }
   }, [{
@@ -14985,27 +15393,35 @@ const Flashcards = ({
     className: "mono"
   }, b.key), React.createElement("div", null, React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       fontWeight: 500
     }
   }, b.l), React.createElement("div", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
-      marginTop: 2
+      marginTop: 'calc(2px * var(--app-density-scale))'
     },
     className: "mono"
-  }, b.sub))))), !hasCards && React.createElement("button", {
-    className: "btn btn-accent",
-    onClick: () => onNav('materials'),
+  }, b.sub))))), !hasCards && React.createElement("div", {
     style: {
-      margin: '24px auto 0',
-      display: 'flex'
+      display: 'flex',
+      gap: 'calc(8px * var(--app-density-scale))',
+      justifyContent: 'center',
+      marginTop: 'calc(24px * var(--app-density-scale))'
     }
+  }, mode === 'due' && React.createElement("button", {
+    className: "btn btn-ghost",
+    onClick: () => setMode('all')
+  }, React.createElement(Icon.Cards, {
+    size: 12
+  }), " Review existing"), React.createElement("button", {
+    className: "btn btn-accent",
+    onClick: () => onNav('materials')
   }, React.createElement(Icon.Folder, {
     size: 12
-  }), " Open Materials")))));
+  }), " Create new set"))))));
 };
 const fc = {
   card: {
@@ -15017,7 +15433,7 @@ const fc = {
   face: {
     position: 'absolute',
     inset: 0,
-    padding: 40,
+    padding: 'calc(40px * var(--app-density-scale))',
     borderRadius: 'var(--r-xl)',
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
@@ -15027,21 +15443,21 @@ const fc = {
     flexDirection: 'column'
   },
   faceLabel: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    marginBottom: 20
+    marginBottom: 'calc(20px * var(--app-density-scale))'
   },
   meta: {
     marginTop: 'auto',
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)'
   },
   rateBtn: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     padding: '10px 16px',
     borderRadius: 'var(--r-md)',
     border: '1px solid var(--line)',
@@ -15057,7 +15473,7 @@ const fc = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: 11
+    fontSize: 'calc(11px * var(--app-font-scale))'
   }
 };
 window.Flashcards = Flashcards;
@@ -15230,8 +15646,8 @@ const Quiz = ({
       style: {
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
-        marginTop: 18
+        gap: 'calc(8px * var(--app-density-scale))',
+        marginTop: 'calc(18px * var(--app-density-scale))'
       }
     }, library.length === 0 && React.createElement("div", {
       style: qz.empty
@@ -15255,19 +15671,19 @@ const Quiz = ({
       }
     }, React.createElement("div", {
       style: {
-        fontSize: 13.5,
+        fontSize: 'calc(13.5px * var(--app-font-scale))',
         color: 'var(--fg-0)',
         fontWeight: 500
       }
     }, q.title), React.createElement("div", {
       style: {
-        fontSize: 11.5,
+        fontSize: 'calc(11.5px * var(--app-font-scale))',
         color: 'var(--fg-3)',
-        marginTop: 2
+        marginTop: 'calc(2px * var(--app-density-scale))'
       }
-    }, q.question_count, " questions | ", q.difficulty)), React.createElement("span", {
+    }, q.question_count, " questions | ", q.difficulty, " | Start new attempt")), React.createElement("span", {
       className: "chip"
-    }, q.last_score == null ? 'Not attempted' : `${q.last_score}%`))))), React.createElement("section", {
+    }, q.last_score == null ? 'Not attempted' : `Review: ${q.last_score}%`))))), React.createElement("section", {
       className: "card",
       style: qz.section
     }, React.createElement("div", {
@@ -15280,8 +15696,8 @@ const Quiz = ({
       style: {
         display: 'flex',
         flexDirection: 'column',
-        gap: 10,
-        marginTop: 16
+        gap: 'calc(10px * var(--app-density-scale))',
+        marginTop: 'calc(16px * var(--app-density-scale))'
       }
     }, wrong.length === 0 && React.createElement("div", {
       style: qz.empty
@@ -15290,26 +15706,26 @@ const Quiz = ({
       style: qz.wrongRow
     }, React.createElement("div", {
       style: {
-        fontSize: 13,
+        fontSize: 'calc(13px * var(--app-font-scale))',
         color: 'var(--fg-0)',
-        marginBottom: 8
+        marginBottom: 'calc(8px * var(--app-density-scale))'
       }
     }, w.question), React.createElement("div", {
       style: {
-        fontSize: 12,
+        fontSize: 'calc(12px * var(--app-font-scale))',
         color: 'var(--fg-2)'
       }
     }, "Correct: ", w.options[w.correct_idx]), React.createElement("div", {
       style: {
-        fontSize: 11.5,
+        fontSize: 'calc(11.5px * var(--app-font-scale))',
         color: 'var(--fg-3)',
-        marginTop: 6
+        marginTop: 'calc(6px * var(--app-density-scale))'
       }
     }, [w.topic || w.concept, w.difficulty].filter(Boolean).join(' | ')), React.createElement("div", {
       style: {
-        fontSize: 11.5,
+        fontSize: 'calc(11.5px * var(--app-font-scale))',
         color: 'var(--fg-3)',
-        marginTop: 6
+        marginTop: 'calc(6px * var(--app-density-scale))'
       }
     }, w.explanation || 'Review the source material for this concept.')))))));
   }
@@ -15326,7 +15742,7 @@ const Quiz = ({
       onClick: backToLibrary
     }, "Quiz library"), React.createElement("span", {
       style: {
-        fontSize: 11.5,
+        fontSize: 'calc(11.5px * var(--app-font-scale))',
         color: 'var(--fg-3)'
       }
     }, "Question ", questions.length ? qi + 1 : 0, " / ", questions.length))
@@ -15341,8 +15757,8 @@ const Quiz = ({
   }, error), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 4,
-      marginBottom: 36
+      gap: 'calc(4px * var(--app-density-scale))',
+      marginBottom: 'calc(36px * var(--app-density-scale))'
     }
   }, (questions.length ? questions : [0]).map((_, k) => React.createElement("div", {
     key: k,
@@ -15360,7 +15776,7 @@ const Quiz = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 10
+      gap: 'calc(10px * var(--app-density-scale))'
     }
   }, (cur ? cur.options : []).map((label, idx) => {
     const isSel = selected === idx;
@@ -15378,14 +15794,14 @@ const Quiz = ({
     }, React.createElement("span", {
       className: "mono",
       style: {
-        fontSize: 10,
+        fontSize: 'calc(10px * var(--app-font-scale))',
         color: 'var(--fg-3)',
         width: 16
       }
     }, String.fromCharCode(65 + idx)), React.createElement("span", {
       style: {
         flex: 1,
-        fontSize: 14,
+        fontSize: 'calc(14px * var(--app-font-scale))',
         color: 'var(--fg-0)'
       }
     }, label), isCorrect && React.createElement(Icon.Check, {
@@ -15403,15 +15819,15 @@ const Quiz = ({
     style: qz.feedback
   }, React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--accent)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase',
-      marginBottom: 8
+      marginBottom: 'calc(8px * var(--app-density-scale))'
     }
   }, feedback.is_correct ? 'Correct' : 'Review this'), React.createElement("div", {
     style: {
-      fontSize: 13.5,
+      fontSize: 'calc(13.5px * var(--app-font-scale))',
       color: 'var(--fg-1)',
       lineHeight: 1.6
     }
@@ -15419,15 +15835,15 @@ const Quiz = ({
     style: qz.feedback
   }, React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--accent)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase',
-      marginBottom: 8
+      marginBottom: 'calc(8px * var(--app-density-scale))'
     }
   }, "Saved attempt"), React.createElement("div", {
     style: {
-      fontSize: 13.5,
+      fontSize: 'calc(13.5px * var(--app-font-scale))',
       color: 'var(--fg-1)',
       lineHeight: 1.6
     }
@@ -15435,7 +15851,7 @@ const Quiz = ({
     style: {
       display: 'flex',
       justifyContent: 'space-between',
-      marginTop: 36
+      marginTop: 'calc(36px * var(--app-density-scale))'
     }
   }, React.createElement("button", {
     className: "btn btn-bare",
@@ -15471,75 +15887,75 @@ const Quiz = ({
 };
 const qz = {
   page: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     maxWidth: 1100,
     margin: '0 auto',
     display: 'grid',
     gridTemplateColumns: '1fr',
-    gap: 14
+    gap: 'calc(14px * var(--app-density-scale))'
   },
   section: {
-    padding: 22
+    padding: 'calc(22px * var(--app-density-scale))'
   },
   sectionHead: {
     display: 'flex',
     justifyContent: 'space-between',
-    gap: 16,
+    gap: 'calc(16px * var(--app-density-scale))',
     alignItems: 'flex-start'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--accent)',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    marginBottom: 8
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 34,
+    fontSize: 'calc(34px * var(--app-font-scale))',
     fontWeight: 300,
     margin: 0
   },
   subTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 24,
+    fontSize: 'calc(24px * var(--app-font-scale))',
     fontWeight: 300,
     margin: 0
   },
   muted: {
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-3)'
   },
   empty: {
-    padding: 18,
+    padding: 'calc(18px * var(--app-density-scale))',
     color: 'var(--fg-3)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     border: '1px dashed var(--line-strong)',
     borderRadius: 'var(--r-md)'
   },
   error: {
-    marginBottom: 12,
+    marginBottom: 'calc(12px * var(--app-density-scale))',
     color: 'var(--err)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   quizRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    padding: 14,
+    gap: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(14px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)'
   },
   wrongRow: {
-    padding: 14,
+    padding: 'calc(14px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)'
   },
   questionTitle: {
     fontFamily: 'var(--font-display)',
-    fontSize: 32,
+    fontSize: 'calc(32px * var(--app-font-scale))',
     fontWeight: 300,
     letterSpacing: '-0.015em',
     margin: '0 0 18px',
@@ -15548,7 +15964,7 @@ const qz = {
   option: {
     display: 'flex',
     alignItems: 'flex-start',
-    gap: 14,
+    gap: 'calc(14px * var(--app-density-scale))',
     padding: '14px 16px',
     borderRadius: 'var(--r-md)',
     border: '1px solid',
@@ -15556,8 +15972,8 @@ const qz = {
     transition: 'all 160ms var(--ease-out)'
   },
   feedback: {
-    marginTop: 24,
-    padding: 18,
+    marginTop: 'calc(24px * var(--app-density-scale))',
+    padding: 'calc(18px * var(--app-density-scale))',
     borderRadius: 'var(--r-lg)',
     background: 'var(--bg-1)',
     border: '1px solid var(--line)'
@@ -15629,7 +16045,7 @@ const Progress = ({
     style: pg.page
   }, React.createElement("div", {
     style: {
-      marginBottom: 28
+      marginBottom: 'calc(28px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: pg.eyebrow
@@ -15643,28 +16059,28 @@ const Progress = ({
     key: i,
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: pg.statLabel
   }, s.l), React.createElement("div", {
     style: {
       fontFamily: 'var(--font-display)',
-      fontSize: 44,
+      fontSize: 'calc(44px * var(--app-font-scale))',
       fontWeight: 300,
       color: s.c
     }
   }, s.v), React.createElement("div", {
     style: {
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-2)',
-      marginTop: 4
+      marginTop: 'calc(4px * var(--app-density-scale))'
     }
   }, s.d)))), React.createElement("div", {
     className: "card",
     style: {
-      padding: 22,
-      marginBottom: 14
+      padding: 'calc(22px * var(--app-density-scale))',
+      marginBottom: 'calc(14px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: pg.cardHead
@@ -15680,7 +16096,7 @@ const Progress = ({
   }, React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: pg.cardTitle
@@ -15690,8 +16106,8 @@ const Progress = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 8,
-      marginTop: 18
+      gap: 'calc(8px * var(--app-density-scale))',
+      marginTop: 'calc(18px * var(--app-density-scale))'
     }
   }, conceptBreakdown.length === 0 && React.createElement("div", {
     style: pg.empty
@@ -15700,16 +16116,16 @@ const Progress = ({
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 14
+      gap: 'calc(14px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: {
       width: 150,
-      fontSize: 12.5,
+      fontSize: 'calc(12.5px * var(--app-font-scale))',
       color: 'var(--fg-1)',
       display: 'flex',
       alignItems: 'center',
-      gap: 6
+      gap: 'calc(6px * var(--app-density-scale))'
     }
   }, c.attention && React.createElement("span", {
     style: {
@@ -15733,7 +16149,7 @@ const Progress = ({
   })), React.createElement("span", {
     className: "mono",
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-2)',
       width: 34,
       textAlign: 'right'
@@ -15741,7 +16157,7 @@ const Progress = ({
   }, c.m, "%"), React.createElement("span", {
     className: "mono",
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       width: 54,
       textAlign: 'right'
@@ -15749,7 +16165,7 @@ const Progress = ({
   }, c.cards, " cards"))))), React.createElement("div", {
     className: "card",
     style: {
-      padding: 22
+      padding: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: pg.cardTitle
@@ -15757,15 +16173,15 @@ const Progress = ({
     style: pg.cardSub
   }, "Past 12 weeks from backend study events."), React.createElement("div", {
     style: {
-      marginTop: 18
+      marginTop: 'calc(18px * var(--app-density-scale))'
     }
   }, React.createElement(Heatmap, {
     data: data && data.heatmap_12w || null
   })))), React.createElement("div", {
     className: "card",
     style: {
-      padding: 22,
-      marginTop: 14
+      padding: 'calc(22px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: pg.cardTitle
@@ -15773,8 +16189,8 @@ const Progress = ({
     style: {
       display: 'grid',
       gridTemplateColumns: '1fr 1fr',
-      gap: 14,
-      marginTop: 14
+      gap: 'calc(14px * var(--app-density-scale))',
+      marginTop: 'calc(14px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: pg.reviewBox
@@ -15884,7 +16300,7 @@ const Heatmap = ({
     style: {
       display: 'grid',
       gridTemplateColumns: `repeat(${weeks}, 1fr)`,
-      gap: 3
+      gap: 'calc(3px * var(--app-density-scale))'
     }
   }, Array.from({
     length: weeks
@@ -15893,7 +16309,7 @@ const Heatmap = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 3
+      gap: 'calc(3px * var(--app-density-scale))'
     }
   }, Array.from({
     length: days
@@ -15911,69 +16327,69 @@ const Heatmap = ({
 };
 const pg = {
   page: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     maxWidth: 1400,
     margin: '0 auto'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
-    marginBottom: 8
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 38,
+    fontSize: 'calc(38px * var(--app-font-scale))',
     fontWeight: 300,
     letterSpacing: '-0.02em',
     margin: 0,
     maxWidth: 780
   },
   error: {
-    marginTop: 12,
+    marginTop: 'calc(12px * var(--app-density-scale))',
     color: 'var(--err)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   statsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))',
-    gap: 14,
-    marginBottom: 20
+    gap: 'calc(14px * var(--app-density-scale))',
+    marginBottom: 'calc(20px * var(--app-density-scale))'
   },
   statLabel: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.08em',
     textTransform: 'uppercase',
-    marginBottom: 12
+    marginBottom: 'calc(12px * var(--app-density-scale))'
   },
   cardHead: {
     display: 'flex',
     justifyContent: 'space-between',
-    marginBottom: 20
+    marginBottom: 'calc(20px * var(--app-density-scale))'
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-0)',
     fontWeight: 500
   },
   cardSub: {
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
-    marginTop: 4
+    marginTop: 'calc(4px * var(--app-density-scale))'
   },
   twoCol: {
     display: 'grid',
     gridTemplateColumns: '1.4fr 1fr',
-    gap: 14
+    gap: 'calc(14px * var(--app-density-scale))'
   },
   empty: {
-    padding: 18,
+    padding: 'calc(18px * var(--app-density-scale))',
     border: '1px dashed var(--line-strong)',
     borderRadius: 'var(--r-md)',
     color: 'var(--fg-3)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   bar: {
     flex: 1,
@@ -15991,12 +16407,12 @@ const pg = {
     borderRadius: 4
   },
   reviewBox: {
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)'
   },
   reviewText: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-1)',
     lineHeight: 1.6
   }
@@ -16005,6 +16421,8 @@ window.Progress = Progress;
 const Settings = ({
   theme,
   setTheme,
+  appearance,
+  setAppearance,
   onLogout
 }) => {
   const Icon = window.Icon;
@@ -16046,7 +16464,7 @@ const Settings = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       letterSpacing: '0.12em',
       textTransform: 'uppercase',
@@ -16075,7 +16493,9 @@ const Settings = ({
     className: "fade-in"
   }, tab === 'profile' && React.createElement(ProfileTab, null), tab === 'learning' && React.createElement(LearningTab, null), tab === 'appearance' && React.createElement(AppearanceTab, {
     theme: theme,
-    setTheme: setTheme
+    setTheme: setTheme,
+    appearance: appearance,
+    setAppearance: setAppearance
   }), tab === 'data' && React.createElement(DataTab, null), tab === 'account' && React.createElement(AccountTab, {
     onLogout: onLogout
   }))));
@@ -16122,15 +16542,15 @@ const ProfileTab = () => {
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 16,
+      fontSize: 'calc(16px * var(--app-font-scale))',
       color: 'var(--fg-0)',
       fontWeight: 500
     }
   }, name || '-'), React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-2)',
-      marginTop: 2
+      marginTop: 'calc(2px * var(--app-density-scale))'
     }
   }, me && me.user ? me.user.email : '')), React.createElement("button", {
     className: "btn btn-ghost",
@@ -16139,7 +16559,7 @@ const ProfileTab = () => {
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 18
+      gap: 'calc(18px * var(--app-density-scale))'
     }
   }, React.createElement(SetRow, {
     label: "Display name",
@@ -16184,7 +16604,7 @@ const LearningTab = () => {
   };
   if (!prefs) return React.createElement("div", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, "Loading...");
@@ -16200,7 +16620,7 @@ const LearningTab = () => {
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 18
+      gap: 'calc(18px * var(--app-density-scale))'
     }
   }, React.createElement(SetRow, {
     label: "Tutor default mode",
@@ -16218,7 +16638,7 @@ const LearningTab = () => {
     style: {
       display: 'flex',
       alignItems: 'center',
-      gap: 8
+      gap: 'calc(8px * var(--app-density-scale))'
     }
   }, React.createElement("input", {
     className: "input mono",
@@ -16239,7 +16659,7 @@ const LearningTab = () => {
     }
   }), React.createElement("span", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-2)'
     }
   }, "min/day"))), React.createElement(SetRow, {
@@ -16253,15 +16673,17 @@ const LearningTab = () => {
     })
   }))), status && React.createElement("div", {
     style: {
-      marginTop: 16,
-      fontSize: 11,
+      marginTop: 'calc(16px * var(--app-density-scale))',
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, status));
 };
 const AppearanceTab = ({
   theme,
-  setTheme
+  setTheme,
+  appearance,
+  setAppearance
 }) => {
   const Icon = window.Icon;
   const themes = [{
@@ -16281,17 +16703,35 @@ const AppearanceTab = ({
     label: 'Violet',
     preview: ['#0a0a18', '#1e1e42', '#c99afc', '#8ac9ff']
   }];
-  const [density, setDensity] = React.useState(parseInt(localStorage.getItem('noesis.density') || '1', 10));
-  const [fontSize, setFontSize] = React.useState(parseInt(localStorage.getItem('noesis.fontSize') || '1', 10));
-  const [motion, setMotion] = React.useState(localStorage.getItem('noesis.motion') !== 'false');
-  const [reduceTrans, setReduceTrans] = React.useState(localStorage.getItem('noesis.reduceTrans') === 'true');
+  const normalized = window.NoesisAppearance && window.NoesisAppearance.normalizeAppearance ? window.NoesisAppearance.normalizeAppearance(appearance || {}) : {
+    density: 'default',
+    fontSize: 'default',
+    motion: true,
+    reduceTransparency: false
+  };
+  const densityOptions = window.NoesisAppearance && window.NoesisAppearance.densityScales || [{
+    key: 'compact'
+  }, {
+    key: 'default'
+  }, {
+    key: 'comfortable'
+  }];
+  const fontOptions = window.NoesisAppearance && window.NoesisAppearance.fontScales || [{
+    key: 'small'
+  }, {
+    key: 'default'
+  }, {
+    key: 'large'
+  }];
+  const density = Math.max(0, densityOptions.findIndex(option => option.key === normalized.density));
+  const fontSize = Math.max(0, fontOptions.findIndex(option => option.key === normalized.fontSize));
   return React.createElement(React.Fragment, null, React.createElement(SetHeader, {
     eyebrow: "Appearance",
     title: "Make it readable.",
     sub: "Visual preferences are stored in this browser."
   }), React.createElement("div", {
     style: {
-      marginBottom: 22
+      marginBottom: 'calc(22px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: set.smallHead
@@ -16299,7 +16739,7 @@ const AppearanceTab = ({
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: 12
+      gap: 'calc(12px * var(--app-density-scale))'
     }
   }, themes.map(t => {
     const active = theme === t.id;
@@ -16317,7 +16757,7 @@ const AppearanceTab = ({
         borderRadius: 'var(--r-md)',
         background: `linear-gradient(135deg, ${t.preview[0]} 0%, ${t.preview[1]} 60%, ${t.preview[2]} 100%)`,
         border: '1px solid var(--line-soft)',
-        marginBottom: 10
+        marginBottom: 'calc(10px * var(--app-density-scale))'
       }
     }), React.createElement("div", {
       style: {
@@ -16328,7 +16768,7 @@ const AppearanceTab = ({
     }, React.createElement("span", {
       style: {
         fontFamily: 'var(--font-display)',
-        fontSize: 16,
+        fontSize: 'calc(16px * var(--app-font-scale))',
         color: 'var(--fg-0)'
       }
     }, t.label), active && React.createElement(Icon.Check, {
@@ -16341,7 +16781,7 @@ const AppearanceTab = ({
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 18
+      gap: 'calc(18px * var(--app-density-scale))'
     }
   }, React.createElement(SetRow, {
     label: "Density",
@@ -16349,40 +16789,34 @@ const AppearanceTab = ({
   }, React.createElement(Segmented, {
     options: ['Compact', 'Default', 'Comfortable'],
     value: density,
-    onChange: i => {
-      setDensity(i);
-      localStorage.setItem('noesis.density', i);
-    }
+    onChange: i => setAppearance && setAppearance({
+      density: densityOptions[i].key
+    })
   })), React.createElement(SetRow, {
     label: "Font size",
     sub: "Body text scale preference."
   }, React.createElement(Segmented, {
     options: ['Small', 'Default', 'Large'],
     value: fontSize,
-    onChange: i => {
-      setFontSize(i);
-      localStorage.setItem('noesis.fontSize', i);
-    }
+    onChange: i => setAppearance && setAppearance({
+      fontSize: fontOptions[i].key
+    })
   })), React.createElement(SetRow, {
     label: "Motion",
     sub: "Enable interface motion."
   }, React.createElement(Toggle, {
-    on: motion,
-    onToggle: () => {
-      const v = !motion;
-      setMotion(v);
-      localStorage.setItem('noesis.motion', v);
-    }
+    on: normalized.motion,
+    onToggle: () => setAppearance && setAppearance({
+      motion: !normalized.motion
+    })
   })), React.createElement(SetRow, {
     label: "Reduce transparency",
     sub: "Prefer solid surfaces."
   }, React.createElement(Toggle, {
-    on: reduceTrans,
-    onToggle: () => {
-      const v = !reduceTrans;
-      setReduceTrans(v);
-      localStorage.setItem('noesis.reduceTrans', v);
-    }
+    on: normalized.reduceTransparency,
+    onToggle: () => setAppearance && setAppearance({
+      reduceTransparency: !normalized.reduceTransparency
+    })
   }))));
 };
 const DataTab = () => {
@@ -16409,14 +16843,14 @@ const DataTab = () => {
     style: {
       display: 'flex',
       flexDirection: 'column',
-      gap: 18
+      gap: 'calc(18px * var(--app-density-scale))'
     }
   }, React.createElement(SetRow, {
     label: "Training on my data",
     sub: "Local Ollama only; no external model training."
   }, React.createElement("span", {
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, "Off")), React.createElement(SetRow, {
@@ -16438,8 +16872,8 @@ const DataTab = () => {
     }
   }, busy ? 'Deleting...' : 'Delete account'))), status && React.createElement("div", {
     style: {
-      marginTop: 12,
-      fontSize: 11,
+      marginTop: 'calc(12px * var(--app-density-scale))',
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, status));
@@ -16465,7 +16899,7 @@ const AccountTab = ({
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-0)'
     }
   }, "Current browser", React.createElement("span", {
@@ -16475,13 +16909,13 @@ const AccountTab = ({
     }
   }, "This device")), React.createElement("div", {
     style: {
-      fontSize: 11.5,
+      fontSize: 'calc(11.5px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
   }, "Active now"))), React.createElement("div", {
     style: {
       display: 'flex',
-      gap: 10
+      gap: 'calc(10px * var(--app-density-scale))'
     }
   }, React.createElement("button", {
     className: "btn btn-ghost",
@@ -16501,27 +16935,27 @@ const SetHeader = ({
   sub
 }) => React.createElement("div", {
   style: {
-    marginBottom: 28
+    marginBottom: 'calc(28px * var(--app-density-scale))'
   }
 }, React.createElement("div", {
   style: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    marginBottom: 10
+    marginBottom: 'calc(10px * var(--app-density-scale))'
   }
 }, eyebrow), React.createElement("h1", {
   style: {
     fontFamily: 'var(--font-display)',
-    fontSize: 34,
+    fontSize: 'calc(34px * var(--app-font-scale))',
     fontWeight: 300,
     letterSpacing: '-0.02em',
     margin: '0 0 8px'
   }
 }, title), React.createElement("p", {
   style: {
-    fontSize: 14,
+    fontSize: 'calc(14px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     margin: 0,
     maxWidth: 540
@@ -16534,8 +16968,8 @@ const Segmented = ({
 }) => React.createElement("div", {
   style: {
     display: 'flex',
-    gap: 4,
-    padding: 2,
+    gap: 'calc(4px * var(--app-density-scale))',
+    padding: 'calc(2px * var(--app-density-scale))',
     background: 'var(--bg-2)',
     borderRadius: 'var(--r-sm)',
     border: '1px solid var(--line)'
@@ -16545,7 +16979,7 @@ const Segmented = ({
   onClick: () => onChange && onChange(i),
   style: {
     padding: '6px 12px',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     background: i === value ? 'var(--bg-0)' : 'transparent',
     color: i === value ? 'var(--fg-0)' : 'var(--fg-2)',
     borderRadius: 4
@@ -16560,21 +16994,21 @@ const SetRow = ({
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingBottom: 18,
+    paddingBottom: 'calc(18px * var(--app-density-scale))',
     borderBottom: '1px solid var(--line-soft)',
-    gap: 40
+    gap: 'calc(40px * var(--app-density-scale))'
   }
 }, React.createElement("div", null, React.createElement("div", {
   style: {
-    fontSize: 13.5,
+    fontSize: 'calc(13.5px * var(--app-font-scale))',
     color: 'var(--fg-0)',
     fontWeight: 500
   }
 }, label), React.createElement("div", {
   style: {
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-2)',
-    marginTop: 2
+    marginTop: 'calc(2px * var(--app-density-scale))'
   }
 }, sub)), React.createElement("div", {
   style: {
@@ -16612,14 +17046,14 @@ const set = {
   tabButton: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 'calc(10px * var(--app-density-scale))',
     padding: '9px 12px',
     borderRadius: 'var(--r-sm)',
     color: 'var(--fg-2)',
     width: '100%',
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     textAlign: 'left',
-    marginBottom: 1,
+    marginBottom: 'calc(1px * var(--app-density-scale))',
     transition: 'all 140ms var(--ease-out)'
   },
   tabActive: {
@@ -16629,9 +17063,9 @@ const set = {
   profileCard: {
     display: 'flex',
     alignItems: 'center',
-    gap: 20,
-    marginBottom: 28,
-    padding: 20,
+    gap: 'calc(20px * var(--app-density-scale))',
+    marginBottom: 'calc(28px * var(--app-density-scale))',
+    padding: 'calc(20px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-lg)',
     background: 'var(--bg-1)'
@@ -16645,19 +17079,19 @@ const set = {
     alignItems: 'center',
     justifyContent: 'center',
     fontFamily: 'var(--font-display)',
-    fontSize: 28,
+    fontSize: 'calc(28px * var(--app-font-scale))',
     color: 'var(--bg-0)'
   },
   smallHead: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
-    marginBottom: 12
+    marginBottom: 'calc(12px * var(--app-density-scale))'
   },
   themeButton: {
     textAlign: 'left',
-    padding: 14,
+    padding: 'calc(14px * var(--app-density-scale))',
     borderRadius: 'var(--r-lg)',
     border: '1px solid',
     background: 'var(--bg-1)',
@@ -16666,12 +17100,12 @@ const set = {
   sessionBox: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    padding: 16,
+    gap: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(16px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-1)',
-    marginBottom: 18
+    marginBottom: 'calc(18px * var(--app-density-scale))'
   }
 };
 window.Settings = Settings;
@@ -16943,7 +17377,7 @@ const FriendsPanel = () => {
   })), React.createElement("div", {
     style: {
       ...cm.cardTitle,
-      marginTop: 18
+      marginTop: 'calc(18px * var(--app-density-scale))'
     }
   }, "Friends"), React.createElement("div", {
     style: cm.list
@@ -17071,7 +17505,7 @@ const StudyRoomsPanel = ({
   }), " Create room")), React.createElement("div", {
     style: {
       ...cm.cardTitle,
-      marginTop: 22
+      marginTop: 'calc(22px * var(--app-density-scale))'
     }
   }, "Join by code"), React.createElement("div", {
     style: cm.searchRow
@@ -17117,7 +17551,7 @@ const StudyRoomsPanel = ({
   }, room.subject || 'General', " | ", room.member_count, " member", room.member_count === 1 ? '' : 's', " | ", room.room_type), room.user_role && React.createElement("span", {
     className: "chip chip-accent",
     style: {
-      marginTop: 8
+      marginTop: 'calc(8px * var(--app-density-scale))'
     }
   }, room.user_role)), room.user_role ? React.createElement("button", {
     className: "btn btn-accent",
@@ -17364,7 +17798,7 @@ const RoomDetail = ({
     className: "btn btn-ghost",
     onClick: () => startQuiz(q.id),
     style: {
-      marginTop: 8
+      marginTop: 'calc(8px * var(--app-density-scale))'
     }
   }, "Start challenge")))))), React.createElement("section", {
     className: "card",
@@ -17427,9 +17861,9 @@ const RoomMessages = ({
     style: cm.muted
   }, m.display_name, " | ", new Date(m.created_at).toLocaleTimeString()), React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       color: 'var(--fg-0)',
-      marginTop: 4
+      marginTop: 'calc(4px * var(--app-density-scale))'
     }
   }, m.body))), !messages.length && React.createElement(EmptyCommunity, {
     text: "No messages yet."
@@ -17483,7 +17917,7 @@ const EmptyCommunity = ({
 }, text);
 const cm = {
   page: {
-    padding: 28,
+    padding: 'calc(28px * var(--app-density-scale))',
     maxWidth: 1440,
     margin: '0 auto'
   },
@@ -17491,26 +17925,26 @@ const cm = {
     display: 'flex',
     alignItems: 'flex-end',
     justifyContent: 'space-between',
-    gap: 18,
-    marginBottom: 18
+    gap: 'calc(18px * var(--app-density-scale))',
+    marginBottom: 'calc(18px * var(--app-density-scale))'
   },
   roomHero: {
     display: 'grid',
     gridTemplateColumns: 'minmax(0, 1fr) 220px',
-    gap: 18,
+    gap: 'calc(18px * var(--app-density-scale))',
     alignItems: 'stretch',
-    marginBottom: 14
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--accent)',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
-    marginBottom: 8
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 40,
+    fontSize: 'calc(40px * var(--app-font-scale))',
     fontWeight: 300,
     letterSpacing: 0,
     margin: 0,
@@ -17518,8 +17952,8 @@ const cm = {
   },
   tabBar: {
     display: 'flex',
-    gap: 5,
-    padding: 3,
+    gap: 'calc(5px * var(--app-density-scale))',
+    padding: 'calc(3px * var(--app-density-scale))',
     borderRadius: 'var(--r-md)',
     border: '1px solid var(--line)',
     background: 'var(--bg-1)'
@@ -17527,55 +17961,55 @@ const cm = {
   tab: {
     display: 'inline-flex',
     alignItems: 'center',
-    gap: 7,
+    gap: 'calc(7px * var(--app-density-scale))',
     padding: '8px 11px',
     borderRadius: 7,
     color: 'var(--fg-2)',
-    fontSize: 12.5
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   },
   tabActive: {
     background: 'var(--bg-2)',
     color: 'var(--fg-0)'
   },
   card: {
-    padding: 20,
-    marginBottom: 14
+    padding: 'calc(20px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   cardHead: {
     display: 'flex',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 14,
-    marginBottom: 14
+    gap: 'calc(14px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: 'calc(13px * var(--app-font-scale))',
     color: 'var(--fg-0)',
     fontWeight: 500
   },
   muted: {
-    fontSize: 11.5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     lineHeight: 1.5
   },
   status: {
     margin: '10px 0',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-2)',
-    padding: 10,
+    padding: 'calc(10px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)'
   },
   table: {
     display: 'grid',
-    gap: 7
+    gap: 'calc(7px * var(--app-density-scale))'
   },
   rankRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    padding: 12,
+    gap: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)'
@@ -17587,7 +18021,7 @@ const cm = {
   rank: {
     width: 42,
     color: 'var(--accent)',
-    fontSize: 12
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   avatar: {
     width: 32,
@@ -17601,41 +18035,41 @@ const cm = {
     fontFamily: 'var(--font-display)'
   },
   name: {
-    fontSize: 13.5,
+    fontSize: 'calc(13.5px * var(--app-font-scale))',
     color: 'var(--fg-0)',
     fontWeight: 500
   },
   xp: {
     color: 'var(--accent)',
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     whiteSpace: 'nowrap'
   },
   twoCol: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: 14
+    gap: 'calc(14px * var(--app-density-scale))'
   },
   threeCol: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-    gap: 14
+    gap: 'calc(14px * var(--app-density-scale))'
   },
   searchRow: {
     display: 'flex',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     alignItems: 'center',
-    marginTop: 12
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   list: {
     display: 'grid',
-    gap: 8,
-    marginTop: 14
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginTop: 'calc(14px * var(--app-density-scale))'
   },
   personRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
-    padding: 11,
+    gap: 'calc(10px * var(--app-density-scale))',
+    padding: 'calc(11px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)'
@@ -17643,40 +18077,40 @@ const cm = {
   roomRow: {
     display: 'flex',
     alignItems: 'center',
-    gap: 12,
-    padding: 14,
+    gap: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(14px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)'
   },
   activityRow: {
-    padding: 11,
+    padding: 'calc(11px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)'
   },
   sharedRow: {
-    padding: 12,
+    padding: 'calc(12px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)'
   },
   preview: {
-    marginTop: 8,
-    fontSize: 12,
+    marginTop: 'calc(8px * var(--app-density-scale))',
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-2)',
     lineHeight: 1.5
   },
   formGrid: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: 9,
-    marginTop: 12
+    gap: 'calc(9px * var(--app-density-scale))',
+    marginTop: 'calc(12px * var(--app-density-scale))'
   },
   segmented: {
     display: 'flex',
-    gap: 4,
-    padding: 2,
+    gap: 'calc(4px * var(--app-density-scale))',
+    padding: 'calc(2px * var(--app-density-scale))',
     background: 'var(--bg-2)',
     borderRadius: 8,
     border: '1px solid var(--line)'
@@ -17684,7 +18118,7 @@ const cm = {
   segment: {
     padding: '6px 10px',
     borderRadius: 6,
-    fontSize: 12,
+    fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-2)'
   },
   segmentActive: {
@@ -17692,33 +18126,33 @@ const cm = {
     color: 'var(--fg-0)'
   },
   empty: {
-    padding: 16,
+    padding: 'calc(16px * var(--app-density-scale))',
     border: '1px dashed var(--line-strong)',
     borderRadius: 8,
     color: 'var(--fg-3)',
-    fontSize: 12.5,
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
     textAlign: 'center'
   },
   inviteBox: {
-    padding: 18,
+    padding: 'calc(18px * var(--app-density-scale))',
     border: '1px solid var(--line)',
     borderRadius: 8,
     background: 'var(--bg-1)'
   },
   inviteCode: {
-    marginTop: 8,
-    fontSize: 24,
+    marginTop: 'calc(8px * var(--app-density-scale))',
+    fontSize: 'calc(24px * var(--app-font-scale))',
     color: 'var(--accent)'
   },
   messages: {
     display: 'grid',
-    gap: 8,
+    gap: 'calc(8px * var(--app-density-scale))',
     margin: '12px 0',
     maxHeight: 260,
     overflow: 'auto'
   },
   messageBubble: {
-    padding: 11,
+    padding: 'calc(11px * var(--app-density-scale))',
     borderRadius: 8,
     background: 'var(--bg-1)',
     border: '1px solid var(--line)'
@@ -17736,6 +18170,106 @@ const {
   useState,
   useEffect
 } = React;
+const NOESIS_FONT_SCALES = [{
+  key: 'small',
+  scale: 0.92
+}, {
+  key: 'default',
+  scale: 1
+}, {
+  key: 'large',
+  scale: 1.12
+}];
+const NOESIS_DENSITY_SCALES = [{
+  key: 'compact',
+  scale: 0.86
+}, {
+  key: 'default',
+  scale: 1
+}, {
+  key: 'comfortable',
+  scale: 1.14
+}];
+const DEFAULT_APPEARANCE = {
+  density: 'default',
+  fontSize: 'default',
+  motion: true,
+  reduceTransparency: false
+};
+const normalizeAppearanceOption = (value, options, fallback = 'default') => {
+  if (typeof value === 'number' || /^\d+$/.test(String(value || ''))) {
+    const index = parseInt(value, 10);
+    return options[index] ? options[index].key : fallback;
+  }
+  const raw = String(value || '').trim().toLowerCase();
+  return options.some(option => option.key === raw) ? raw : fallback;
+};
+const appearanceOptionIndex = (key, options) => Math.max(0, options.findIndex(option => option.key === key));
+const normalizeFontSizeIndex = value => {
+  return appearanceOptionIndex(normalizeAppearanceOption(value, NOESIS_FONT_SCALES), NOESIS_FONT_SCALES);
+};
+const normalizeNoesisAppearance = (value = {}) => ({
+  density: normalizeAppearanceOption(value.density, NOESIS_DENSITY_SCALES),
+  fontSize: normalizeAppearanceOption(value.fontSize, NOESIS_FONT_SCALES),
+  motion: value.motion !== false,
+  reduceTransparency: value.reduceTransparency === true
+});
+const readNoesisAppearance = () => {
+  try {
+    return normalizeNoesisAppearance({
+      density: localStorage.getItem('noesis.density') || DEFAULT_APPEARANCE.density,
+      fontSize: localStorage.getItem('noesis.fontSize') || DEFAULT_APPEARANCE.fontSize,
+      motion: localStorage.getItem('noesis.motion') !== 'false',
+      reduceTransparency: localStorage.getItem('noesis.reduceTrans') === 'true'
+    });
+  } catch (_) {
+    return {
+      ...DEFAULT_APPEARANCE
+    };
+  }
+};
+const sameAppearance = (a, b) => a.density === b.density && a.fontSize === b.fontSize && a.motion === b.motion && a.reduceTransparency === b.reduceTransparency;
+const applyNoesisAppearance = (value = {}) => {
+  const appearance = normalizeNoesisAppearance({
+    ...DEFAULT_APPEARANCE,
+    ...value
+  });
+  const fontOption = NOESIS_FONT_SCALES[appearanceOptionIndex(appearance.fontSize, NOESIS_FONT_SCALES)] || NOESIS_FONT_SCALES[1];
+  const densityOption = NOESIS_DENSITY_SCALES[appearanceOptionIndex(appearance.density, NOESIS_DENSITY_SCALES)] || NOESIS_DENSITY_SCALES[1];
+  const root = document.documentElement;
+  root.dataset.density = densityOption.key;
+  root.dataset.fontSize = fontOption.key;
+  root.dataset.motion = appearance.motion ? 'on' : 'off';
+  root.dataset.transparency = appearance.reduceTransparency ? 'reduced' : 'default';
+  root.style.setProperty('--app-density-scale', String(densityOption.scale));
+  root.style.setProperty('--app-font-scale', String(fontOption.scale));
+  root.style.setProperty('--app-base-font-size', `${14 * fontOption.scale}px`);
+  try {
+    localStorage.setItem('noesis.density', String(appearanceOptionIndex(appearance.density, NOESIS_DENSITY_SCALES)));
+    localStorage.setItem('noesis.fontSize', String(appearanceOptionIndex(appearance.fontSize, NOESIS_FONT_SCALES)));
+    localStorage.setItem('noesis.motion', String(appearance.motion));
+    localStorage.setItem('noesis.reduceTrans', String(appearance.reduceTransparency));
+  } catch (_) {}
+  return appearance;
+};
+const applyNoesisFontScale = value => {
+  const next = applyNoesisAppearance({
+    ...readNoesisAppearance(),
+    fontSize: normalizeAppearanceOption(value, NOESIS_FONT_SCALES)
+  });
+  return appearanceOptionIndex(next.fontSize, NOESIS_FONT_SCALES);
+};
+window.NoesisAppearance = {
+  normalizeFontSizeIndex,
+  normalizeAppearance: normalizeNoesisAppearance,
+  readAppearance: readNoesisAppearance,
+  applyAppearance: applyNoesisAppearance,
+  applyFontScale: applyNoesisFontScale,
+  fontScales: NOESIS_FONT_SCALES,
+  densityScales: NOESIS_DENSITY_SCALES
+};
+const initialNoesisAppearance = readNoesisAppearance();
+applyNoesisAppearance(initialNoesisAppearance);
 class RouteErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -17791,6 +18325,7 @@ const App = () => {
   const [prevRoute, setPrevRoute] = useState(null);
   const [authMode, setAuthMode] = useState('signin');
   const [theme, setTheme] = useState(localStorage.getItem('noesis.theme') || 'dark');
+  const [appearance, setAppearanceState] = useState(() => initialNoesisAppearance);
   const [tweaksOpen, setTweaksOpen] = useState(false);
   const [authState, setAuthState] = useState('checking');
   const splashSeen = sessionStorage.getItem('noesis.splashSeen');
@@ -17803,6 +18338,10 @@ const App = () => {
     document.documentElement.setAttribute('data-theme', theme);
     localStorage.setItem('noesis.theme', theme);
   }, [theme]);
+  useEffect(() => {
+    const normalized = applyNoesisAppearance(appearance);
+    if (!sameAppearance(normalized, appearance)) setAppearanceState(normalized);
+  }, [appearance]);
   useEffect(() => {
     const onLogout = () => {
       setAuthState('guest');
@@ -17874,6 +18413,12 @@ const App = () => {
     setAuthState('guest');
     goto('landing');
   };
+  const setAppearance = patch => {
+    setAppearanceState(prev => normalizeNoesisAppearance({
+      ...prev,
+      ...(typeof patch === 'function' ? patch(prev) : patch)
+    }));
+  };
   const home = () => goto('landing');
   const onSplashDone = () => {
     sessionStorage.setItem('noesis.splashSeen', '1');
@@ -17939,6 +18484,8 @@ const App = () => {
     settings: React.createElement(window.Settings, {
       theme: theme,
       setTheme: setTheme,
+      appearance: appearance,
+      setAppearance: setAppearance,
       onLogout: logout
     })
   };
@@ -18005,30 +18552,30 @@ const AppLoading = () => React.createElement("div", {
     alignItems: 'center',
     justifyContent: 'center',
     color: 'var(--fg-3)',
-    fontSize: 13
+    fontSize: 'calc(13px * var(--app-font-scale))'
   }
 }, "Checking your session...");
 const routeErr = {
   page: {
     minHeight: '100vh',
-    padding: 40,
+    padding: 'calc(40px * var(--app-density-scale))',
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'flex-start',
     justifyContent: 'center',
-    gap: 14,
+    gap: 'calc(14px * var(--app-density-scale))',
     color: 'var(--fg-0)',
     maxWidth: 720
   },
   eyebrow: {
-    fontSize: 11,
+    fontSize: 'calc(11px * var(--app-font-scale))',
     color: 'var(--accent)',
     letterSpacing: '0.12em',
     textTransform: 'uppercase'
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 34,
+    fontSize: 'calc(34px * var(--app-font-scale))',
     fontWeight: 300,
     margin: 0
   },
@@ -18039,8 +18586,8 @@ const routeErr = {
     background: 'var(--bg-1)',
     border: '1px solid var(--line)',
     borderRadius: 8,
-    padding: 12,
-    fontSize: 12
+    padding: 'calc(12px * var(--app-density-scale))',
+    fontSize: 'calc(12px * var(--app-font-scale))'
   }
 };
 const TweaksPanel = ({
@@ -18058,7 +18605,7 @@ const TweaksPanel = ({
       right: 24,
       zIndex: 100,
       width: 280,
-      padding: 18,
+      padding: 'calc(18px * var(--app-density-scale))',
       borderRadius: 'var(--r-lg)',
       background: 'var(--bg-1)',
       border: '1px solid var(--line)',
@@ -18070,15 +18617,15 @@ const TweaksPanel = ({
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: 14
+      marginBottom: 'calc(14px * var(--app-density-scale))'
     }
   }, React.createElement("div", {
     style: {
-      fontSize: 13,
+      fontSize: 'calc(13px * var(--app-font-scale))',
       fontWeight: 500,
       display: 'flex',
       alignItems: 'center',
-      gap: 6
+      gap: 'calc(6px * var(--app-density-scale))'
     }
   }, React.createElement(Icon.Sparkle, {
     size: 13,
@@ -18089,24 +18636,24 @@ const TweaksPanel = ({
     onClick: onClose,
     className: "btn btn-bare",
     style: {
-      padding: 4
+      padding: 'calc(4px * var(--app-density-scale))'
     }
   }, React.createElement(Icon.X, {
     size: 13
   }))), React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase',
-      marginBottom: 8
+      marginBottom: 'calc(8px * var(--app-density-scale))'
     }
   }, "Theme"), React.createElement("div", {
     style: {
       display: 'grid',
       gridTemplateColumns: 'repeat(2, 1fr)',
-      gap: 6,
-      marginBottom: 18
+      gap: 'calc(6px * var(--app-density-scale))',
+      marginBottom: 'calc(18px * var(--app-density-scale))'
     }
   }, [{
     id: 'dark',
@@ -18128,13 +18675,13 @@ const TweaksPanel = ({
     key: t.id,
     onClick: () => setTheme(t.id),
     style: {
-      padding: 8,
+      padding: 'calc(8px * var(--app-density-scale))',
       borderRadius: 'var(--r-sm)',
       border: '1px solid ' + (theme === t.id ? 'var(--accent-soft)' : 'var(--line)'),
       background: 'var(--bg-2)',
       display: 'flex',
       flexDirection: 'column',
-      gap: 6,
+      gap: 'calc(6px * var(--app-density-scale))',
       alignItems: 'center'
     }
   }, React.createElement("div", {
@@ -18146,23 +18693,23 @@ const TweaksPanel = ({
     }
   }), React.createElement("span", {
     style: {
-      fontSize: 10.5,
+      fontSize: 'calc(10.5px * var(--app-font-scale))',
       color: theme === t.id ? 'var(--fg-0)' : 'var(--fg-2)'
     }
   }, t.label)))), React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)',
       letterSpacing: '0.1em',
       textTransform: 'uppercase',
-      marginBottom: 8
+      marginBottom: 'calc(8px * var(--app-density-scale))'
     }
   }, "Jump to screen"), React.createElement("select", {
     value: route,
     onChange: e => setRoute(e.target.value),
     className: "input",
     style: {
-      fontSize: 12,
+      fontSize: 'calc(12px * var(--app-font-scale))',
       width: '100%'
     }
   }, React.createElement("optgroup", {
@@ -18187,10 +18734,10 @@ const TweaksPanel = ({
     },
     className: "btn btn-ghost",
     style: {
-      marginTop: 12,
+      marginTop: 'calc(12px * var(--app-density-scale))',
       width: '100%',
       justifyContent: 'center',
-      fontSize: 12
+      fontSize: 'calc(12px * var(--app-font-scale))'
     }
   }, React.createElement(Icon.Sparkles, {
     size: 12

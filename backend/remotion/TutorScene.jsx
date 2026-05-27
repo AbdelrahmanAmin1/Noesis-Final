@@ -531,6 +531,64 @@ const ConceptMapVisual = ({ frame, scene }) => {
   );
 };
 
+const CardsVisual = ({ frame, scene, slide }) => {
+  const data = getVisualData(scene, slide);
+  const nodes = asList(data.nodes).map(n => typeof n === 'string' ? n : n.label || n.id).filter(Boolean);
+  const labels = nodes.length ? nodes.slice(0, 6) : ['Source concept', 'Supporting detail', 'Review question'];
+  const phase = activePhase(frame, labels.length);
+  return (
+    <svg viewBox="0 0 820 470" style={styles.svg}>
+      {labels.map((label, i) => {
+        const col = i % 3;
+        const row = Math.floor(i / 3);
+        return <ClassNode key={label + i} x={64 + col * 238} y={92 + row * 148} w={206} h={110} title={label} sub={i === phase ? 'focus' : 'source card'} active={i === phase} tone={i % 2 ? 'green' : 'blue'} />;
+      })}
+    </svg>
+  );
+};
+
+const TableVisual = ({ frame, scene, slide }) => {
+  const data = getVisualData(scene, slide);
+  const rows = asList(data.operations).length ? asList(data.operations).slice(0, 5) : asList(data.nodes).slice(0, 5);
+  const labels = rows.length ? rows : ['Source point: supporting detail'];
+  const phase = activePhase(frame, labels.length);
+  return (
+    <svg viewBox="0 0 820 470" style={styles.svg}>
+      {labels.map((row, i) => {
+        const parts = String(row || '').split(':');
+        const y = 66 + i * 76;
+        return <g key={row + i}>
+          <rect x="72" y={y} width="676" height="56" rx="16" fill={i === phase ? '#1e293b' : '#111827'} stroke={i === phase ? theme.accent : theme.line} strokeWidth={i === phase ? 4 : 2}/>
+          <SvgText text={parts[0] || row} x={96} y={y + 34} maxWidth={205} size={20} color={theme.text} weight="850" lines={1} />
+          <SvgText text={parts.slice(1).join(':') || 'source detail'} x={318} y={y + 34} maxWidth={392} size={18} color={theme.muted} lines={1} />
+        </g>;
+      })}
+    </svg>
+  );
+};
+
+const SourceReferenceVisual = ({ frame, scene, slide }) => {
+  const data = getVisualData(scene, slide);
+  const nodes = asList(data.nodes).map(n => typeof n === 'string' ? n : n.label || n.id).filter(Boolean).slice(0, 4);
+  const phase = activePhase(frame, Math.max(1, nodes.length));
+  return (
+    <svg viewBox="0 0 820 470" style={styles.svg}>
+      <ClassNode x={170} y={54} w={480} h={104} title={data.caption || scene.sceneTitle || slide.title || 'Source reference'} sub="uploaded material" active tone="blue" />
+      {(nodes.length ? nodes : ['Source heading', 'Evidence', 'Review cue']).map((label, i) => (
+        <ClassNode key={label + i} x={190} y={188 + i * 76} w={440} h={58} title={label} sub={i === phase ? 'focus' : 'source-backed'} active={i === phase} tone={i % 2 ? 'green' : 'amber'} />
+      ))}
+    </svg>
+  );
+};
+
+const NoVisual = ({ scene, slide }) => (
+  <div style={{ height: '100%', boxSizing: 'border-box', border: `1px solid ${theme.line}`, borderRadius: 18, background: '#111827', padding: 42, display: 'flex', flexDirection: 'column', justifyContent: 'center', textAlign: 'center' }}>
+    <div style={styles.cardLabel}>Source-led explanation</div>
+    <div style={{ color: theme.text, fontSize: 34, lineHeight: 1.15, fontWeight: 850, marginBottom: 18 }}>{scene.sceneTitle || scene.title || slide.title || 'Source focus'}</div>
+    <p style={{ color: theme.muted, fontSize: 22, lineHeight: 1.45, margin: 0 }}>{scene.learningPoint || scene.studentFacingGoal || 'No diagram is needed for this scene; follow the source-backed narration.'}</p>
+  </div>
+);
+
 const UnsupportedVisual = ({ resolution, scene, slide }) => (
   <div style={styles.unsupported}>
     <div style={styles.cardLabel}>Unsupported visual type</div>
@@ -748,6 +806,12 @@ const VISUAL_COMPONENTS = {
   code_walkthrough: CodeWalkthroughVisual,
   process_flow: ProcessFlowVisual,
   comparison_contrast: ComparisonVisual,
+  concept_cards: CardsVisual,
+  classification_table: TableVisual,
+  comparison_table: TableVisual,
+  source_page_reference: SourceReferenceVisual,
+  source_slide_reference: SourceReferenceVisual,
+  no_visual: NoVisual,
   learning_objectives: ConceptMapVisual,
   summary_path: ConceptMapVisual,
   concept_map: ConceptMapVisual,

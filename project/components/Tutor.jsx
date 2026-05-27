@@ -190,7 +190,7 @@ const NoesisTutorResponse = (() => {
           <div style={tu.walkthrough}>
             {msg.keyPoints.slice(0, 6).map((item, i) => (
               <div key={i} style={tu.walkItem}>
-                <span className="mono" style={{ fontSize: 10, color: 'var(--accent)' }}>{i + 1}</span>
+                <span className="mono" style={{ fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--accent)' }}>{i + 1}</span>
                 <span>{item}</span>
               </div>
             ))}
@@ -203,7 +203,7 @@ const NoesisTutorResponse = (() => {
           <div style={tu.walkthrough}>
             {code.walkthrough.map((w, i) => (
               <div key={i} style={tu.walkItem}>
-                <span className="mono" style={{ fontSize: 10, color: 'var(--fg-3)' }}>{w.lineRange || w.line || i + 1}</span>
+                <span className="mono" style={{ fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{w.lineRange || w.line || i + 1}</span>
                 <span>{w.text || w}</span>
               </div>
             ))}
@@ -211,8 +211,8 @@ const NoesisTutorResponse = (() => {
         )}
         {visual && window.TopicVisual && <window.TopicVisual template={visual.type} data={visual} code={code} compact/>}
         {msg.question && <div style={tu.questionBox}>
-          <div style={{ fontSize: 10.5, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 7 }}>Checkpoint</div>
-          <div style={{ fontSize: 13.5, color: 'var(--fg-0)', lineHeight: 1.55 }}>{msg.question}</div>
+          <div style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(7px * var(--app-density-scale))' }}>Checkpoint</div>
+          <div style={{ fontSize: 'calc(13.5px * var(--app-font-scale))', color: 'var(--fg-0)', lineHeight: 1.55 }}>{msg.question}</div>
         </div>}
       </div>
     );
@@ -234,6 +234,7 @@ const Tutor = ({ onNav }) => {
   const [action, setAction] = React.useState('');
   const [materials, setMaterials] = React.useState([]);
   const [selectedMaterialId, setSelectedMaterialId] = React.useState('');
+  const [sourcePreview, setSourcePreview] = React.useState({ materialId: null, title: '', sources: [], loading: false });
   const [conceptInput, setConceptInput] = React.useState('');
   const [activeRailTab, setActiveRailTab] = React.useState('Notes');
   const [notebook, setNotebook] = React.useState([]);
@@ -262,7 +263,8 @@ const Tutor = ({ onNav }) => {
   const busy = ['starting_session', 'retrieving_context', 'generating_step', 'continuing', 'saving_note'].includes(tutorState) || !!action;
   const steps = session && Array.isArray(session.steps) ? session.steps : [];
   const currentStep = steps[step] || null;
-  const sources = session && (session.sources || session.source_chunks || []) || [];
+  const sessionSources = session && (session.sources || session.source_chunks || []) || [];
+  const sources = sessionSources.length ? sessionSources : (sourcePreview.sources || []);
   const trace = session && session.trace || {};
   const persistedFeedback = currentStep && (currentStep.feedback || currentStep.feedback_md) || '';
   const visibleTurns = guidedTurns.filter(t => (t.stepIndex == null ? step : t.stepIndex) === step);
@@ -315,11 +317,62 @@ const Tutor = ({ onNav }) => {
 
   const refreshSession = React.useCallback((id) => {
     if (!id) return Promise.resolve(null);
-    return window.NoesisAPI.tutor.get(id).then((d) => {
-      setSessionReady(d);
-      return d;
+    return window.NoesisAPI.tutor.get(id).then(async (d) => {
+      const base = d && d.session ? d.session : d;
+      let merged = d;
+      const currentSources = (base && (base.sources || base.source_chunks)) || [];
+      if (base && base.id && !currentSources.length) {
+        try {
+          const s = await window.NoesisAPI.tutor.sources(base.id);
+          const withSources = { ...base, sources: s.sources || [], source_chunks: s.sources || [] };
+          merged = d && d.session ? { ...d, session: withSources } : withSources;
+        } catch (_) {}
+      }
+      setSessionReady(merged);
+      return merged;
     });
   }, []);
+
+  React.useEffect(() => {
+    if (!selectedMaterialId) {
+      setSourcePreview({ materialId: null, title: '', sources: [], loading: false });
+      return undefined;
+    }
+    let alive = true;
+    const materialId = parseInt(selectedMaterialId, 10);
+    const selected = materials.find(m => String(m.id) === String(selectedMaterialId));
+    setSourcePreview(prev => ({
+      materialId,
+      title: selected ? materialLabel(selected) : prev.title,
+      sources: prev.materialId === materialId ? prev.sources : [],
+      loading: true,
+    }));
+    Promise.all([
+      window.NoesisAPI.materials.get(materialId).catch(() => selected || null),
+      window.NoesisAPI.materials.chunks(materialId).catch(() => ({ chunks: [] })),
+    ]).then(([material, chunkResult]) => {
+      if (!alive) return;
+      const chunks = (chunkResult && chunkResult.chunks || []).slice(0, 5);
+      setSourcePreview({
+        materialId,
+        title: materialLabel(material || selected || { id: materialId }),
+        loading: false,
+        sources: chunks.map((chunk, index) => ({
+          id: chunk.id || `preview-${materialId}-${index}`,
+          chunkId: chunk.id || null,
+          materialTitle: materialLabel(material || selected || { id: materialId }),
+          heading: chunk.heading || chunk.section_title || chunk.slide_title || chunk.chapter_title || `Material excerpt ${index + 1}`,
+          location: [chunk.source_page != null ? `Page ${chunk.source_page}` : '', chunk.slide_number != null ? `Slide ${chunk.slide_number}` : ''].filter(Boolean).join(' / '),
+          excerpt: String(chunk.text || '').replace(/\s+/g, ' ').trim().slice(0, 520),
+          text: String(chunk.text || '').replace(/\s+/g, ' ').trim().slice(0, 520),
+        })).filter(item => item.excerpt || item.heading),
+      });
+    }).catch(() => {
+      if (!alive) return;
+      setSourcePreview(prev => ({ ...prev, loading: false }));
+    });
+    return () => { alive = false; };
+  }, [selectedMaterialId, materials]);
 
   const pollSession = async (sessionId) => {
     for (let i = 0; i < 120; i += 1) {
@@ -712,7 +765,7 @@ const Tutor = ({ onNav }) => {
         title={topTitle}
         crumbs={['AI Tutor', session ? (session.sourceTitle || 'Session') : 'Start']}
         right={<>
-          <div style={{ display: 'flex', gap: 2, padding: 2, background: 'var(--bg-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--line)' }}>
+          <div style={{ display: 'flex', gap: 'calc(2px * var(--app-density-scale))', padding: 'calc(2px * var(--app-density-scale))', background: 'var(--bg-2)', borderRadius: 'var(--r-md)', border: '1px solid var(--line)' }}>
             {[
               { id: 'socratic', label: 'Socratic', icon: 'Brain' },
               { id: 'explain', label: 'Explain', icon: 'Lightbulb' },
@@ -721,8 +774,8 @@ const Tutor = ({ onNav }) => {
               const C = Icon[m.icon];
               return (
                 <button key={m.id} disabled={busy || paused || action === 'mode'} onClick={() => changeMode(m.id)} style={{
-                  display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '5px 10px', fontSize: 11.5,
+                  display: 'flex', alignItems: 'center', gap: 'calc(6px * var(--app-density-scale))',
+                  padding: '5px 10px', fontSize: 'calc(11.5px * var(--app-font-scale))',
                   background: mode === m.id ? 'var(--bg-0)' : 'transparent',
                   color: mode === m.id ? 'var(--fg-0)' : 'var(--fg-2)',
                   borderRadius: 6,
@@ -744,16 +797,18 @@ const Tutor = ({ onNav }) => {
       {!session && (
         <div style={tu.contextBar}>
           <div>
-            <div style={{ fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 4 }}>Tutor source</div>
-            <div style={{ fontSize: 13, color: 'var(--fg-1)' }}>
-              {tutorState === 'material_loading' ? 'Loading your indexed materials...' : 'Choose a material and Noesis will resolve the real topic.'}
+            <div style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(4px * var(--app-density-scale))' }}>Tutor source</div>
+            <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-1)' }}>
+              {tutorState === 'material_loading'
+                ? 'Loading your indexed materials...'
+                : (sourcePreview.title ? `${sourcePreview.title}${sourcePreview.sources.length ? ` / ${sourcePreview.sources.length} excerpts ready` : ''}` : 'Choose a material and Noesis will resolve the real topic.')}
             </div>
           </div>
-          <select className="input" value={selectedMaterialId} disabled={busy || !materials.length} onChange={(e) => setSelectedMaterialId(e.target.value)} style={{ width: 300, fontSize: 12.5 }}>
+          <select className="input" value={selectedMaterialId} disabled={busy || !materials.length} onChange={(e) => setSelectedMaterialId(e.target.value)} style={{ width: 300, fontSize: 'calc(12.5px * var(--app-font-scale))' }}>
             {!materials.length && <option value="">No ready materials</option>}
             {materials.map(m => <option key={m.id} value={m.id}>{materialLabel(m)}</option>)}
           </select>
-          <input className="input" placeholder="Focus topic (optional)" value={conceptInput} onChange={(e) => setConceptInput(e.target.value)} style={{ width: 240, fontSize: 12.5 }}/>
+          <input className="input" placeholder="Focus topic (optional)" value={conceptInput} onChange={(e) => setConceptInput(e.target.value)} style={{ width: 240, fontSize: 'calc(12.5px * var(--app-font-scale))' }}/>
           <button className="btn btn-accent" disabled={busy || !selectedMaterialId} onClick={() => startSession({ materialId: parseInt(selectedMaterialId, 10), concept: conceptInput })}>
             <Icon.Sparkle size={12}/> {busy ? 'Starting...' : 'Start with material'}
           </button>
@@ -770,10 +825,10 @@ const Tutor = ({ onNav }) => {
       <div style={tu.layout}>
         <aside style={tu.timeline}>
           <div style={{ padding: '20px 20px 10px' }}>
-            <div style={{ fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Session plan</div>
-            <div style={{ fontSize: 13, color: 'var(--fg-1)', marginTop: 6 }}>{session ? topTitle : 'No active session yet'}</div>
+            <div style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Session plan</div>
+            <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-1)', marginTop: 'calc(6px * var(--app-density-scale))' }}>{session ? topTitle : 'No active session yet'}</div>
           </div>
-          <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 2, position: 'relative' }}>
+          <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 'calc(2px * var(--app-density-scale))', position: 'relative' }}>
             {steps.length > 0 ? (
               <>
                 <div style={{ position: 'absolute', left: 27, top: 18, bottom: 18, width: 1, background: 'var(--line)' }}/>
@@ -782,7 +837,7 @@ const Tutor = ({ onNav }) => {
                   const active = i === step;
                   return (
                     <button key={s.id || i} onClick={() => { setStep(i); setFailedTurn(null); }} disabled={busy} style={{
-                      display: 'flex', gap: 12, alignItems: 'flex-start',
+                      display: 'flex', gap: 'calc(12px * var(--app-density-scale))', alignItems: 'flex-start',
                       padding: '10px 10px', borderRadius: 'var(--r-sm)',
                       background: active ? 'var(--bg-2)' : 'transparent',
                       textAlign: 'left', position: 'relative',
@@ -794,34 +849,34 @@ const Tutor = ({ onNav }) => {
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         color: done ? 'var(--bg-0)' : 'var(--accent)',
                         zIndex: 1,
-                        marginTop: 2,
+                        marginTop: 'calc(2px * var(--app-density-scale))',
                       }}>
-                        {done ? <Icon.Check size={11}/> : active ? <div style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--accent)', animation: 'pulse-soft 1.8s infinite' }}/> : <span className="mono" style={{ fontSize: 10, color: 'var(--fg-3)' }}>{i + 1}</span>}
+                        {done ? <Icon.Check size={11}/> : active ? <div style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--accent)', animation: 'pulse-soft 1.8s infinite' }}/> : <span className="mono" style={{ fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{i + 1}</span>}
                       </div>
-                      <div style={{ flex: 1, minWidth: 0, paddingTop: 1 }}>
-                        <div style={{ fontSize: 10.5, letterSpacing: '0.1em', textTransform: 'uppercase', color: active ? 'var(--accent)' : 'var(--fg-3)' }}>{s.label || s.t}</div>
-                        <div style={{ fontSize: 12.5, color: active ? 'var(--fg-0)' : done ? 'var(--fg-2)' : 'var(--fg-3)', marginTop: 3, lineHeight: 1.4 }}>{s.title || s.question}</div>
+                      <div style={{ flex: 1, minWidth: 0, paddingTop: 'calc(1px * var(--app-density-scale))' }}>
+                        <div style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', letterSpacing: '0.1em', textTransform: 'uppercase', color: active ? 'var(--accent)' : 'var(--fg-3)' }}>{s.label || s.t}</div>
+                        <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: active ? 'var(--fg-0)' : done ? 'var(--fg-2)' : 'var(--fg-3)', marginTop: 'calc(3px * var(--app-density-scale))', lineHeight: 1.4 }}>{s.title || s.question}</div>
                       </div>
                     </button>
                   );
                 })}
               </>
             ) : (
-              <div style={{ padding: 12, color: 'var(--fg-3)', fontSize: 12.5, lineHeight: 1.6 }}>
+              <div style={{ padding: 'calc(12px * var(--app-density-scale))', color: 'var(--fg-3)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.6 }}>
                 Pick a material and start a tutor session. Noesis will build the plan after it retrieves context.
               </div>
             )}
           </div>
           {session && session.learningMap && window.LearningMap && (
-            <div style={{ padding: 14, borderTop: '1px solid var(--line)' }}>
+            <div style={{ padding: 'calc(14px * var(--app-density-scale))', borderTop: '1px solid var(--line)' }}>
               <window.LearningMap map={session.learningMap} compact/>
             </div>
           )}
-          <div style={{ marginTop: 'auto', padding: 14, borderTop: '1px solid var(--line)' }}>
-            <div style={{ fontSize: 11, color: 'var(--fg-3)', marginBottom: 6 }}>Session time</div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-              <span style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 300 }}>{fmtTime(elapsedS)}</span>
-              <span style={{ fontSize: 11, color: 'var(--fg-3)' }}>/ 20:00</span>
+          <div style={{ marginTop: 'auto', padding: 'calc(14px * var(--app-density-scale))', borderTop: '1px solid var(--line)' }}>
+            <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', marginBottom: 'calc(6px * var(--app-density-scale))' }}>Session time</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 'calc(6px * var(--app-density-scale))' }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(26px * var(--app-font-scale))', fontWeight: 300 }}>{fmtTime(elapsedS)}</span>
+              <span style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>/ 20:00</span>
             </div>
           </div>
         </aside>
@@ -840,10 +895,10 @@ const Tutor = ({ onNav }) => {
 
             {session && currentStep && (
               <>
-                <div style={{ fontSize: 11, color: 'var(--accent)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>
+                <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 'calc(10px * var(--app-density-scale))' }}>
                   Step {String(step + 1).padStart(2, '0')} · {currentStep.label || currentStep.t}
                 </div>
-                <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 34, fontWeight: 300, margin: '0 0 18px', lineHeight: 1.2 }}>
+                <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(34px * var(--app-font-scale))', fontWeight: 300, margin: '0 0 18px', lineHeight: 1.2 }}>
                   {currentStep.title || currentStep.question}
                 </h1>
                 <div style={tu.lessonCard}>
@@ -855,24 +910,24 @@ const Tutor = ({ onNav }) => {
                         <span style={{ ...tu.professorPulse, opacity: professorState === 'listening' ? 1 : 0.35 }}/>
                       </div>}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                        <b style={{ color: 'var(--fg-0)', fontSize: 13.5 }}>Professor Tutor</b>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap' }}>
+                        <b style={{ color: 'var(--fg-0)', fontSize: 'calc(13.5px * var(--app-font-scale))' }}>Professor Tutor</b>
                         <span style={tu.statePill}>{professorCopy.label}</span>
                       </div>
-                      <div style={{ marginTop: 4, color: 'var(--fg-2)', fontSize: 12.5, lineHeight: 1.5 }}>{professorCopy.text}</div>
+                      <div style={{ marginTop: 'calc(4px * var(--app-density-scale))', color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.5 }}>{professorCopy.text}</div>
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{ display: 'flex', gap: 'calc(10px * var(--app-density-scale))', alignItems: 'flex-start' }}>
                     <div style={tu.tutorAvatar}><Icon.Sparkle size={13} style={{ color: 'var(--accent)' }}/></div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, color: 'var(--fg-0)', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{currentStep.content}</div>
+                      <div style={{ fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-0)', lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{currentStep.content}</div>
                       {currentStep.example && <div style={tu.exampleBox}><b>Example:</b> {currentStep.example}</div>}
                     </div>
                   </div>
 
                   {currentStep.visual && window.TopicVisual && (
-                    <div style={{ marginTop: 18 }}>
+                    <div style={{ marginTop: 'calc(18px * var(--app-density-scale))' }}>
                       <window.TopicVisual template={currentStep.visual.type} data={currentStep.visual} code={currentStep.code} compact/>
                     </div>
                   )}
@@ -890,17 +945,17 @@ const Tutor = ({ onNav }) => {
                   )}
 
                   <div style={tu.questionBox}>
-                    <div style={{ fontSize: 10.5, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 7 }}>Check your understanding</div>
-                    <div style={{ fontSize: 14, color: 'var(--fg-0)', lineHeight: 1.55 }}>{currentStep.question}</div>
-                    {currentStep.hint && <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--fg-2)' }}>Hint: {currentStep.hint}</div>}
+                    <div style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(7px * var(--app-density-scale))' }}>Check your understanding</div>
+                    <div style={{ fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-0)', lineHeight: 1.55 }}>{currentStep.question}</div>
+                    {currentStep.hint && <div style={{ marginTop: 'calc(8px * var(--app-density-scale))', fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-2)' }}>Hint: {currentStep.hint}</div>}
                   </div>
 
                   {currentStep.options && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(16px * var(--app-density-scale))' }}>
                       {currentStep.options.map((label, i) => (
                         <button key={i} disabled={busy || paused} onClick={() => continueTutor(i)} style={tu.choice}>
-                          <span className="mono" style={{ fontSize: 10, color: 'var(--fg-3)', width: 14 }}>{String.fromCharCode(65 + i)}</span>
-                          <span style={{ flex: 1, fontSize: 13, color: 'var(--fg-0)' }}>{label}</span>
+                          <span className="mono" style={{ fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--fg-3)', width: 14 }}>{String.fromCharCode(65 + i)}</span>
+                          <span style={{ flex: 1, fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)' }}>{label}</span>
                         </button>
                       ))}
                     </div>
@@ -909,7 +964,7 @@ const Tutor = ({ onNav }) => {
                   {!currentStep.options && (
                     <textarea className="input" value={answerText} onChange={e => setAnswerText(e.target.value)} onFocus={() => setComposerFocused(true)} onBlur={() => setComposerFocused(false)} disabled={busy || paused}
                               placeholder="Write a short answer, or continue when you're ready..."
-                              style={{ width: '100%', minHeight: 82, marginTop: 16, fontSize: 13, resize: 'vertical' }}/>
+                              style={{ width: '100%', minHeight: 82, marginTop: 'calc(16px * var(--app-density-scale))', fontSize: 'calc(13px * var(--app-font-scale))', resize: 'vertical' }}/>
                   )}
 
                   <div style={tu.quickActions}>
@@ -941,7 +996,7 @@ const Tutor = ({ onNav }) => {
                             {turn.followUpQuestion && <div style={tu.followUp}>{turn.followUpQuestion}</div>}
                             {!turn.error && turn.id === (visibleTurns[visibleTurns.length - 1] && visibleTurns[visibleTurns.length - 1].id) && (voiceMode === 'on' || voiceBusy || voiceAudioUrl || voiceError) && (
                               <div style={tu.voiceRow}>
-                                <button className="btn btn-ghost" style={{ padding: '5px 9px', fontSize: 11 }} disabled={!voiceAudioUrl || voiceBusy} onClick={toggleTutorAudio}>
+                                <button className="btn btn-ghost" style={{ padding: '5px 9px', fontSize: 'calc(11px * var(--app-font-scale))' }} disabled={!voiceAudioUrl || voiceBusy} onClick={toggleTutorAudio}>
                                   {voicePlaying ? <Icon.Pause size={11}/> : <Icon.Play size={11}/>} {voicePlaying ? 'Pause' : 'Play'}
                                 </button>
                                 {voiceBusy && <span>Generating voice...</span>}
@@ -960,7 +1015,7 @@ const Tutor = ({ onNav }) => {
                     </div>
                   )}
 
-                  <div style={{ marginTop: 20, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ marginTop: 'calc(20px * var(--app-density-scale))', display: 'flex', gap: 'calc(10px * var(--app-density-scale))', flexWrap: 'wrap' }}>
                     <button className="btn btn-accent" disabled={!session || paused || busy} onClick={() => isLastStep ? finishTutor() : continueTutor(null, answerText.trim() ? 'check_answer' : 'continue')}>
                       {action === 'continue' ? <>Preparing... <Icon.Sparkle size={12}/></> : !isLastStep ? <>Continue <Icon.ArrowRight size={12}/></> : <>Finish <Icon.Check size={12}/></>}
                     </button>
@@ -971,8 +1026,8 @@ const Tutor = ({ onNav }) => {
                       New session
                     </button>
                   </div>
-                  {status && <div style={{ marginTop: 12, color: 'var(--fg-3)', fontSize: 12 }}>{status}</div>}
-                  {error && <div style={{ marginTop: 12, color: 'var(--err)', fontSize: 12 }}>{error}</div>}
+                  {status && <div style={{ marginTop: 'calc(12px * var(--app-density-scale))', color: 'var(--fg-3)', fontSize: 'calc(12px * var(--app-font-scale))' }}>{status}</div>}
+                  {error && <div style={{ marginTop: 'calc(12px * var(--app-density-scale))', color: 'var(--err)', fontSize: 'calc(12px * var(--app-font-scale))' }}>{error}</div>}
                 </div>
               </>
             )}
@@ -981,10 +1036,10 @@ const Tutor = ({ onNav }) => {
 
         <aside style={tu.rail}>
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--line)' }}>
-            <div style={{ display: 'flex', gap: 2, padding: 2, background: 'var(--bg-2)', borderRadius: 'var(--r-sm)', border: '1px solid var(--line)' }}>
+            <div style={{ display: 'flex', gap: 'calc(2px * var(--app-density-scale))', padding: 'calc(2px * var(--app-density-scale))', background: 'var(--bg-2)', borderRadius: 'var(--r-sm)', border: '1px solid var(--line)' }}>
               {['Trace', 'Notes', 'Sources'].map((t) => (
                 <button key={t} onClick={() => setActiveRailTab(t)} style={{
-                  flex: 1, padding: '5px 8px', fontSize: 11.5,
+                  flex: 1, padding: '5px 8px', fontSize: 'calc(11.5px * var(--app-font-scale))',
                   background: activeRailTab === t ? 'var(--bg-0)' : 'transparent',
                   color: activeRailTab === t ? 'var(--fg-0)' : 'var(--fg-2)',
                   borderRadius: 4,
@@ -993,7 +1048,7 @@ const Tutor = ({ onNav }) => {
             </div>
           </div>
 
-          <div style={{ padding: 18, overflow: 'auto', flex: 1 }}>
+          <div style={{ padding: 'calc(18px * var(--app-density-scale))', overflow: 'auto', flex: 1 }}>
             {activeRailTab === 'Trace' && (
               <>
                 <RailTitle title="Tutor trace"/>
@@ -1013,14 +1068,14 @@ const Tutor = ({ onNav }) => {
             {activeRailTab === 'Sources' && (
               <>
                 <RailTitle title="Grounding sources"/>
-                {sources.length === 0 && <div style={tu.emptyRail}>Sources will appear after the tutor retrieves material context.</div>}
+                {sources.length === 0 && <div style={tu.emptyRail}>{sourcePreview.loading ? 'Loading source excerpts...' : 'Sources will appear after the tutor retrieves material context.'}</div>}
                 {sources.map((c, i) => (
                   <div key={`${c.id || c.chunkId}-${i}`} style={tu.sourceEntry}>
-                    <div style={{ fontSize: 11, color: 'var(--accent)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 6 }}>
+                    <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 'calc(6px * var(--app-density-scale))' }}>
                       Source {i + 1} · {c.location || c.heading || 'Material excerpt'}
                     </div>
-                    <div style={{ fontSize: 12.5, color: 'var(--fg-0)', marginBottom: 6 }}>{c.heading || c.materialTitle}</div>
-                    <div style={{ fontSize: 12.2, color: 'var(--fg-2)', lineHeight: 1.55 }}>{c.excerpt || c.text}</div>
+                    <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)', marginBottom: 'calc(6px * var(--app-density-scale))' }}>{c.heading || c.materialTitle}</div>
+                    <div style={{ fontSize: 'calc(12.2px * var(--app-font-scale))', color: 'var(--fg-2)', lineHeight: 1.55 }}>{c.excerpt || c.text}</div>
                   </div>
                 ))}
               </>
@@ -1032,22 +1087,22 @@ const Tutor = ({ onNav }) => {
                 {notebook.length === 0 && <div style={tu.emptyRail}>No notes yet. Save a tutor explanation or write your own note.</div>}
                 {notebook.map((n) => (
                   <div key={n.id} style={{ ...tu.noteEntry, ...(n.flashcard_worthy ? { borderLeft: '2px solid var(--accent)', paddingLeft: 10 } : {}) }}>
-                    <div className="mono" style={{ fontSize: 10, color: n.flashcard_worthy ? 'var(--accent)' : 'var(--fg-3)', marginBottom: 4 }}>
+                    <div className="mono" style={{ fontSize: 'calc(10px * var(--app-font-scale))', color: n.flashcard_worthy ? 'var(--accent)' : 'var(--fg-3)', marginBottom: 'calc(4px * var(--app-density-scale))' }}>
                       {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
-                    <div style={{ fontSize: 12.5, color: 'var(--fg-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{n.body}</div>
+                    <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-1)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>{n.body}</div>
                   </div>
                 ))}
               </>
             )}
           </div>
 
-          <div style={{ padding: 14, borderTop: '1px solid var(--line)', display: 'flex', gap: 8 }}>
+          <div style={{ padding: 'calc(14px * var(--app-density-scale))', borderTop: '1px solid var(--line)', display: 'flex', gap: 'calc(8px * var(--app-density-scale))' }}>
             <input className="input" placeholder="Add a note (Enter to save)..." value={noteText}
                    onChange={(e) => setNoteText(e.target.value)} onKeyDown={addManualNote}
                    disabled={paused || !session || busy}
-                   style={{ flex: 1, fontSize: 12.5 }}/>
-            <button className="btn btn-bare" style={{ padding: 8 }} disabled={paused || !session || busy} onClick={() => addManualNote()}><Icon.Send size={14}/></button>
+                   style={{ flex: 1, fontSize: 'calc(12.5px * var(--app-font-scale))' }}/>
+            <button className="btn btn-bare" style={{ padding: 'calc(8px * var(--app-density-scale))' }} disabled={paused || !session || busy} onClick={() => addManualNote()}><Icon.Send size={14}/></button>
           </div>
         </aside>
       </div>
@@ -1069,7 +1124,7 @@ const TutorMessage = ({ text }) => {
   return Structured ? <Structured text={text}/> : <TutorMarkdown text={text}/>;
 };
 
-const RailTitle = ({ title }) => <div style={{ fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>;
+const RailTitle = ({ title }) => <div style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(10px * var(--app-density-scale))' }}>{title}</div>;
 const TraceRow = ({ label, value }) => (
   <div style={tu.traceRow}>
     <span>{label}</span>
@@ -1080,7 +1135,7 @@ const TraceRow = ({ label, value }) => (
 const tu = {
   layout: { display: 'grid', gridTemplateColumns: '280px 1fr 340px', flex: 1, minHeight: 'calc(100vh - 57px)' },
   contextBar: {
-    display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+    display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))', flexWrap: 'wrap',
     padding: '12px 18px', borderBottom: '1px solid var(--line)',
     background: 'var(--bg-1)',
   },
@@ -1097,15 +1152,15 @@ const tu = {
   },
   emptyState: {
     minHeight: 480, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    textAlign: 'center', gap: 14, color: 'var(--fg-1)',
+    textAlign: 'center', gap: 'calc(14px * var(--app-density-scale))', color: 'var(--fg-1)',
   },
-  emptyTitle: { fontFamily: 'var(--font-display)', fontSize: 34, fontWeight: 300, margin: 0 },
-  emptyText: { maxWidth: 480, fontSize: 14, lineHeight: 1.7, color: 'var(--fg-2)', margin: 0 },
-  skeletonStack: { display: 'grid', gap: 8, width: 360 },
-  lessonCard: { marginTop: 22, padding: 18, border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' },
+  emptyTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(34px * var(--app-font-scale))', fontWeight: 300, margin: 0 },
+  emptyText: { maxWidth: 480, fontSize: 'calc(14px * var(--app-font-scale))', lineHeight: 1.7, color: 'var(--fg-2)', margin: 0 },
+  skeletonStack: { display: 'grid', gap: 'calc(8px * var(--app-density-scale))', width: 360 },
+  lessonCard: { marginTop: 'calc(22px * var(--app-density-scale))', padding: 'calc(18px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' },
   professorPanel: {
-    display: 'flex', alignItems: 'center', gap: 12,
-    padding: 12, marginBottom: 16,
+    display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))', marginBottom: 'calc(16px * var(--app-density-scale))',
     borderRadius: 8, border: '1px solid var(--accent-soft)',
     background: 'var(--accent-glow)',
   },
@@ -1122,40 +1177,40 @@ const tu = {
   },
   statePill: {
     padding: '3px 7px', borderRadius: 999,
-    fontSize: 10.5, color: 'var(--accent)',
+    fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)',
     background: 'var(--bg-0)', border: '1px solid var(--accent-soft)',
   },
-  exampleBox: { marginTop: 12, padding: 12, borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-1)', fontSize: 13 },
-  codeBlock: { marginTop: 16, padding: 16, borderRadius: 8, background: '#0f172a', color: '#dbeafe', overflow: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12.5, lineHeight: 1.6 },
-  walkthrough: { display: 'grid', gap: 8, marginTop: 10 },
-  walkItem: { display: 'flex', gap: 10, alignItems: 'flex-start', color: 'var(--fg-2)', fontSize: 12.5, lineHeight: 1.5 },
-  questionBox: { marginTop: 16, padding: 14, borderRadius: 8, border: '1px solid var(--accent-soft)', background: 'var(--accent-glow)' },
+  exampleBox: { marginTop: 'calc(12px * var(--app-density-scale))', padding: 'calc(12px * var(--app-density-scale))', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-1)', fontSize: 'calc(13px * var(--app-font-scale))' },
+  codeBlock: { marginTop: 'calc(16px * var(--app-density-scale))', padding: 'calc(16px * var(--app-density-scale))', borderRadius: 8, background: '#0f172a', color: '#dbeafe', overflow: 'auto', fontFamily: 'var(--font-mono)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.6 },
+  walkthrough: { display: 'grid', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(10px * var(--app-density-scale))' },
+  walkItem: { display: 'flex', gap: 'calc(10px * var(--app-density-scale))', alignItems: 'flex-start', color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.5 },
+  questionBox: { marginTop: 'calc(16px * var(--app-density-scale))', padding: 'calc(14px * var(--app-density-scale))', borderRadius: 8, border: '1px solid var(--accent-soft)', background: 'var(--accent-glow)' },
   choice: {
-    display: 'flex', alignItems: 'center', gap: 12,
+    display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))',
     padding: '12px 14px', borderRadius: 'var(--r-md)',
     border: '1px solid var(--line)', background: 'var(--bg-1)',
     textAlign: 'left',
   },
-  quickActions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 },
-  conversation: { display: 'grid', gap: 10, marginTop: 16 },
-  bubble: { padding: 12, borderRadius: 8, lineHeight: 1.6, fontSize: 13, border: '1px solid var(--line)' },
+  quickActions: { display: 'flex', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap', marginTop: 'calc(12px * var(--app-density-scale))' },
+  conversation: { display: 'grid', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(16px * var(--app-density-scale))' },
+  bubble: { padding: 'calc(12px * var(--app-density-scale))', borderRadius: 8, lineHeight: 1.6, fontSize: 'calc(13px * var(--app-font-scale))', border: '1px solid var(--line)' },
   studentBubble: { justifySelf: 'end', maxWidth: '82%', background: 'var(--bg-2)', color: 'var(--fg-1)' },
   tutorBubble: { justifySelf: 'start', maxWidth: '92%', background: 'var(--bg-0)', color: 'var(--fg-1)', borderColor: 'var(--accent-soft)' },
-  turnHeader: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
-  turnAction: { fontSize: 10.5, color: 'var(--accent)', border: '1px solid var(--accent-soft)', background: 'var(--accent-glow)', borderRadius: 999, padding: '2px 7px' },
-  tutorMarkdown: { fontSize: 13, lineHeight: 1.65, color: 'var(--fg-1)' },
-  structuredMessage: { display: 'grid', gap: 10 },
-  structuredTitle: { fontSize: 14, fontWeight: 700, color: 'var(--fg-0)', marginBottom: 2 },
-  hintBox: { padding: 11, borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-1)', fontSize: 12.8, lineHeight: 1.55 },
-  followUp: { marginTop: 8, color: 'var(--fg-2)', fontSize: 12.5 },
-  failedTurn: { marginTop: 8, color: 'var(--warn)', lineHeight: 1.55 },
-  voiceRow: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginTop: 10, color: 'var(--fg-3)', fontSize: 11.5 },
-  feedback: { marginTop: 16, padding: 14, borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-1)', lineHeight: 1.6 },
-  noteEntry: { marginBottom: 16 },
-  sourceEntry: { marginBottom: 14, padding: 12, borderRadius: 'var(--r-sm)', background: 'var(--bg-1)', border: '1px solid var(--line)' },
-  emptyRail: { fontSize: 12.5, color: 'var(--fg-3)', lineHeight: 1.6 },
-  traceRow: { display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid var(--line)', fontSize: 12, color: 'var(--fg-2)' },
-  traceWarn: { marginTop: 10, padding: 10, borderRadius: 8, background: 'color-mix(in oklab, var(--warn) 12%, transparent)', color: 'var(--fg-1)', fontSize: 12, lineHeight: 1.5 },
+  turnHeader: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', marginBottom: 'calc(8px * var(--app-density-scale))' },
+  turnAction: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', border: '1px solid var(--accent-soft)', background: 'var(--accent-glow)', borderRadius: 999, padding: '2px 7px' },
+  tutorMarkdown: { fontSize: 'calc(13px * var(--app-font-scale))', lineHeight: 1.65, color: 'var(--fg-1)' },
+  structuredMessage: { display: 'grid', gap: 'calc(10px * var(--app-density-scale))' },
+  structuredTitle: { fontSize: 'calc(14px * var(--app-font-scale))', fontWeight: 700, color: 'var(--fg-0)', marginBottom: 'calc(2px * var(--app-density-scale))' },
+  hintBox: { padding: 'calc(11px * var(--app-density-scale))', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-1)', fontSize: 'calc(12.8px * var(--app-font-scale))', lineHeight: 1.55 },
+  followUp: { marginTop: 'calc(8px * var(--app-density-scale))', color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))' },
+  failedTurn: { marginTop: 'calc(8px * var(--app-density-scale))', color: 'var(--warn)', lineHeight: 1.55 },
+  voiceRow: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap', marginTop: 'calc(10px * var(--app-density-scale))', color: 'var(--fg-3)', fontSize: 'calc(11.5px * var(--app-font-scale))' },
+  feedback: { marginTop: 'calc(16px * var(--app-density-scale))', padding: 'calc(14px * var(--app-density-scale))', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-1)', lineHeight: 1.6 },
+  noteEntry: { marginBottom: 'calc(16px * var(--app-density-scale))' },
+  sourceEntry: { marginBottom: 'calc(14px * var(--app-density-scale))', padding: 'calc(12px * var(--app-density-scale))', borderRadius: 'var(--r-sm)', background: 'var(--bg-1)', border: '1px solid var(--line)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  emptyRail: { fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-3)', lineHeight: 1.6 },
+  traceRow: { display: 'flex', justifyContent: 'space-between', gap: 'calc(10px * var(--app-density-scale))', padding: '9px 0', borderBottom: '1px solid var(--line)', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)' },
+  traceWarn: { marginTop: 'calc(10px * var(--app-density-scale))', padding: 'calc(10px * var(--app-density-scale))', borderRadius: 8, background: 'color-mix(in oklab, var(--warn) 12%, transparent)', color: 'var(--fg-1)', fontSize: 'calc(12px * var(--app-font-scale))', lineHeight: 1.5 },
 };
 
 window.Tutor = Tutor;

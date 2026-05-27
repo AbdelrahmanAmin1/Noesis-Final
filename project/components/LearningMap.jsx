@@ -11,6 +11,10 @@ const TopicVisual = ({ template = 'learning_map', data = {}, code = null, compac
   if (resolved === 'tree_visual') return <TreeVisual compact={compact} />;
   if (resolved === 'big_o_growth') return <BigOVisual compact={compact} />;
   if (resolved === 'code_walkthrough' || code) return <CodeVisual code={code} compact={compact} />;
+  if (resolved === 'no_visual') return <NoVisualPreview compact={compact} />;
+  if (['concept_cards', 'classification_table', 'comparison_table', 'source_page_reference', 'source_slide_reference'].includes(resolved)) {
+    return <MiniMindmap nodes={nodes.length ? nodes : ['Source concept', 'Supporting detail', 'Review question']} compact={compact} />;
+  }
   if (['concept_map', 'learning_objectives', 'summary_path', 'process_flow', 'comparison_contrast'].includes(resolved)) {
     return <MiniMindmap nodes={nodes.length ? nodes : ['Start', 'Prerequisites', 'Core idea', 'Example', 'Practice']} compact={compact} />;
   }
@@ -35,6 +39,12 @@ const TOPIC_VISUALS = {
   code_walkthrough: ['code', 'code_visual', 'line_highlight', 'code_example'],
   process_flow: ['flow', 'step_by_step', 'operation_flow', 'algorithm_flow'],
   comparison_contrast: ['comparison', 'compare', 'before_after', 'mistake_correction'],
+  concept_cards: ['cards', 'study_cards', 'source_cards'],
+  classification_table: ['table', 'classification', 'source_table'],
+  comparison_table: ['compare_table', 'comparison_table'],
+  source_page_reference: ['source_page', 'page_reference', 'source_page_image', 'source_diagram'],
+  source_slide_reference: ['source_slide', 'slide_reference', 'source_slide_image'],
+  no_visual: ['none', 'no_visual', 'text_only', 'source_text'],
   learning_objectives: ['objectives'],
   summary_path: ['summary', 'recap', 'summary_visual'],
   concept_map: ['mindmap', 'mind_map', 'learning_map'],
@@ -51,6 +61,52 @@ function resolveTopicVisual(value, context = '') {
   if (key === 'stack_queue') return /\bqueue|fifo|enqueue|dequeue|front|rear\b/i.test(context) ? 'queue_operation' : 'stack_operation';
   return TOPIC_VISUAL_ALIASES[key] || '';
 }
+
+function wrapSvgLabel(value, maxChars = 16, maxLines = 2) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return [''];
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  const pushCurrent = () => {
+    if (current) {
+      lines.push(current);
+      current = '';
+    }
+  };
+  for (const word of words) {
+    if (word.length > maxChars) {
+      pushCurrent();
+      const clipped = word.slice(0, Math.max(3, maxChars - 1));
+      lines.push(lines.length === maxLines - 1 ? `${clipped}...` : clipped);
+      if (lines.length >= maxLines) break;
+      continue;
+    }
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > maxChars) {
+      pushCurrent();
+      current = word;
+    } else {
+      current = next;
+    }
+    if (lines.length >= maxLines) break;
+  }
+  if (lines.length < maxLines) pushCurrent();
+  if (lines.length > maxLines) lines.length = maxLines;
+  if (lines.length === maxLines && words.join(' ').length > lines.join(' ').length) {
+    lines[maxLines - 1] = `${lines[maxLines - 1].slice(0, Math.max(3, maxChars - 3)).trim()}...`;
+  }
+  return lines.length ? lines : [''];
+}
+
+const SvgTextLines = ({ x, y, text, width = 120, fontSize = 13, lineHeight = 15, fontWeight = 700, fill = '#111827', anchor = 'middle', maxLines = 2 }) => {
+  const maxChars = Math.max(6, Math.floor(width / Math.max(6, fontSize * 0.58)));
+  const lines = wrapSvgLabel(text, maxChars, maxLines);
+  const startY = y - ((lines.length - 1) * lineHeight) / 2;
+  return <text textAnchor={anchor} fontSize={fontSize} fontWeight={fontWeight} fill={fill}>
+    {lines.map((line, index) => <tspan key={`${line}-${index}`} x={x} y={startY + index * lineHeight}>{line}</tspan>)}
+  </text>;
+};
 
 // ---------------------------------------------------------------------------
 // Tree layout engine
@@ -437,7 +493,7 @@ const LearningMap = ({ map, onNode, compact = false, highlightNode }) => {
                   animation: (isHighlighted || isPathNode) ? 'glowPulse 2s infinite' : 'none',
                   boxShadow: (isHighlighted || isPathNode) ? '0 0 0 2px var(--accent-soft), 0 12px 28px #00000026' : lm.rootNode.boxShadow,
                 }}>
-                  <span style={{ ...lm.rootLabel, fontSize: compact ? 14 : 18 }}>
+                  <span style={{ ...lm.rootLabel, fontSize: `calc(${compact ? 14 : 18}px * var(--app-font-scale))` }}>
                     {n.label}
                   </span>
                   {recIdx && <span style={lm.recBadge}>{recIdx}</span>}
@@ -465,7 +521,7 @@ const LearningMap = ({ map, onNode, compact = false, highlightNode }) => {
                 }}>
                   <div style={lm.branchTop}>
                     <span style={{ ...lm.dot, background: color }}/>
-                    <span style={{ ...lm.branchTitle, fontSize: compact ? 11.5 : 13 }}>{n.label}</span>
+                    <span style={{ ...lm.branchTitle, fontSize: `calc(${compact ? 11.5 : 13}px * var(--app-font-scale))` }}>{n.label}</span>
                     {recIdx && <span style={lm.recBadge}>{recIdx}</span>}
                     {hasCh && <span
                       onClick={function(e) { toggleExpand(nodeId, e); }}
@@ -523,14 +579,14 @@ const MiniMindmap = ({ nodes, compact }) => (
   <div style={{ ...tv.box, minHeight: compact ? 180 : 260 }}>
     <svg viewBox="0 0 640 260" style={tv.svg}>
       <rect x="260" y="98" width="120" height="64" rx="18" fill="#dbeafe" stroke="#2563eb" strokeWidth="2"/>
-      <text x="320" y="136" textAnchor="middle" fontSize="15" fontWeight="700" fill="#0f172a">{nodes[0] || 'Topic'}</text>
+      <SvgTextLines x={320} y={132} width={104} text={nodes[0] || 'Topic'} fontSize={14} lineHeight={15} maxLines={3} fill="#0f172a"/>
       {nodes.slice(1, 7).map((n, i) => {
         const pts = [[70,30],[455,30],[70,180],[455,180],[240,20],[270,200]];
         const p = pts[i];
         return <g key={n + i}>
           <line x1="320" y1="130" x2={p[0] + 58} y2={p[1] + 28} stroke="#94a3b8" strokeWidth="2"/>
           <rect x={p[0]} y={p[1]} width="116" height="56" rx="16" fill={['#dcfce7','#fef3c7','#fce7f3'][i % 3]} stroke="#94a3b8" strokeWidth="1.5"/>
-          <text x={p[0] + 58} y={p[1] + 34} textAnchor="middle" fontSize="13" fontWeight="700" fill="#111827">{n}</text>
+          <SvgTextLines x={p[0] + 58} y={p[1] + 30} width={100} text={n} fontSize={12} lineHeight={13} maxLines={3}/>
         </g>;
       })}
     </svg>
@@ -560,7 +616,7 @@ const EncapsulationVisual = ({ nodes, compact }) => {
   return <div style={{ ...tv.box, minHeight: compact ? 180 : 260 }}>
     <svg viewBox="0 0 680 270" style={tv.svg}>
       <rect x="260" y="34" width="210" height="190" rx="22" fill="#eff6ff" stroke="#2563eb" strokeWidth="3" strokeDasharray="8 7"/>
-      <text x="365" y="66" textAnchor="middle" fontSize="17" fontWeight="800" fill="#0f172a">{className}</text>
+      <SvgTextLines x={365} y={62} width={180} text={className} fontSize={16} lineHeight={17} fontWeight={800} fill="#0f172a" maxLines={2}/>
       <TextBox x={294} y={88} w={142} h={42} text={field} fill="#fef3c7" stroke="#f59e0b"/>
       <TextBox x={294} y={154} w={142} h={42} text={method} fill="#dcfce7" stroke="#16a34a"/>
       <TextBox x={40} y={82} w={150} h={48} text="client.count = -5" fill="#fee2e2" stroke="#ef4444"/>
@@ -568,7 +624,7 @@ const EncapsulationVisual = ({ nodes, compact }) => {
       <line x1="190" y1="106" x2="294" y2="108" stroke="#ef4444" strokeWidth="4"/>
       <line x1="218" y1="82" x2="252" y2="132" stroke="#ef4444" strokeWidth="6"/><line x1="252" y1="82" x2="218" y2="132" stroke="#ef4444" strokeWidth="6"/>
       <Arrow x1={190} y1={178} x2={294} y2={176} label="allowed"/>
-      <text x="365" y="250" textAnchor="middle" fontSize="14" fontWeight="700" fill="#475569">private state, public API</text>
+      <SvgTextLines x={365} y={250} width={220} text="private state, public API" fontSize={14} lineHeight={15} fill="#475569" maxLines={2}/>
     </svg>
   </div>;
 };
@@ -662,65 +718,71 @@ const BigOVisual = ({ compact }) => <div style={{ ...tv.box, minHeight: compact 
 
 const CodeVisual = ({ code, compact }) => <pre style={{ ...tv.code, maxHeight: compact ? 180 : 260 }}>{code && code.content || 'Code preview appears here.'}</pre>;
 
+const NoVisualPreview = ({ compact }) => <div style={{ ...tv.box, minHeight: compact ? 120 : 180, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+  <div style={{ color: '#2563eb', fontSize: 'calc(12px * var(--app-font-scale))', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 'calc(8px * var(--app-density-scale))' }}>No diagram needed</div>
+  <div style={{ color: '#111827', fontSize: 'calc(16px * var(--app-font-scale))', fontWeight: 700 }}>Source-led explanation</div>
+  <p style={{ color: '#64748b', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.45, margin: '8px 0 0' }}>This scene is clearer as narration, source text, or review cards.</p>
+</div>;
+
 const UnsupportedTopicVisual = ({ visualType, compact }) => <div style={{ ...tv.box, minHeight: compact ? 160 : 230, borderColor: '#ef4444', background: '#fff1f2' }}>
-  <div style={{ color: '#991b1b', fontSize: 12, fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>Unsupported visual</div>
-  <div style={{ color: '#7f1d1d', fontSize: 18, fontWeight: 800 }}>{String(visualType || 'missing')}</div>
-  <p style={{ color: '#7f1d1d', fontSize: 13, lineHeight: 1.45 }}>Regenerate this scene with a supported concrete CS visual.</p>
+  <div style={{ color: '#991b1b', fontSize: 'calc(12px * var(--app-font-scale))', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 'calc(8px * var(--app-density-scale))' }}>Unsupported visual</div>
+  <div style={{ color: '#7f1d1d', fontSize: 'calc(18px * var(--app-font-scale))', fontWeight: 800 }}>{String(visualType || 'missing')}</div>
+  <p style={{ color: '#7f1d1d', fontSize: 'calc(13px * var(--app-font-scale))', lineHeight: 1.45 }}>Regenerate this scene with a supported concrete CS visual.</p>
 </div>;
 
 const TextBox = ({ x, y, w, h, text, fill, stroke }) => <g>
   <rect x={x} y={y} width={w} height={h} rx="14" fill={fill} stroke={stroke} strokeWidth="2"/>
-  <text x={x + w / 2} y={y + h / 2 + 5} textAnchor="middle" fontSize="15" fontWeight="700" fill="#111827">{text}</text>
+  <SvgTextLines x={x + w / 2} y={y + h / 2 + 4} width={Math.max(24, w - 16)} text={text} fontSize={Math.min(15, Math.max(11, h / 3.5))} lineHeight={14} maxLines={Math.max(1, Math.floor((h - 10) / 14))}/>
 </g>;
 const ClassBox = ({ x, y, name, rows }) => <g>
   <rect x={x} y={y} width="160" height="96" rx="10" fill="#dbeafe" stroke="#2563eb" strokeWidth="2"/>
-  <text x={x + 80} y={y + 24} textAnchor="middle" fontSize="16" fontWeight="700">{name}</text>
+  <SvgTextLines x={x + 80} y={y + 21} width={138} text={name} fontSize={14} lineHeight={14} maxLines={2}/>
   <line x1={x} y1={y + 34} x2={x + 160} y2={y + 34} stroke="#2563eb" strokeWidth="2"/>
-  {rows.map((r, i) => <text key={r} x={x + 14} y={y + 56 + i * 20} fontSize="13" fill="#111827">{r}</text>)}
+  {rows.map((r, i) => <SvgTextLines key={r} x={x + 14} y={y + 54 + i * 20} width={132} text={r} fontSize={12} lineHeight={12} fontWeight={600} anchor="start" maxLines={1}/>)}
 </g>;
 const Node = ({ x, y, value }) => <g>
   <rect x={x} y={y} width="118" height="86" rx="12" fill="#dcfce7" stroke="#16a34a" strokeWidth="2"/>
   <line x1={x + 68} y1={y} x2={x + 68} y2={y + 86} stroke="#16a34a" strokeWidth="2"/>
-  <text x={x + 34} y={y + 49} textAnchor="middle" fontSize="18" fontWeight="700">{value}</text>
-  <text x={x + 92} y={y + 49} textAnchor="middle" fontSize="13" fontWeight="700">next</text>
+  <SvgTextLines x={x + 34} y={y + 47} width={54} text={value} fontSize={16} lineHeight={16} maxLines={2}/>
+  <SvgTextLines x={x + 92} y={y + 47} width={38} text="next" fontSize={12} lineHeight={12} maxLines={1}/>
 </g>;
 const Arrow = ({ x1, y1, x2, y2, label }) => <g>
   <defs><marker id="arrowHead" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#ef4444"/></marker></defs>
   <line x1={x1} y1={y1} x2={x2} y2={y2} stroke="#ef4444" strokeWidth="3" markerEnd="url(#arrowHead)"/>
-  {label && <text x={(x1+x2)/2} y={(y1+y2)/2 - 8} textAnchor="middle" fontSize="12" fontWeight="700" fill="#991b1b">{label}</text>}
+  {label && <SvgTextLines x={(x1+x2)/2} y={(y1+y2)/2 - 8} width={72} text={label} fontSize={11} lineHeight={11} maxLines={2} fill="#991b1b"/>}
 </g>;
 
 const tv = {
-  box: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-0)', overflow: 'hidden', padding: 10 },
+  box: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-0)', overflow: 'hidden', padding: 'calc(10px * var(--app-density-scale))' },
   svg: { width: '100%', height: '100%', minHeight: 160, display: 'block' },
-  code: { background: '#0f172a', color: '#dbeafe', border: '1px solid #38bdf8', borderRadius: 8, padding: 16, overflow: 'auto', fontFamily: 'var(--font-mono)', fontSize: 12.5, lineHeight: 1.55 },
+  code: { background: '#0f172a', color: '#dbeafe', border: '1px solid #38bdf8', borderRadius: 8, padding: 'calc(16px * var(--app-density-scale))', overflow: 'auto', fontFamily: 'var(--font-mono)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.55 },
 };
 
 const lm = {
-  shell: { border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)', padding: 18, overflow: 'visible' },
-  compactShell: { padding: 12 },
-  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap' },
-  compactHead: { gap: 8 },
-  eyebrow: { fontSize: 10.5, color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 },
-  title: { fontFamily: 'var(--font-display)', fontWeight: 300, fontSize: 26, margin: 0 },
-  compactTitle: { fontSize: 19, lineHeight: 1.12 },
-  startBadge: { fontSize: 12, color: 'var(--fg-1)', background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', padding: '6px 10px', borderRadius: 8, whiteSpace: 'nowrap' },
-  compactStartBadge: { fontSize: 10.5, padding: '5px 8px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' },
-  path: { display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 12 },
-  pathChip: { fontSize: 11, color: 'var(--fg-1)', border: '1px solid var(--line)', borderRadius: 999, padding: '4px 8px', background: 'var(--bg-2)' },
-  compactPath: { gap: 4, marginTop: 8 },
-  compactPathChip: { fontSize: 10.5, padding: '3px 6px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  canvas: { position: 'relative', marginTop: 10, overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' },
-  compactCanvas: { marginTop: 8, borderTop: '1px solid var(--line-soft)', paddingTop: 6 },
+  shell: { border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)', padding: 'calc(18px * var(--app-density-scale))', overflow: 'visible' },
+  compactShell: { padding: 'calc(12px * var(--app-density-scale))' },
+  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'calc(14px * var(--app-density-scale))', flexWrap: 'wrap' },
+  compactHead: { gap: 'calc(8px * var(--app-density-scale))' },
+  eyebrow: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 'calc(6px * var(--app-density-scale))' },
+  title: { fontFamily: 'var(--font-display)', fontWeight: 300, fontSize: 'calc(26px * var(--app-font-scale))', margin: 0 },
+  compactTitle: { fontSize: 'calc(19px * var(--app-font-scale))', lineHeight: 1.12 },
+  startBadge: { fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-1)', background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', padding: '6px 10px', borderRadius: 8, whiteSpace: 'nowrap' },
+  compactStartBadge: { fontSize: 'calc(10.5px * var(--app-font-scale))', padding: '5px 8px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' },
+  path: { display: 'flex', flexWrap: 'wrap', gap: 'calc(6px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
+  pathChip: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-1)', border: '1px solid var(--line)', borderRadius: 999, padding: '4px 8px', background: 'var(--bg-2)' },
+  compactPath: { gap: 'calc(4px * var(--app-density-scale))', marginTop: 'calc(8px * var(--app-density-scale))' },
+  compactPathChip: { fontSize: 'calc(10.5px * var(--app-font-scale))', padding: '3px 6px', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  canvas: { position: 'relative', marginTop: 'calc(10px * var(--app-density-scale))', overflowY: 'auto', overflowX: 'hidden', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin' },
+  compactCanvas: { marginTop: 'calc(8px * var(--app-density-scale))', borderTop: '1px solid var(--line-soft)', paddingTop: 'calc(6px * var(--app-density-scale))' },
   canvasInner: { position: 'relative', minWidth: 0, minHeight: 170, margin: '0 auto', maxWidth: 'none' },
   edgeSvg: { position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block', pointerEvents: 'none', overflow: 'visible' },
   nodeLayer: { position: 'absolute', inset: 0, pointerEvents: 'none' },
   nodeWrap: { transition: 'left 220ms ease, top 220ms ease, opacity 180ms ease', willChange: 'left, top' },
-  emptyMsg: { padding: 28, color: 'var(--fg-3)', fontSize: 13, textAlign: 'center' },
+  emptyMsg: { padding: 'calc(28px * var(--app-density-scale))', color: 'var(--fg-3)', fontSize: 'calc(13px * var(--app-font-scale))', textAlign: 'center' },
   dot: { width: 8, height: 8, borderRadius: 99, display: 'inline-block', flexShrink: 0 },
   rootNode: {
     width: '100%', border: 'none', borderRadius: 999, background: 'var(--accent)', color: 'var(--bg-0)',
-    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '0 16px',
+    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'calc(6px * var(--app-density-scale))', padding: '0 16px',
     position: 'relative', boxShadow: '0 10px 24px #00000022', transition: 'transform 180ms ease, box-shadow 180ms ease',
   },
   compactRootNode: { padding: '0 10px', boxShadow: '0 6px 14px #0000001c' },
@@ -731,43 +793,43 @@ const lm = {
   branchNode: {
     width: '100%', height: '100%', padding: '8px 10px', borderRadius: 10, background: 'var(--bg-0)',
     border: '1px solid var(--line)', borderLeftWidth: 4, cursor: 'pointer', position: 'relative',
-    boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 4, textAlign: 'left',
+    boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 'calc(4px * var(--app-density-scale))', textAlign: 'left',
     transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease',
   },
   compactBranchNode: { padding: '6px 8px', borderRadius: 8, gap: 0 },
-  branchTop: { display: 'flex', alignItems: 'center', gap: 6 },
+  branchTop: { display: 'flex', alignItems: 'center', gap: 'calc(6px * var(--app-density-scale))' },
   branchTitle: {
     fontWeight: 700, color: 'var(--fg-0)', flex: 1, minWidth: 0, lineHeight: 1.18,
     overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
   },
-  branchBottom: { display: 'flex', alignItems: 'center', gap: 6, marginTop: 1 },
-  statusChip: { fontSize: 10, textTransform: 'capitalize', fontWeight: 700, whiteSpace: 'nowrap' },
+  branchBottom: { display: 'flex', alignItems: 'center', gap: 'calc(6px * var(--app-density-scale))', marginTop: 'calc(1px * var(--app-density-scale))' },
+  statusChip: { fontSize: 'calc(10px * var(--app-font-scale))', textTransform: 'capitalize', fontWeight: 700, whiteSpace: 'nowrap' },
   masteryBar: { flex: 1, height: 4, borderRadius: 2, background: 'var(--bg-2)', overflow: 'hidden' },
   masteryFill: { height: '100%', borderRadius: 2, transition: 'width 0.3s ease' },
-  masteryLabel: { fontSize: 10, color: 'var(--fg-3)', fontVariantNumeric: 'tabular-nums' },
+  masteryLabel: { fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--fg-3)', fontVariantNumeric: 'tabular-nums' },
   chevron: {
-    fontSize: 0, color: 'var(--fg-2)', cursor: 'pointer', padding: 3, borderRadius: 5,
+    fontSize: 'calc(0px * var(--app-font-scale))', color: 'var(--fg-2)', cursor: 'pointer', padding: 'calc(3px * var(--app-density-scale))', borderRadius: 5,
     border: '1px solid var(--line)', background: 'var(--bg-2)', lineHeight: 1, flexShrink: 0,
     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   },
   recBadge: {
-    fontSize: 9, fontWeight: 700, color: 'var(--bg-0)', background: 'var(--accent)',
+    fontSize: 'calc(9px * var(--app-font-scale))', fontWeight: 700, color: 'var(--bg-0)', background: 'var(--accent)',
     borderRadius: 99, width: 16, height: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
     boxShadow: '0 0 0 2px var(--bg-0)',
   },
   startTag: {
-    position: 'absolute', top: -10, right: 6, fontSize: 9, fontWeight: 800, color: 'var(--accent)',
+    position: 'absolute', top: -10, right: 6, fontSize: 'calc(9px * var(--app-font-scale))', fontWeight: 800, color: 'var(--accent)',
     background: 'var(--bg-0)', border: '1px solid var(--accent-soft)', padding: '2px 6px', borderRadius: 999,
     boxShadow: '0 4px 12px #00000018', whiteSpace: 'nowrap',
   },
   leafNode: {
     width: '100%', height: '100%', padding: '6px 8px', borderRadius: 8, background: 'var(--bg-2)',
     border: '1px solid var(--line)', cursor: 'pointer', boxSizing: 'border-box', position: 'relative',
-    display: 'flex', alignItems: 'center', gap: 6, textAlign: 'left',
+    display: 'flex', alignItems: 'center', gap: 'calc(6px * var(--app-density-scale))', textAlign: 'left',
     transition: 'border-color 180ms ease, box-shadow 180ms ease',
   },
   leafTitle: {
-    fontSize: 11.5, color: 'var(--fg-1)', fontWeight: 600, lineHeight: 1.2, minWidth: 0,
+    fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-1)', fontWeight: 600, lineHeight: 1.2, minWidth: 0,
     overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
   },
 };
@@ -777,6 +839,6 @@ window.NoesisVisualRegistry = {
   supportedVisualTypes: () => Object.keys(TOPIC_VISUALS),
   isSupported: (value, context = '') => !!resolveTopicVisual(value, context),
 };
-window.NoesisLearningMapInternals = { layoutTree, edgePath, normalizeMapId };
+window.NoesisLearningMapInternals = { layoutTree, edgePath, normalizeMapId, wrapSvgLabel };
 window.TopicVisual = TopicVisual;
 window.LearningMap = LearningMap;

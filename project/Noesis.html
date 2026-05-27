@@ -8,6 +8,32 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Geist:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles/tokens.css"/>
+<script>
+  (function () {
+    try {
+      var fonts = [{ key: 'small', scale: 0.92 }, { key: 'default', scale: 1 }, { key: 'large', scale: 1.12 }];
+      var densities = [{ key: 'compact', scale: 0.86 }, { key: 'default', scale: 1 }, { key: 'comfortable', scale: 1.14 }];
+      function pick(raw, options, fallback) {
+        var text = String(raw || '').toLowerCase();
+        var idx = parseInt(text || '1', 10);
+        if (Number.isFinite(idx) && options[idx]) return options[idx];
+        for (var i = 0; i < options.length; i++) if (options[i].key === text) return options[i];
+        return fallback;
+      }
+      var font = pick(localStorage.getItem('noesis.fontSize'), fonts, fonts[1]);
+      var density = pick(localStorage.getItem('noesis.density'), densities, densities[1]);
+      var motion = localStorage.getItem('noesis.motion') !== 'false';
+      var reduceTransparency = localStorage.getItem('noesis.reduceTrans') === 'true';
+      document.documentElement.dataset.fontSize = font.key;
+      document.documentElement.dataset.density = density.key;
+      document.documentElement.dataset.motion = motion ? 'on' : 'off';
+      document.documentElement.dataset.transparency = reduceTransparency ? 'reduced' : 'default';
+      document.documentElement.style.setProperty('--app-font-scale', String(font.scale));
+      document.documentElement.style.setProperty('--app-base-font-size', (14 * font.scale) + 'px');
+      document.documentElement.style.setProperty('--app-density-scale', String(density.scale));
+    } catch (_) {}
+  })();
+</script>
 <style>
   .boot-screen {
     min-height: 100vh;

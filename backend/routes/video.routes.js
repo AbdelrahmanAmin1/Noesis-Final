@@ -13,6 +13,39 @@ const env = require('../config/env');
 
 const router = express.Router();
 
+function generationScope(body = {}) {
+  const sourceScope = String(body.sourceScope || body.source_scope || 'material').toLowerCase();
+  if (!['material', 'chapter', 'chunk'].includes(sourceScope)) throw new HttpError(400, 'invalid_source_scope');
+  return {
+    sourceScope,
+    chapterId: body.chapter_id ? parseInt(body.chapter_id, 10) : null,
+    chunkId: body.chunk_id ? parseInt(body.chunk_id, 10) : null,
+  };
+}
+
+function validateScope(db, userId, materialId, scope) {
+  if (scope.sourceScope === 'chapter') {
+    if (!Number.isInteger(scope.chapterId)) throw new HttpError(400, 'missing_chapter_id');
+    const row = db.prepare(`
+      SELECT c.id
+      FROM chapters c
+      JOIN materials m ON m.id = c.material_id
+      WHERE c.id=? AND c.material_id=? AND m.user_id=?
+    `).get(scope.chapterId, materialId, userId);
+    if (!row) throw new HttpError(404, 'chapter_not_found');
+  }
+  if (scope.sourceScope === 'chunk') {
+    if (!Number.isInteger(scope.chunkId)) throw new HttpError(400, 'missing_chunk_id');
+    const row = db.prepare(`
+      SELECT ch.id
+      FROM chunks ch
+      JOIN materials m ON m.id = ch.material_id
+      WHERE ch.id=? AND ch.material_id=? AND m.user_id=?
+    `).get(scope.chunkId, materialId, userId);
+    if (!row) throw new HttpError(404, 'chunk_not_found');
+  }
+}
+
 router.post('/', requireAuth, videoLimiter, async (req, res, next) => {
   try {
     if (env.NOESIS_DEMO_MODE || env.STORYBOARD_REVIEW_REQUIRED) {
@@ -20,10 +53,12 @@ router.post('/', requireAuth, videoLimiter, async (req, res, next) => {
     }
     const { material_id, concept } = req.body || {};
     if (!material_id) throw new HttpError(400, 'missing_fields');
+    const scope = generationScope(req.body || {});
     const db = getDb();
     const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
-    const { videoId, jobId } = await videoSvc.generateVideo({ userId: req.user.id, materialId: material_id, concept });
+    validateScope(db, req.user.id, material_id, scope);
+    const { videoId, jobId } = await videoSvc.generateVideo({ userId: req.user.id, materialId: material_id, concept, ...scope });
     res.status(202).json({ video_id: videoId, job_id: jobId, status: 'queued' });
   } catch (e) { next(e); }
 });
@@ -32,7 +67,12 @@ router.post('/storyboard', requireAuth, videoLimiter, async (req, res, next) => 
   try {
     const { material_id, concept } = req.body || {};
     if (!material_id) throw new HttpError(400, 'missing_fields');
-    const out = await storyboardSvc.generateStoryboard({ userId: req.user.id, materialId: material_id, concept });
+    const scope = generationScope(req.body || {});
+    const db = getDb();
+    const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
+    if (!m) throw new HttpError(404, 'material_not_found');
+    validateScope(db, req.user.id, material_id, scope);
+    const out = await storyboardSvc.generateStoryboard({ userId: req.user.id, materialId: material_id, concept, ...scope });
     res.status(201).json({ storyboard: out });
   } catch (e) { next(e); }
 });

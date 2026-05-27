@@ -164,32 +164,54 @@ function cleanText(s) {
     .trim();
 }
 
+const WEAK_HEADING_RE = /^(?:top|home|welcome|contents?|table of contents|index|appendix|acknowledgements?|references?|bibliography|copyright|license|quiz answer keys?|answer keys?|answers?|untitled|document|material|file)$/i;
+
+function isWeakHeading(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return true;
+  if (WEAK_HEADING_RE.test(text)) return true;
+  return /^(?:page|p\.)\s*\d+$/i.test(text);
+}
+
+function looksLikeContentHeading(trimmed, prevBlank, nextBlank) {
+  if (!trimmed || trimmed.length > 120 || isWeakHeading(trimmed)) return false;
+  if (/^(?:chapter\s+\d+|ch\.?\s*\d+|section\s+\d+|\d+\.\s+\S|#{1,3}\s+\S|topic\s*[:]\s*\S|module\s+\d+|unit\s+\d+)/i.test(trimmed)) return true;
+  if (/^Slide\s+\d+/i.test(trimmed)) return true;
+  if (/^(?:[A-Z][A-Za-z0-9(),/&:+-]*\s+){1,8}[A-Z][A-Za-z0-9(),/&:+-]*$/.test(trimmed) && !/[.!?,;:]$/.test(trimmed)) {
+    return prevBlank || nextBlank || /(?:system|structure|function|properties|terminology|applications|operations|traversal|construction|hashing|skeleton|bones?|vertebrae|limb|tree|search)/i.test(trimmed);
+  }
+  return false;
+}
+
 // Detect chapters via heading regex + short-line heuristic; fallback to single chapter.
 function detectChapters(text) {
   const lines = text.split('\n');
   const headings = [];
-  const re = /^\s*(?:chapter\s+\d+|ch\.?\s*\d+|section\s+\d+|\d+\.\s+\S|#{1,3}\s+\S|topic\s*[:]\s*\S|module\s+\d+)/i;
   let charPos = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
     if (trimmed.length > 0 && trimmed.length < 120) {
-      let isHeading = re.test(line);
-      if (!isHeading && trimmed.length < 60 && /^[A-Z]/.test(trimmed) && !/[.!?,;:]$/.test(trimmed)) {
-        const prevBlank = i === 0 || lines[i - 1].trim() === '';
-        const nextBlank = i >= lines.length - 1 || lines[i + 1].trim() === '';
-        if (prevBlank && nextBlank) isHeading = true;
-      }
-      if (!isHeading && /^Slide\s+\d+/i.test(trimmed)) {
-        isHeading = true;
-      }
+      const prevBlank = i === 0 || lines[i - 1].trim() === '';
+      const nextBlank = i >= lines.length - 1 || lines[i + 1].trim() === '';
+      const isHeading = looksLikeContentHeading(trimmed, prevBlank, nextBlank);
       if (isHeading) {
         let title = trimmed.replace(/^#+\s*/, '').replace(/^Slide\s+\d+\s*[:.-]?\s*/i, '').slice(0, 120).trim();
         if (/^Slide\s+\d+/i.test(trimmed) && !title) {
           const next = lines.slice(i + 1).map(l => l.trim()).find(l => l && l.length < 120 && !/^[-•]$/.test(l));
           title = next ? next.replace(/^Title:\s*/i, '').trim() : `Slide ${headings.length + 1}`;
         }
-        headings.push({ idx: headings.length, title: title || `Section ${headings.length + 1}`, char_start: charPos });
+        if (isWeakHeading(title)) {
+          charPos += line.length + 1;
+          continue;
+        }
+        const pageMatch = lines.slice(Math.max(0, i - 2), i + 1).join('\n').match(/\b(?:page|p\.)\s*(\d{1,4})\b/i);
+        headings.push({
+          idx: headings.length,
+          title: title || `Section ${headings.length + 1}`,
+          char_start: charPos,
+          source_page: pageMatch ? parseInt(pageMatch[1], 10) : null,
+        });
       }
     }
     charPos += line.length + 1;
@@ -203,4 +225,4 @@ function detectChapters(text) {
   return headings;
 }
 
-module.exports = { extractText, detectChapters, _internals: { extractPptxText, xmlTextRuns, extractSlideXmlText, extractTableText } };
+module.exports = { extractText, detectChapters, _internals: { extractPptxText, xmlTextRuns, extractSlideXmlText, extractTableText, looksLikeContentHeading, isWeakHeading } };

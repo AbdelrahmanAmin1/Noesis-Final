@@ -116,6 +116,14 @@ describe('free-form tutor chat routes', () => {
     expect(res.body.suggestions).toContain('Show a code example');
     expect(res.body.groundingTier).toMatch(/strong|moderate|weak/);
     expect(res.body.grounding.label).toMatch(/grounding/i);
+    expect(res.body.trace.educationalContext.curatedMatched).toBe(true);
+
+    const promptSeen = ai.generate.mock.calls[0][0];
+    expect(promptSeen).toContain('Educational context');
+    expect(promptSeen).toContain('Polymorphism');
+    expect(promptSeen).toContain('Shape');
+    expect(promptSeen).toContain('Circle');
+    expect(promptSeen).toContain('uploaded material');
 
     const stored = db.prepare('SELECT role, content FROM tutor_chat_messages WHERE conversation_id=? ORDER BY id').all(res.body.conversation_id);
     expect(stored.map(row => row.role)).toEqual(['user', 'assistant']);
@@ -236,6 +244,8 @@ describe('free-form tutor chat routes', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.sources[0].materialTitle).toBe('Noesis tutor corpus');
+    expect(res.body.sources).toHaveLength(1);
+    expect(res.body.sources[0].corpus).toBe('system');
     expect(res.body.reply).toMatch(/Big-O/i);
   });
 

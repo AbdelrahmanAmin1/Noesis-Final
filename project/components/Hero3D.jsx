@@ -183,7 +183,7 @@ const Hero3D = ({ height = 520 }) => {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         pointerEvents: 'none',
         color: 'var(--bg-0)',
-        fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 400,
+        fontFamily: 'var(--font-display)', fontSize: 'calc(26px * var(--app-font-scale))', fontWeight: 400,
         mixBlendMode: 'screen',
       }}>
         <span style={{ color: 'var(--fg-0)', opacity: 0.9, textShadow: '0 0 24px var(--accent)' }}>ō</span>

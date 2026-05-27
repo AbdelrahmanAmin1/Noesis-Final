@@ -38,6 +38,17 @@ describe('NOTES_SUMMARY prompt', () => {
     expect(result).toContain('chunk:2');
     expect(result).toMatch(/markdown|note|summary/i);
   });
+
+  it('accepts educational context without asking for visible chunk ids', () => {
+    const result = prompts.NOTES_SUMMARY(mockChunks, 'Encapsulation', {
+      educationalContext: 'Curated knowledge: BankAccount with private balance and validated deposit.',
+    });
+    expect(result).toContain('Educational context');
+    expect(result).toContain('BankAccount');
+    expect(result).toContain('primary source');
+    expect(result).toContain('Do not include raw chunk IDs');
+    expect(result).not.toContain('Cite chunk ids inline');
+  });
 });
 
 describe('VIDEO_SCRIPT prompt', () => {
@@ -76,5 +87,95 @@ describe('LESSON_GENERATE prompt', () => {
     expect(result).toContain('"sections"');
     expect(result).toContain('Shape');
     expect(result).toContain('Code sketch');
+  });
+
+  it('includes educational context and uploaded-first policy', () => {
+    const result = prompts.LESSON_GENERATE(
+      [{ id: 4, text: 'The lecture says encapsulation protects object state.' }],
+      'Encapsulation',
+      {
+        topic: 'Encapsulation',
+        lessonType: 'oop',
+        groundingTier: 'strong',
+        curatedKnowledge: '{"topic":"Encapsulation","codeExamples":[{"title":"BankAccount"}]}',
+        educationalContext: 'uploaded material first; curated knowledge second; BankAccount private balance',
+      }
+    );
+    expect(result).toContain('Educational context');
+    expect(result).toContain('uploaded material first');
+    expect(result).toContain('BankAccount');
+    expect(result).toContain('primary source for course-specific facts');
+  });
+
+  it('can carry linked-list curated context for diagrams and mistakes', () => {
+    const result = prompts.LESSON_GENERATE(
+      [{ id: 5, text: 'Linked lists use nodes connected by references.' }],
+      'Linked List',
+      {
+        topic: 'Linked List',
+        lessonType: 'data_structure',
+        groundingTier: 'moderate',
+        educationalContext: 'Linked List curated context: HEAD -> [data|next] -> null; losing next reference mistake',
+      }
+    );
+    expect(result).toContain('HEAD -> [data|next] -> null');
+    expect(result).toContain('losing next reference');
+    expect(result).toContain('memory-style diagram');
+  });
+
+  it('requires Queue-specific notes assets without asking for sourceChunkIds', () => {
+    const result = prompts.LESSON_GENERATE(
+      [{ id: 6, text: 'Queues use first-in, first-out behavior.' }],
+      'Queue',
+      {
+        topic: 'Queue',
+        lessonType: 'data_structure',
+        groundingTier: 'weak',
+        educationalContext: 'Queue context: FIFO, enqueue, dequeue, front, rear, underflow, O(1), Horizontal FIFO Queue Diagram',
+      }
+    );
+
+    expect(result).toContain('Queue must include FIFO');
+    expect(result).toContain('front and rear pointers');
+    expect(result).toContain('underflow');
+    expect(result).toContain('O(1) enqueue/dequeue');
+    expect(result).toContain('horizontal queue diagram');
+    expect(result).toContain('mini quiz');
+    expect(result).toContain('Do not emit sourceChunkIds');
+    expect(result).not.toContain('"sourceChunkIds"');
+  });
+
+  it('includes source facts and bans instructional general-note language', () => {
+    const result = prompts.LESSON_GENERATE(
+      [{ id: 9, text: 'Market segmentation divides customers into groups with similar needs.' }],
+      'Marketing Strategy',
+      {
+        topic: 'Marketing Strategy',
+        lessonType: 'general',
+        groundingTier: 'strong',
+        sourceOutline: {
+          sourceFacts: {
+            definitions: ['Targeting means choosing which segment the company will serve.'],
+            facts: ['Market segmentation divides customers into groups with similar needs.'],
+            classifications: ['Segments include demographic, geographic, behavioral, and psychographic groups.'],
+            processes: [],
+            examples: ['Examples include demographic and behavioral segments.'],
+            numbers: [],
+            relationships: ['Positioning explains how the brand should be perceived compared with competitors.'],
+            memoryHints: [],
+            reviewQuestions: ['Why should a target market be measurable?'],
+          },
+          meaningfulSections: [],
+        },
+      }
+    );
+
+    expect(result).toContain('Source facts extracted from uploaded material');
+    expect(result).toContain('Market segmentation divides customers');
+    expect(result).toContain('Targeting means choosing');
+    expect(result).toContain('do not write instructions about how to study');
+    expect(result).toContain('Choose one concrete detail');
+    expect(result).toContain('Name one key idea');
+    expect(result).toContain('Source-backed ideas');
   });
 });

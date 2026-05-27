@@ -6,6 +6,7 @@ const Database = require('better-sqlite3');
 const env = require('./env');
 
 let _db = null;
+let _dbPath = null;
 
 function ensureDirs() {
   fs.mkdirSync(env.DATA_DIR, { recursive: true });
@@ -16,9 +17,11 @@ function ensureDirs() {
 }
 
 function getDb() {
-  if (_db) return _db;
+  if (_db && _dbPath === env.DB_PATH) return _db;
+  if (_db && _dbPath !== env.DB_PATH) closeDbForTests();
   ensureDirs();
   _db = new Database(env.DB_PATH);
+  _dbPath = env.DB_PATH;
   _db.pragma('journal_mode = WAL');
   _db.pragma('foreign_keys = ON');
   _db.pragma('busy_timeout = 15000');
@@ -28,8 +31,12 @@ function getDb() {
 
 function migrate() {
   ensureDirs();
+  if (_db && _dbPath !== env.DB_PATH) closeDbForTests();
   const db = _db || new Database(env.DB_PATH);
-  if (!_db) _db = db;
+  if (!_db) {
+    _db = db;
+    _dbPath = env.DB_PATH;
+  }
   db.pragma('busy_timeout = 15000');
   const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '001_init.sql'), 'utf8');
   db.exec(sql);
@@ -169,6 +176,13 @@ function migrate() {
   return db;
 }
 
+function closeDbForTests() {
+  if (!_db) return;
+  try { _db.close(); } catch (_) {}
+  _db = null;
+  _dbPath = null;
+}
+
 function ensureColumn(db, table, column, definition) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all();
   if (!cols.some(c => c.name === column)) {
@@ -192,4 +206,4 @@ function ensureColumnFromMigration(db, table, column, fileName) {
   }
 }
 
-module.exports = { getDb, migrate };
+module.exports = { getDb, migrate, closeDbForTests };

@@ -57,13 +57,13 @@ const Notes = ({ onNav }) => {
       <div style={ns.layout}>
         <aside style={ns.folders}>
           <div style={ns.sideHead}>Folders</div>
-          <div style={{ padding: '0 8px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <div style={{ padding: '0 8px', display: 'flex', flexDirection: 'column', gap: 'calc(1px * var(--app-density-scale))' }}>
             {folders.length === 0 && <div style={ns.emptySide}>No folders yet</div>}
             {folders.map((f, i) => (
               <button key={i} style={{ ...ns.folderButton, background: f.active ? 'var(--bg-2)' : 'transparent', color: f.active ? 'var(--fg-0)' : 'var(--fg-2)' }}>
                 <Icon.Folder size={13}/>
                 <span style={{ flex: 1, textAlign: 'left' }}>{f.name}</span>
-                <span style={{ fontSize: 10.5, color: 'var(--fg-3)' }} className="mono">{f.count}</span>
+                <span style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)' }} className="mono">{f.count}</span>
               </button>
             ))}
           </div>
@@ -71,9 +71,9 @@ const Notes = ({ onNav }) => {
 
         <section style={ns.list}>
           <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--line-soft)' }}>
-            <div style={{ fontSize: 13, color: 'var(--fg-0)', fontWeight: 500 }}>{(folders[0] && folders[0].name) || 'All notes'}</div>
-            <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>{notes.length} note{notes.length === 1 ? '' : 's'} sorted by recent</div>
-            {status && <div style={{ fontSize: 11, color: 'var(--fg-3)', marginTop: 6 }}>{status}</div>}
+            <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{(folders[0] && folders[0].name) || 'All notes'}</div>
+            <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(2px * var(--app-density-scale))' }}>{notes.length} note{notes.length === 1 ? '' : 's'} sorted by recent</div>
+            {status && <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(6px * var(--app-density-scale))' }}>{status}</div>}
           </div>
           <div>
             {notes.length === 0 && <div style={ns.emptyList}>No notes yet. Generate notes from a material or create one manually.</div>}
@@ -83,8 +83,8 @@ const Notes = ({ onNav }) => {
                 background: n.active ? 'var(--bg-2)' : 'transparent',
                 borderLeft: n.active ? '2px solid var(--accent)' : '2px solid transparent',
               }}>
-                <div style={{ fontSize: 13, color: 'var(--fg-0)', fontWeight: 500 }}>{n.t}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--fg-3)', display: 'flex', gap: 8 }}>
+                <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{n.t}</div>
+                <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', display: 'flex', gap: 'calc(8px * var(--app-density-scale))' }}>
                   <span>{n.updated}</span><span>{n.tag}</span>
                 </div>
                 <div style={ns.preview}>{n.preview || 'Empty note'}</div>
@@ -183,8 +183,10 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
     if (!materialId) return;
     setBusy(true); setStatus('Generating flashcards...');
     try {
-      const r = await window.NoesisAPI.flashcards.generate({ material_id: materialId, count: 4 });
-      setStatus(`Created ${r.created} cards.`);
+      const r = await window.NoesisAPI.flashcards.generate({ material_id: materialId, count: 6 });
+      if (r.reused) setStatus('Using existing flashcards for this material.');
+      else if (r.fallback) setStatus(r.message || 'Created fallback flashcards from source material.');
+      else setStatus(`Created ${r.created} cards.`);
     } catch (e) {
       setStatus('Failed: ' + (e.message || 'error'));
     } finally {
@@ -313,18 +315,18 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 'calc(8px * var(--app-density-scale))', marginBottom: 'calc(18px * var(--app-density-scale))', alignItems: 'center', flexWrap: 'wrap' }}>
               {tags.folder && <span className="chip chip-accent">{tags.folder}</span>}
               {tags.tags.map((t) => <span key={t} className="chip">#{t}</span>)}
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-3)' }}>{current.updated ? `Updated ${current.updated}` : ''}</span>
+              <span style={{ marginLeft: 'auto', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{current.updated ? `Updated ${current.updated}` : ''}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14, gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 'calc(14px * var(--app-density-scale))', gap: 'calc(8px * var(--app-density-scale))' }}>
               {mode === 'edit' ? (
                 <input className="input" value={title} onChange={e => setTitle(e.target.value)} style={{ ...ns.titleInput, marginBottom: 0, flex: 1 }}/>
               ) : (
-                <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 300, margin: 0, flex: 1, color: 'var(--fg-0)' }}>{title || 'Untitled'}</h1>
+                <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(32px * var(--app-font-scale))', fontWeight: 300, margin: 0, flex: 1, color: 'var(--fg-0)' }}>{title || 'Untitled'}</h1>
               )}
-              <button className="btn btn-ghost" onClick={() => setMode(mode === 'read' ? 'edit' : 'read')} style={{ fontSize: 11.5, padding: '6px 12px', whiteSpace: 'nowrap' }}>
+              <button className="btn btn-ghost" onClick={() => setMode(mode === 'read' ? 'edit' : 'read')} style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', padding: '6px 12px', whiteSpace: 'nowrap' }}>
                 {mode === 'read' ? 'Edit' : 'Read'}
               </button>
             </div>
@@ -345,7 +347,7 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
                   setAudioError('');
                   clearLoadedAudio();
                   if (nextStyle !== 'none') checkNoteAudio(nextStyle);
-                }} style={{ fontSize: 12.5, width: '100%' }}>
+                }} style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', width: '100%' }}>
                   <option value="none">No audio</option>
                   <option value="brief">Brief audio explanation</option>
                   <option value="detailed">Detailed audio explanation</option>
@@ -359,12 +361,12 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
               </button>
               {(audioStatus || audioError) && <div style={{ ...ns.audioStatus, color: audioError ? 'var(--err)' : 'var(--fg-3)' }}>{audioError || audioStatus}</div>}
             </div>
-            <div style={{ display: 'flex', gap: 10, marginTop: 14, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))', alignItems: 'center' }}>
               {mode === 'edit' && <button className="btn btn-accent" disabled={busy || !title.trim()} onClick={save}>{status === 'Saving...' ? 'Saving...' : 'Save'}</button>}
               <button className="btn btn-ghost" disabled={busy} onClick={remove} style={{ color: 'var(--err)' }}>{status === 'Deleting...' ? 'Deleting...' : 'Delete'}</button>
-              {materialId && <button className="btn btn-ghost" disabled={busy} onClick={generateCards} style={{ marginLeft: 'auto' }}><Icon.Cards size={12}/> {status === 'Generating flashcards...' ? 'Generating flashcards...' : 'Generate 4 cards'}</button>}
+              {materialId && <button className="btn btn-ghost" disabled={busy} onClick={generateCards} style={{ marginLeft: 'auto' }}><Icon.Cards size={12}/> {status === 'Generating flashcards...' ? 'Generating flashcards...' : 'Generate 6 cards'}</button>}
             </div>
-            {status && <div style={{ marginTop: 12, fontSize: 11, color: 'var(--fg-3)' }}>{status}</div>}
+            {status && <div style={{ marginTop: 'calc(12px * var(--app-density-scale))', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{status}</div>}
           </>
         )}
       </div>
@@ -377,24 +379,24 @@ const ns = {
   folders: { borderRight: '1px solid var(--line)', padding: '8px 0', background: 'var(--bg-0)' },
   list: { borderRight: '1px solid var(--line)', background: 'var(--bg-0)', overflow: 'auto' },
   editor: { background: 'var(--bg-0)', overflow: 'auto' },
-  sideHead: { padding: '16px 14px 8px', fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' },
-  emptySide: { padding: '8px 10px', fontSize: 12, color: 'var(--fg-3)' },
-  emptyList: { padding: 18, fontSize: 12, color: 'var(--fg-3)' },
-  folderButton: { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 'var(--r-sm)', fontSize: 12.5 },
-  noteButton: { display: 'flex', flexDirection: 'column', gap: 4, padding: '14px 18px', borderBottom: '1px solid var(--line-soft)', textAlign: 'left', width: '100%' },
-  preview: { fontSize: 11.5, color: 'var(--fg-2)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  sideHead: { padding: '16px 14px 8px', fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' },
+  emptySide: { padding: '8px 10px', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  emptyList: { padding: 'calc(18px * var(--app-density-scale))', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  folderButton: { display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))', padding: '8px 10px', borderRadius: 'var(--r-sm)', fontSize: 'calc(12.5px * var(--app-font-scale))' },
+  noteButton: { display: 'flex', flexDirection: 'column', gap: 'calc(4px * var(--app-density-scale))', padding: '14px 18px', borderBottom: '1px solid var(--line-soft)', textAlign: 'left', width: '100%' },
+  preview: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-2)', marginTop: 'calc(4px * var(--app-density-scale))', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   emptyEditor: { minHeight: '60vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' },
-  emptyTitle: { fontFamily: 'var(--font-display)', fontSize: 30, fontWeight: 300, margin: '16px 0 8px' },
-  emptyText: { fontSize: 13, color: 'var(--fg-3)', margin: 0 },
-  titleInput: { width: '100%', fontFamily: 'var(--font-display)', fontSize: 32, marginBottom: 14 },
-  bodyInput: { width: '100%', minHeight: 420, resize: 'vertical', fontSize: 14.5, lineHeight: 1.7 },
-  mdBody: { minHeight: 420, fontSize: 14.5, lineHeight: 1.75, color: 'var(--fg-1)' },
+  emptyTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(30px * var(--app-font-scale))', fontWeight: 300, margin: '16px 0 8px' },
+  emptyText: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-3)', margin: 0 },
+  titleInput: { width: '100%', fontFamily: 'var(--font-display)', fontSize: 'calc(32px * var(--app-font-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  bodyInput: { width: '100%', minHeight: 420, resize: 'vertical', fontSize: 'calc(14.5px * var(--app-font-scale))', lineHeight: 1.7 },
+  mdBody: { minHeight: 420, fontSize: 'calc(14.5px * var(--app-font-scale))', lineHeight: 1.75, color: 'var(--fg-1)' },
   audioPanel: {
-    marginTop: 18, padding: 12, borderRadius: 8, border: '1px solid var(--line)',
-    background: 'var(--bg-1)', display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap',
+    marginTop: 'calc(18px * var(--app-density-scale))', padding: 'calc(12px * var(--app-density-scale))', borderRadius: 8, border: '1px solid var(--line)',
+    background: 'var(--bg-1)', display: 'flex', alignItems: 'flex-end', gap: 'calc(10px * var(--app-density-scale))', flexWrap: 'wrap',
   },
-  audioLabel: { fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 6 },
-  audioStatus: { width: '100%', fontSize: 11.5, lineHeight: 1.45 },
+  audioLabel: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(6px * var(--app-density-scale))' },
+  audioStatus: { width: '100%', fontSize: 'calc(11.5px * var(--app-font-scale))', lineHeight: 1.45 },
 };
 
 window.Notes = Notes;
@@ -406,11 +408,18 @@ const Flashcards = ({ onNav }) => {
   const [cards, setCards] = React.useState([]);
   const [error, setError] = React.useState('');
   const [reviewing, setReviewing] = React.useState(false);
+  const [mode, setMode] = React.useState('due');
   const [counts, setCounts] = React.useState({ easy: 0, hard: 0, skipped: 0 });
 
-  const refresh = React.useCallback(() => window.NoesisAPI.flashcards.due()
-    .then(d => { setCards(d.cards || []); setError(''); })
-    .catch(e => setError(e.message || 'Failed to load cards')), []);
+  const refresh = React.useCallback(() => {
+    const materialId = parseInt(sessionStorage.getItem('noesis.materialId') || '0', 10) || null;
+    const request = mode === 'all'
+      ? window.NoesisAPI.flashcards.list(materialId)
+      : window.NoesisAPI.flashcards.due();
+    return request
+      .then(d => { setCards(d.cards || []); setI(0); setFlipped(false); setError(''); })
+      .catch(e => setError(e.message || 'Failed to load cards'));
+  }, [mode]);
 
   React.useEffect(() => { refresh(); }, [refresh]);
 
@@ -435,38 +444,42 @@ const Flashcards = ({ onNav }) => {
   return (
     <div style={{ background: 'var(--bg-0)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <window.Topbar title={hasCards ? `Flashcards - ${c.deck || 'Review'}` : 'Flashcards'} crumbs={['Review']}
-        right={<span style={{ fontSize: 11, color: 'var(--fg-3)' }} className="mono">{hasCards ? `${i + 1} / ${cards.length}` : '0 / 0'}</span>}
+        right={<>
+          <button className="btn btn-ghost" disabled={reviewing} onClick={() => setMode(mode === 'due' ? 'all' : 'due')}>{mode === 'due' ? 'Review existing' : 'Due cards'}</button>
+          <button className="btn btn-accent" disabled={reviewing} onClick={() => onNav('materials')}><Icon.Folder size={12}/> Create new set</button>
+          <span style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }} className="mono">{hasCards ? `${i + 1} / ${cards.length}` : '0 / 0'}</span>
+        </>}
       />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 28px', borderBottom: '1px solid var(--line-soft)' }}>
-          <div style={{ display: 'flex', gap: 3 }}>
+          <div style={{ display: 'flex', gap: 'calc(3px * var(--app-density-scale))' }}>
             {(hasCards ? cards : [0]).map((_, k) => (
               <div key={k} style={{ flex: 1, height: 2, borderRadius: 1, background: k < i ? 'var(--ok)' : k === i ? 'var(--accent)' : 'var(--line)' }}/>
             ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11, color: 'var(--fg-3)' }} className="mono">
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'calc(8px * var(--app-density-scale))', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }} className="mono">
             <span>{counts.easy} easy | {counts.hard} hard | {counts.skipped} again</span>
             <span>{c.topic || c.deck || 'No topic'} {c.difficulty ? `| ${c.difficulty}` : ''}</span>
           </div>
-          {reviewing && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--fg-3)' }}>Saving review...</div>}
-          {error && <div style={{ marginTop: 8, fontSize: 11, color: 'var(--err)' }}>{error}</div>}
+          {reviewing && <div style={{ marginTop: 'calc(8px * var(--app-density-scale))', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>Saving review...</div>}
+          {error && <div style={{ marginTop: 'calc(8px * var(--app-density-scale))', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--err)' }}>{error}</div>}
         </div>
 
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40 }}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(40px * var(--app-density-scale))' }}>
           <div style={{ width: '100%', maxWidth: 640 }}>
             <div onClick={() => hasCards && setFlipped(!flipped)} style={{ ...fc.card, transform: flipped ? 'rotateY(180deg)' : 'rotateY(0)', cursor: hasCards ? 'pointer' : 'default' }}>
               <div style={{ ...fc.face, transform: 'rotateY(0)' }}>
                 <div style={fc.faceLabel}>Question</div>
-                <div style={{ fontFamily: 'var(--font-display)', fontSize: 34, fontWeight: 300, letterSpacing: '-0.015em', lineHeight: 1.25 }}>{c.question}</div>
-                <div style={fc.meta}>{hasCards ? 'Click to flip' : 'Open Materials to generate cards from real content.'}</div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(34px * var(--app-font-scale))', fontWeight: 300, letterSpacing: '-0.015em', lineHeight: 1.25 }}>{c.question}</div>
+                <div style={fc.meta}>{hasCards ? 'Click to flip' : (mode === 'due' ? 'No due cards. Review existing cards or create a new set.' : 'No saved cards for this material yet.')}</div>
               </div>
               <div style={{ ...fc.face, transform: 'rotateY(180deg)', background: 'var(--bg-2)' }}>
                 <div style={{ ...fc.faceLabel, color: 'var(--accent)' }}>Answer</div>
-                <div style={{ fontSize: 17, lineHeight: 1.55, color: 'var(--fg-0)' }}>{c.answer}</div>
+                <div style={{ fontSize: 'calc(17px * var(--app-font-scale))', lineHeight: 1.55, color: 'var(--fg-0)' }}>{c.answer}</div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 32, justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(32px * var(--app-density-scale))', justifyContent: 'center' }}>
               {[
                 { l: 'Again', sub: '< 1m', color: 'var(--err)', key: '1', rating: 1 },
                 { l: 'Hard', sub: '10m', color: 'var(--warn)', key: '2', rating: 2 },
@@ -476,13 +489,16 @@ const Flashcards = ({ onNav }) => {
                 <button key={b.l} onClick={() => rate(b.rating)} disabled={!hasCards || reviewing} style={{ ...fc.rateBtn, opacity: hasCards && !reviewing ? 1 : 0.45 }}>
                   <span style={{ ...fc.keyHint, color: b.color }} className="mono">{b.key}</span>
                   <div>
-                    <div style={{ fontSize: 13, color: 'var(--fg-0)', fontWeight: 500 }}>{b.l}</div>
-                    <div style={{ fontSize: 10.5, color: 'var(--fg-3)', marginTop: 2 }} className="mono">{b.sub}</div>
+                    <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{b.l}</div>
+                    <div style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(2px * var(--app-density-scale))' }} className="mono">{b.sub}</div>
                   </div>
                 </button>
               ))}
             </div>
-            {!hasCards && <button className="btn btn-accent" onClick={() => onNav('materials')} style={{ margin: '24px auto 0', display: 'flex' }}><Icon.Folder size={12}/> Open Materials</button>}
+            {!hasCards && <div style={{ display: 'flex', gap: 'calc(8px * var(--app-density-scale))', justifyContent: 'center', marginTop: 'calc(24px * var(--app-density-scale))' }}>
+              {mode === 'due' && <button className="btn btn-ghost" onClick={() => setMode('all')}><Icon.Cards size={12}/> Review existing</button>}
+              <button className="btn btn-accent" onClick={() => onNav('materials')}><Icon.Folder size={12}/> Create new set</button>
+            </div>}
           </div>
         </div>
       </div>
@@ -493,14 +509,14 @@ const Flashcards = ({ onNav }) => {
 const fc = {
   card: { position: 'relative', minHeight: 340, transition: 'transform 600ms var(--ease-in-out)', transformStyle: 'preserve-3d' },
   face: {
-    position: 'absolute', inset: 0, padding: 40, borderRadius: 'var(--r-xl)',
+    position: 'absolute', inset: 0, padding: 'calc(40px * var(--app-density-scale))', borderRadius: 'var(--r-xl)',
     background: 'var(--bg-1)', border: '1px solid var(--line)', backfaceVisibility: 'hidden',
     boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column',
   },
-  faceLabel: { fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 20 },
-  meta: { marginTop: 'auto', fontSize: 11, color: 'var(--fg-3)' },
-  rateBtn: { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--line)', background: 'var(--bg-1)', minWidth: 120, transition: 'all 160ms var(--ease-out)' },
-  keyHint: { width: 20, height: 20, borderRadius: 4, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11 },
+  faceLabel: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 'calc(20px * var(--app-density-scale))' },
+  meta: { marginTop: 'auto', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  rateBtn: { display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))', padding: '10px 16px', borderRadius: 'var(--r-md)', border: '1px solid var(--line)', background: 'var(--bg-1)', minWidth: 120, transition: 'all 160ms var(--ease-out)' },
+  keyHint: { width: 20, height: 20, borderRadius: 4, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 'calc(11px * var(--app-font-scale))' },
 };
 
 window.Flashcards = Flashcards;
@@ -637,16 +653,16 @@ const Quiz = ({ onNav }) => {
               </div>
               {busy && <span style={qz.muted}>{action === 'start' ? 'Starting quiz...' : 'Loading...'}</span>}
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 18 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(18px * var(--app-density-scale))' }}>
               {library.length === 0 && <div style={qz.empty}>No quizzes yet. Open a ready material and generate a practice quiz.</div>}
               {library.map(q => (
                 <button key={q.id} disabled={busy} onClick={() => startQuiz(q.id)} style={{ ...qz.quizRow, opacity: busy ? 0.65 : 1 }}>
                   <Icon.Target size={15} style={{ color: 'var(--accent)' }}/>
                   <div style={{ flex: 1, textAlign: 'left' }}>
-                    <div style={{ fontSize: 13.5, color: 'var(--fg-0)', fontWeight: 500 }}>{q.title}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--fg-3)', marginTop: 2 }}>{q.question_count} questions | {q.difficulty}</div>
+                    <div style={{ fontSize: 'calc(13.5px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{q.title}</div>
+                    <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(2px * var(--app-density-scale))' }}>{q.question_count} questions | {q.difficulty} | Start new attempt</div>
                   </div>
-                  <span className="chip">{q.last_score == null ? 'Not attempted' : `${q.last_score}%`}</span>
+                  <span className="chip">{q.last_score == null ? 'Not attempted' : `Review: ${q.last_score}%`}</span>
                 </button>
               ))}
             </div>
@@ -659,14 +675,14 @@ const Quiz = ({ onNav }) => {
                 <h2 style={qz.subTitle}>Questions to revisit</h2>
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(16px * var(--app-density-scale))' }}>
               {wrong.length === 0 && <div style={qz.empty}>No wrong answers stored yet.</div>}
               {wrong.map((w, i) => (
                 <div key={`${w.attempt_id}-${w.question_id}-${i}`} style={qz.wrongRow}>
-                  <div style={{ fontSize: 13, color: 'var(--fg-0)', marginBottom: 8 }}>{w.question}</div>
-                  <div style={{ fontSize: 12, color: 'var(--fg-2)' }}>Correct: {w.options[w.correct_idx]}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--fg-3)', marginTop: 6 }}>{[w.topic || w.concept, w.difficulty].filter(Boolean).join(' | ')}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--fg-3)', marginTop: 6 }}>{w.explanation || 'Review the source material for this concept.'}</div>
+                  <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', marginBottom: 'calc(8px * var(--app-density-scale))' }}>{w.question}</div>
+                  <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)' }}>Correct: {w.options[w.correct_idx]}</div>
+                  <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(6px * var(--app-density-scale))' }}>{[w.topic || w.concept, w.difficulty].filter(Boolean).join(' | ')}</div>
+                  <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(6px * var(--app-density-scale))' }}>{w.explanation || 'Review the source material for this concept.'}</div>
                 </div>
               ))}
             </div>
@@ -679,11 +695,11 @@ const Quiz = ({ onNav }) => {
   return (
     <div style={{ background: 'var(--bg-0)', minHeight: '100vh' }}>
       <window.Topbar title={quiz.title} crumbs={['Quizzes']}
-        right={<><button className="btn btn-ghost" onClick={backToLibrary}>Quiz library</button><span style={{ fontSize: 11.5, color: 'var(--fg-3)' }}>Question {questions.length ? qi + 1 : 0} / {questions.length}</span></>}
+        right={<><button className="btn btn-ghost" onClick={backToLibrary}>Quiz library</button><span style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)' }}>Question {questions.length ? qi + 1 : 0} / {questions.length}</span></>}
       />
       <div style={{ maxWidth: 780, margin: '0 auto', padding: '40px 28px' }}>
         {error && <div style={qz.error}>{error}</div>}
-        <div style={{ display: 'flex', gap: 4, marginBottom: 36 }}>
+        <div style={{ display: 'flex', gap: 'calc(4px * var(--app-density-scale))', marginBottom: 'calc(36px * var(--app-density-scale))' }}>
           {(questions.length ? questions : [0]).map((_, k) => (
             <div key={k} style={{ flex: 1, height: 4, borderRadius: 2, background: k < qi ? 'var(--ok)' : k === qi ? 'var(--accent)' : 'var(--line)' }}/>
           ))}
@@ -696,7 +712,7 @@ const Quiz = ({ onNav }) => {
           {cur ? cur.question : (finalScore ? `You scored ${finalScore.score}% (${finalScore.correct}/${finalScore.total})` : 'This quiz has no questions.')}
         </h1>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(10px * var(--app-density-scale))' }}>
           {(cur ? cur.options : []).map((label, idx) => {
             const isSel = selected === idx;
             const show = submitted && feedback;
@@ -708,8 +724,8 @@ const Quiz = ({ onNav }) => {
                 borderColor: isCorrect ? 'var(--ok)' : isWrong ? 'var(--err)' : isSel ? 'var(--accent-soft)' : 'var(--line)',
                 background: isCorrect ? 'color-mix(in oklab, var(--ok) 10%, transparent)' : isWrong ? 'color-mix(in oklab, var(--err) 10%, transparent)' : isSel ? 'var(--accent-glow)' : 'var(--bg-1)',
               }}>
-                <span className="mono" style={{ fontSize: 10, color: 'var(--fg-3)', width: 16 }}>{String.fromCharCode(65 + idx)}</span>
-                <span style={{ flex: 1, fontSize: 14, color: 'var(--fg-0)' }}>{label}</span>
+                <span className="mono" style={{ fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--fg-3)', width: 16 }}>{String.fromCharCode(65 + idx)}</span>
+                <span style={{ flex: 1, fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-0)' }}>{label}</span>
                 {isCorrect && <Icon.Check size={13} style={{ color: 'var(--ok)' }}/>}
                 {isWrong && <Icon.X size={13} style={{ color: 'var(--err)' }}/>}
               </button>
@@ -719,15 +735,15 @@ const Quiz = ({ onNav }) => {
 
         {submitted && feedback && (
           <div style={qz.feedback}>
-            <div style={{ fontSize: 12, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>{feedback.is_correct ? 'Correct' : 'Review this'}</div>
-            <div style={{ fontSize: 13.5, color: 'var(--fg-1)', lineHeight: 1.6 }}>{feedback.explanation || 'Review the material and try again.'}</div>
+            <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(8px * var(--app-density-scale))' }}>{feedback.is_correct ? 'Correct' : 'Review this'}</div>
+            <div style={{ fontSize: 'calc(13.5px * var(--app-font-scale))', color: 'var(--fg-1)', lineHeight: 1.6 }}>{feedback.explanation || 'Review the material and try again.'}</div>
           </div>
         )}
 
         {finalScore && (
           <div style={qz.feedback}>
-            <div style={{ fontSize: 12, color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Saved attempt</div>
-            <div style={{ fontSize: 13.5, color: 'var(--fg-1)', lineHeight: 1.6 }}>
+            <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(8px * var(--app-density-scale))' }}>Saved attempt</div>
+            <div style={{ fontSize: 'calc(13.5px * var(--app-font-scale))', color: 'var(--fg-1)', lineHeight: 1.6 }}>
               Score saved: {finalScore.score}% with {finalScore.correct}/{finalScore.total} correct.
               {finalScore.wrong && finalScore.wrong.length ? ` ${finalScore.wrong.length} wrong answer${finalScore.wrong.length === 1 ? '' : 's'} stored for review.` : ' No wrong answers to review.'}
               {finalScore.reward && finalScore.reward.points ? ` +${finalScore.reward.points} XP earned.` : ''}
@@ -735,7 +751,7 @@ const Quiz = ({ onNav }) => {
           </div>
         )}
 
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 36 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'calc(36px * var(--app-density-scale))' }}>
           <button className="btn btn-bare" disabled={busy} onClick={backToLibrary}><Icon.ArrowLeft size={12}/> Back to library</button>
           {finalScore ? (
             <button className="btn btn-accent" disabled={busy} onClick={backToLibrary}>Finish review <Icon.ArrowRight size={12}/></button>
@@ -753,20 +769,20 @@ const Quiz = ({ onNav }) => {
 };
 
 const qz = {
-  page: { padding: 28, maxWidth: 1100, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr', gap: 14 },
-  section: { padding: 22 },
-  sectionHead: { display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' },
-  eyebrow: { fontSize: 11, color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 8 },
-  title: { fontFamily: 'var(--font-display)', fontSize: 34, fontWeight: 300, margin: 0 },
-  subTitle: { fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 300, margin: 0 },
-  muted: { fontSize: 12, color: 'var(--fg-3)' },
-  empty: { padding: 18, color: 'var(--fg-3)', fontSize: 12.5, border: '1px dashed var(--line-strong)', borderRadius: 'var(--r-md)' },
-  error: { marginBottom: 12, color: 'var(--err)', fontSize: 12 },
-  quizRow: { display: 'flex', alignItems: 'center', gap: 12, padding: 14, border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' },
-  wrongRow: { padding: 14, border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' },
-  questionTitle: { fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 300, letterSpacing: '-0.015em', margin: '0 0 18px', lineHeight: 1.3 },
-  option: { display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 16px', borderRadius: 'var(--r-md)', border: '1px solid', textAlign: 'left', transition: 'all 160ms var(--ease-out)' },
-  feedback: { marginTop: 24, padding: 18, borderRadius: 'var(--r-lg)', background: 'var(--bg-1)', border: '1px solid var(--line)' },
+  page: { padding: 'calc(28px * var(--app-density-scale))', maxWidth: 1100, margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr', gap: 'calc(14px * var(--app-density-scale))' },
+  section: { padding: 'calc(22px * var(--app-density-scale))' },
+  sectionHead: { display: 'flex', justifyContent: 'space-between', gap: 'calc(16px * var(--app-density-scale))', alignItems: 'flex-start' },
+  eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 'calc(8px * var(--app-density-scale))' },
+  title: { fontFamily: 'var(--font-display)', fontSize: 'calc(34px * var(--app-font-scale))', fontWeight: 300, margin: 0 },
+  subTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(24px * var(--app-font-scale))', fontWeight: 300, margin: 0 },
+  muted: { fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  empty: { padding: 'calc(18px * var(--app-density-scale))', color: 'var(--fg-3)', fontSize: 'calc(12.5px * var(--app-font-scale))', border: '1px dashed var(--line-strong)', borderRadius: 'var(--r-md)' },
+  error: { marginBottom: 'calc(12px * var(--app-density-scale))', color: 'var(--err)', fontSize: 'calc(12px * var(--app-font-scale))' },
+  quizRow: { display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))', padding: 'calc(14px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' },
+  wrongRow: { padding: 'calc(14px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' },
+  questionTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(32px * var(--app-font-scale))', fontWeight: 300, letterSpacing: '-0.015em', margin: '0 0 18px', lineHeight: 1.3 },
+  option: { display: 'flex', alignItems: 'flex-start', gap: 'calc(14px * var(--app-density-scale))', padding: '14px 16px', borderRadius: 'var(--r-md)', border: '1px solid', textAlign: 'left', transition: 'all 160ms var(--ease-out)' },
+  feedback: { marginTop: 'calc(24px * var(--app-density-scale))', padding: 'calc(18px * var(--app-density-scale))', borderRadius: 'var(--r-lg)', background: 'var(--bg-1)', border: '1px solid var(--line)' },
 };
 
 window.Quiz = Quiz;

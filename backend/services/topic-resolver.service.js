@@ -395,7 +395,11 @@ function rankTopicsFromChunks(chunks) {
 
   const best = ranked[0] || null;
   const second = ranked[1] || null;
-  if (!best) return { topic: null, confidence: 0, candidates: [] };
+  if (!best || best.score < 5) return { topic: null, confidence: 0, candidates: ranked.slice(0, 5).map(item => ({
+    topic: item.topic,
+    score: Math.round(item.score * 100) / 100,
+    evidence: item.hits.slice(0, 4).map(hit => hit.term),
+  })) };
   const margin = best.score - (second ? second.score : 0);
   const confidence = Math.max(0.18, Math.min(0.96, (best.score + margin) / (best.score + (second ? second.score : 0) + 10)));
   return {

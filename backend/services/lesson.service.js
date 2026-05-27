@@ -1,15 +1,15 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
 const { z } = require('zod');
 const env = require('../config/env');
 const ai = require('./ai.service');
+const knowledgeService = require('./knowledge.service');
 const prompts = require('../utils/prompts');
 const { extractJson, parseJsonSafe } = require('../utils/jsonSafe');
 const diagrams = require('./diagram.service');
 const { findTopicNodes } = require('../utils/visual-templates');
 const codeWindow = require('../utils/code-window');
+const materialUnderstanding = require('./material-understanding.service');
 
 const SECTION_TYPES = [
   'hook',
@@ -27,7 +27,24 @@ const SECTION_TYPES = [
   'next_steps',
 ];
 
-const DIAGRAM_TYPES = ['uml_class', 'inheritance_tree', 'linked_list', 'hash_table', 'stack', 'queue', 'tree', 'big_o_chart', 'mindmap', 'flow'];
+const DIAGRAM_TYPES = [
+  'uml_class',
+  'inheritance_tree',
+  'linked_list',
+  'hash_table',
+  'stack',
+  'queue',
+  'tree',
+  'big_o_chart',
+  'mindmap',
+  'flow',
+  'concept_cards',
+  'classification_table',
+  'comparison_table',
+  'source_page_reference',
+  'source_slide_reference',
+  'no_visual',
+];
 const CALLOUT_TYPES = ['remember', 'exam_tip', 'warning', 'source'];
 
 const CodeExplanationSchema = z.union([
@@ -88,7 +105,7 @@ const VideoSceneSchema = z.object({
   narration: z.string().min(1),
   onScreenText: z.array(z.string()).optional().default([]),
   visual: z.object({
-    type: z.enum(['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'hash_table', 'bigo_chart']).optional().default('mindmap'),
+    type: z.enum(['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'hash_table', 'bigo_chart', 'cards', 'table', 'source_reference', 'none']).optional().default('mindmap'),
     description: z.string().optional().default(''),
     nodes: z.array(z.any()).optional().default([]),
     edges: z.array(z.any()).optional().default([]),
@@ -151,56 +168,12 @@ function detectLessonType(topic) {
   return 'general';
 }
 
-function topicKey(topic) {
-  return String(topic || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
-
-function listKnowledgeFiles() {
-  const root = path.join(__dirname, '..', 'knowledge');
-  const out = [];
-  const walk = (dir) => {
-    if (!fs.existsSync(dir)) return;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.isFile() && entry.name.endsWith('.json')) out.push(full);
-    }
-  };
-  walk(root);
-  return out;
-}
-
 function loadCuratedKnowledge(topic) {
-  const wanted = topicKey(topic);
-  for (const file of listKnowledgeFiles()) {
-    try {
-      const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-      const keys = [json.topic, ...(json.aliases || [])].map(topicKey);
-      if (keys.includes(wanted) || keys.some(k => k.length >= 5 && wanted.length >= 5 && (wanted.includes(k) || k.includes(wanted)))) {
-        return { ...json, _file: file };
-      }
-    } catch (_) {}
-  }
-  return null;
+  return knowledgeService.getTopic(topic);
 }
 
 function curatedAsPrompt(knowledge) {
-  if (!knowledge) return '(No curated local topic file matched. Use standard CS knowledge carefully.)';
-  return JSON.stringify({
-    topic: knowledge.topic,
-    aliases: knowledge.aliases || [],
-    definition: knowledge.definition || '',
-    deepExplanation: knowledge.deepExplanation || '',
-    codeExamples: knowledge.codeExamples || [],
-    diagrams: knowledge.diagrams || [],
-    commonMistakes: knowledge.commonMistakes || [],
-    complexity: knowledge.complexity || {},
-    practiceQuestions: knowledge.practiceQuestions || [],
-    visualTemplates: knowledge.visualTemplates || [],
-  }, null, 2).slice(0, 6000);
+  return knowledgeService.topicToPromptContext(knowledge);
 }
 
 function section(type, title, content, extra = {}) {
@@ -222,6 +195,12 @@ function fallbackLesson(topic, opts = {}) {
   const materialTitle = opts.materialTitle || opts.title || '';
   const grounding = opts.groundingTier || 'moderate';
   const selectedChunkIds = (opts.chunks || []).slice(0, 6).map(c => c.id).filter(Boolean);
+  const lessonType = opts.lessonType || detectLessonType(t);
+  const domain = opts.domain || opts.domainInfo && opts.domainInfo.domain || '';
+
+  if (lessonType === 'general' || (domain && domain !== 'cs')) {
+    return generalMaterialLesson(t, materialTitle, grounding, selectedChunkIds, opts.chunks || [], opts);
+  }
 
   if (lower.includes('inheritance')) return inheritanceLesson(t, materialTitle, grounding, selectedChunkIds);
   if (lower.includes('polymorphism')) return polymorphismLesson(t, materialTitle, grounding, selectedChunkIds);
@@ -554,27 +533,358 @@ function complexityText(complexity) {
     .join('; ');
 }
 
+function mistakeCard(item) {
+  if (typeof item === 'string') return { title: videoText(item, 42), text: item };
+  const mistake = item && (item.mistake || item.title || item.text) || '';
+  const correction = item && item.correction ? ` Correction: ${item.correction}` : '';
+  const why = item && item.whyItHappens ? ` Why it happens: ${item.whyItHappens}` : '';
+  return {
+    title: videoText(mistake, 42),
+    text: cleanText(`${mistake}${why}${correction}`, 260),
+  };
+}
+
+function parseKeywordsJson(value) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed.filter(Boolean).map(String) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function isGenericSourceLabel(value) {
+  const text = inlineText(value, 120);
+  if (!text) return true;
+  return /^(document|file|material|upload|uploaded material|source|lesson|chapter\s*\d+|slide\s*\d+|section\s*\d+|unit\s*\d+|module\s*\d+|top|home|welcome|contents?|table of contents|index|appendix|acknowledgements?|references?|quiz(?:zes)?|quiz answer keys?|answer keys?|answers?|objectives?|learning objectives?|untitled|\d+)$/i.test(text);
+}
+
+function titleCaseLabel(value) {
+  return inlineText(value, 90)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function sourceConceptsFromChunks(chunks, topic, max = 8) {
+  const seen = new Set();
+  const out = [];
+  const add = (value) => {
+    const label = titleCaseLabel(value);
+    if (!label || isGenericSourceLabel(label)) return;
+    const key = label.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(label);
+  };
+  for (const chunk of chunks || []) {
+    add(chunk.chapter_title || chunk.slide_title || chunk.section_title || chunk.heading);
+    for (const keyword of parseKeywordsJson(chunk.keywords_json)) add(keyword);
+    if (out.length >= max) break;
+  }
+  if (!out.length) add(topic);
+  return out.slice(0, max);
+}
+
+function sourceExcerptSentences(chunks, max = 4) {
+  const sentences = [];
+  for (const chunk of chunks || []) {
+    const text = String(chunk.text || '').replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    for (const sentence of text.split(/(?<=[.!?])\s+/)) {
+      const clean = cleanText(sentence, 240);
+      if (clean.length >= 35) sentences.push(clean);
+      if (sentences.length >= max) return sentences;
+    }
+  }
+  return sentences;
+}
+
+function outlineFromLessonInputs(chunks = [], opts = {}) {
+  if (opts.sourceOutline && typeof opts.sourceOutline === 'object') return opts.sourceOutline;
+  return materialUnderstanding.buildSourceOutline(chunks || [], {
+    explicitQuery: opts.explicitQuery || opts.query || opts.topic,
+    hint: opts.topic,
+    title: opts.title || opts.materialTitle,
+    materialTitle: opts.materialTitle || opts.title,
+    scopeTitle: opts.scopeTitle,
+    domainInfo: opts.domainInfo,
+  });
+}
+
+function outlineConcepts(outline, fallbackConcepts = [], max = 10) {
+  const sections = Array.isArray(outline && outline.meaningfulSections) ? outline.meaningfulSections : [];
+  const values = [
+    ...(outline && Array.isArray(outline.keyConcepts) ? outline.keyConcepts : []),
+    ...sections.map(section => section.title),
+    ...sections.flatMap(section => Array.isArray(section.terms) ? section.terms.slice(0, 3) : []),
+    ...fallbackConcepts,
+  ];
+  return uniqueList(values, max).filter(label => !isGenericSourceLabel(label)).slice(0, max);
+}
+
+function outlineExamples(outline, chunks, max = 5) {
+  const sections = Array.isArray(outline && outline.meaningfulSections) ? outline.meaningfulSections : [];
+  const fromSections = sections.map(section => section.excerpt).filter(Boolean);
+  const representative = Array.isArray(outline && outline.representativeExcerpts) ? outline.representativeExcerpts : [];
+  return uniqueList([...fromSections, ...representative, ...sourceExcerptSentences(chunks, max)], max);
+}
+
+const SOURCE_FACT_KEYS = [
+  'definitions',
+  'facts',
+  'classifications',
+  'examples',
+  'numbers',
+  'relationships',
+  'processes',
+  'memoryHints',
+  'reviewQuestions',
+];
+
+function sourceFactsFromOutline(outline) {
+  const facts = {};
+  for (const key of SOURCE_FACT_KEYS) facts[key] = [];
+  const add = (key, value, max = 18) => {
+    const text = cleanText(value, 260);
+    if (!text || !facts[key] || facts[key].some(item => item.toLowerCase() === text.toLowerCase())) return;
+    facts[key].push(text);
+    if (facts[key].length > max) facts[key] = facts[key].slice(0, max);
+  };
+  const read = (source) => {
+    if (!source || typeof source !== 'object') return;
+    for (const key of SOURCE_FACT_KEYS) {
+      for (const value of source[key] || []) add(key, value, key === 'facts' ? 24 : 16);
+    }
+  };
+  read(outline && outline.sourceFacts);
+  for (const section of (outline && outline.meaningfulSections) || []) read(section && section.sourceFacts);
+  for (const quiz of (outline && outline.quizSections) || []) read(quiz && quiz.sourceFacts);
+  return facts;
+}
+
+function flattenSourceFacts(facts, keys = SOURCE_FACT_KEYS, max = 12) {
+  const values = [];
+  for (const key of keys) values.push(...((facts && facts[key]) || []));
+  return uniqueList(values, max);
+}
+
+function firstSourceFact(facts, keys = SOURCE_FACT_KEYS, fallback = '') {
+  return flattenSourceFacts(facts, keys, 1)[0] || fallback;
+}
+
+function sectionFactText(section, max = 300) {
+  const facts = sourceFactsFromOutline({ sourceFacts: section && section.sourceFacts });
+  const values = flattenSourceFacts(facts, ['definitions', 'facts', 'relationships', 'classifications', 'processes', 'examples', 'numbers'], 3);
+  return cleanText(values.join(' '), max) || cleanText(section && section.excerpt || '', max);
+}
+
+function sourceSectionCards(outline, concepts, max = 6) {
+  const sections = Array.isArray(outline && outline.meaningfulSections) ? outline.meaningfulSections : [];
+  const cards = sections
+    .filter(section => section && section.title && !isGenericSourceLabel(section.title))
+    .slice(0, max)
+    .map(section => ({
+      title: inlineText(section.title, 80),
+      text: sectionFactText(section, 300) || cleanText(Array.isArray(section.terms) ? section.terms.join(', ') : '', 260),
+    }))
+    .filter(card => card.title || card.text);
+  if (cards.length) return cards;
+  return concepts.slice(0, max).map(label => ({
+    title: inlineText(label, 80),
+    text: `${inlineText(label, 80)} appears as a source concept in the uploaded material.`,
+  }));
+}
+
+function visualDecisionForGeneral(outline, concepts) {
+  const sections = Array.isArray(outline && outline.meaningfulSections) ? outline.meaningfulSections : [];
+  const realSections = sections.filter(section => section && section.title && !isGenericSourceLabel(section.title));
+  const outlineText = realSections.map(section => `${section.title} ${section.excerpt || ''} ${(section.terms || []).join(' ')}`).join(' ').toLowerCase();
+  if (/\b(classification|classified|types?|categories|includes?|consists of|divided into|groups?)\b/.test(outlineText) && realSections.length >= 3) {
+    return { visualNeeded: true, visualType: 'classification_table', reason: 'The source presents categories or parts that are clearer as a table.' };
+  }
+  if (/\b(compare|contrast|versus|advantages?|disadvantages?|difference)\b/.test(outlineText) && realSections.length >= 2) {
+    return { visualNeeded: true, visualType: 'comparison_table', reason: 'The source compares ideas that are clearer side by side.' };
+  }
+  if (realSections.some(section => section.sourcePage != null || section.slideNumber != null)) {
+    return { visualNeeded: true, visualType: 'source_page_reference', reason: 'The source has page or slide anchors that can guide visual review.' };
+  }
+  if (realSections.length >= 4 && concepts.length >= 4) {
+    return { visualNeeded: true, visualType: 'concept_cards', reason: 'Multiple source sections are best reviewed as concrete cards.' };
+  }
+  if (concepts.length >= 5) {
+    return { visualNeeded: true, visualType: 'concept_cards', reason: 'Several source concepts can be grouped safely as cards.' };
+  }
+  return { visualNeeded: false, visualType: 'no_visual', reason: 'The source is better represented with source cards and checkpoints than a forced diagram.' };
+}
+
+function tableRowsFromCards(cards, max = 5) {
+  return (cards || []).slice(0, max).map(card => ({
+    concept: inlineText(card.title || 'Source concept', 54),
+    detail: cleanText(card.text || '', 150),
+  }));
+}
+
+function sourceVisualFromDecision(decision, lessonTopic, cards, concepts) {
+  const nodes = cards.length
+    ? cards.map(card => card.title).filter(Boolean).slice(0, 6)
+    : [lessonTopic, ...concepts.slice(0, 5)];
+  if (decision.visualType === 'classification_table' || decision.visualType === 'comparison_table') {
+    return {
+      type: decision.visualType,
+      nodes,
+      edges: [],
+      operations: tableRowsFromCards(cards).map(row => `${row.concept}: ${row.detail}`),
+      caption: decision.reason,
+    };
+  }
+  if (decision.visualType === 'source_page_reference') {
+    return {
+      type: 'source_page_reference',
+      nodes,
+      edges: [],
+      operations: ['review source page or slide evidence', 'connect labels to notes'],
+      caption: decision.reason,
+    };
+  }
+  if (decision.visualType === 'concept_cards') {
+    return {
+      type: 'concept_cards',
+      nodes,
+      edges: nodes.slice(0, -1).map((label, index) => [label, nodes[index + 1]]),
+      operations: ['read concept', 'name source detail', 'answer review prompt'],
+      caption: decision.reason,
+    };
+  }
+  return null;
+}
+
+function generalMaterialLesson(topic, materialTitle, grounding, selectedChunkIds, chunks = [], opts = {}) {
+  const outline = outlineFromLessonInputs(chunks, { ...opts, topic, materialTitle });
+  const fallbackConcepts = sourceConceptsFromChunks(chunks, topic, 8);
+  const concepts = outlineConcepts(outline, fallbackConcepts, 10);
+  const examples = outlineExamples(outline, chunks, 5);
+  const sourceFacts = sourceFactsFromOutline(outline);
+  const concreteFacts = flattenSourceFacts(sourceFacts, ['definitions', 'facts', 'relationships', 'classifications', 'processes', 'examples', 'numbers'], 14);
+  const classifications = flattenSourceFacts(sourceFacts, ['classifications'], 8);
+  const processes = flattenSourceFacts(sourceFacts, ['processes'], 8);
+  const reviewQuestions = flattenSourceFacts(sourceFacts, ['reviewQuestions'], 5);
+  const lessonTopic = isGenericSourceLabel(topic)
+    ? (outline.mainTopic && !isGenericSourceLabel(outline.mainTopic) ? outline.mainTopic : (concepts[0] || 'Study Notes from Uploaded Material'))
+    : topic;
+  const lesson = baseLesson(lessonTopic, 'general', materialTitle, grounding, selectedChunkIds);
+  const mainConcept = concepts[0] || lessonTopic;
+  const cards = sourceSectionCards(outline, concepts, 6);
+  const visualDecision = visualDecisionForGeneral(outline, concepts);
+  const sourcePath = cards.map(card => card.title).filter(Boolean).slice(0, 6);
+  const overviewFacts = concreteFacts.slice(0, 4);
+  const detailFacts = concreteFacts.slice(0, 8);
+  const firstFact = firstSourceFact(sourceFacts, ['definitions', 'facts', 'relationships', 'classifications'], examples[0] || `${lessonTopic} is the central topic identified from the uploaded material.`);
+  const classificationText = classifications.length
+    ? classifications.join(' ')
+    : (cards.length >= 2 ? cards.map(card => `${card.title}: ${card.text}`).join(' ') : '');
+  const processText = processes.length ? processes.join(' ') : '';
+  const exampleText = flattenSourceFacts(sourceFacts, ['examples', 'memoryHints', 'numbers'], 5).join(' ') || examples.slice(0, 3).join(' ');
+  const reviewQuizItems = reviewQuestions.length
+    ? reviewQuestions.slice(0, 3)
+    : [
+      `What is the main idea of ${lessonTopic}?`,
+      `Which detail from the uploaded material best supports ${mainConcept}?`,
+      concepts[1] ? `How is ${mainConcept} related to ${concepts[1]}?` : `What important detail should you remember about ${mainConcept}?`,
+    ];
+  lesson.learningObjectives = [
+    `Explain ${lessonTopic} using concrete facts from the uploaded material.`,
+    `Connect ${mainConcept} to the other important source sections.`,
+    'Answer review questions using source details, not generic labels.',
+  ];
+  lesson.prerequisites = [];
+  lesson.sections = [
+    section('hook', `Overview Of ${lessonTopic}`, overviewFacts.join(' ') || firstFact),
+    section('definition', 'Main Idea From The Source', firstFact),
+    section('deep_explanation', 'Source Outline', `The uploaded material is organized around ${sourcePath.join(', ') || concepts.slice(0, 6).join(', ')}. ${overviewFacts.slice(0, 2).join(' ') || firstFact}`, {
+      cards,
+    }),
+    section('deep_explanation', 'Key Concepts Explained', cards.map(card => `${card.title}: ${card.text}`).join(' ') || detailFacts.join(' ')),
+    section('deep_explanation', 'Important Details From The Source', detailFacts.join(' ') || examples.slice(0, 4).join(' ') || firstFact),
+  ];
+  if (classifications.length || cards.length >= 3) {
+    lesson.sections.push(section('deep_explanation', classifications.length ? 'Classifications And Groups' : 'Major Source Groups', classificationText || detailFacts.join(' '), {
+      cards: cards.slice(0, 6),
+    }));
+  }
+  if (processes.length) {
+    lesson.sections.push(section('deep_explanation', 'Processes And Steps', processText));
+  }
+  if (visualDecision.visualNeeded) {
+    const visual = sourceVisualFromDecision(visualDecision, lessonTopic, cards, concepts);
+    lesson.sections.push(section('diagram', visualDecision.visualType.includes('table') ? 'Source Table' : 'Source Visual Review', classificationText || detailFacts.join(' ') || firstFact, {
+      diagram: visual,
+    }));
+  }
+  lesson.sections.push(
+    section('deep_explanation', 'Examples And Memory Hints', exampleText || detailFacts.slice(0, 3).join(' ') || firstFact),
+    section('common_mistakes', 'Common Mistakes', '', {
+      cards: [
+        { title: 'Memorizing labels without meaning', text: `${mainConcept} should be connected to details such as ${detailFacts[0] || firstFact}.` },
+        { title: 'Mixing separate source sections', text: sourcePath.length >= 2 ? `${sourcePath[0]} and ${sourcePath[1]} are related, but each section has its own terms and details.` : `Keep each detail tied to ${lessonTopic}.` },
+      ],
+    }),
+    section('checkpoint', 'Review Questions', reviewQuizItems.join(' '), {
+      quiz: reviewQuizItems.slice(0, 3).map((question, index) => ({
+        question,
+        options: concepts.slice(0, 4).length >= 2 ? concepts.slice(0, 4) : [],
+        answer: concepts[index] || concepts[0] || lessonTopic,
+        explanation: detailFacts[index] || firstFact,
+      })),
+    }),
+    section('recap', 'Exam-Ready Summary', `${lessonTopic} includes ${concepts.slice(0, 5).join(', ') || mainConcept}. ${detailFacts.slice(0, 3).join(' ') || firstFact}`),
+    section('next_steps', 'Next Steps', `Review ${concepts.slice(0, 3).join(', ') || lessonTopic}, then generate quiz questions or flashcards from the same uploaded material.`),
+  );
+  lesson.relatedTopics = concepts.slice(1, 6);
+  return normalizeLesson(lesson, { topic: lessonTopic, skipEnsureFallback: true });
+}
+
+function quizItemFromKnowledge(item) {
+  if (typeof item === 'string') {
+    return {
+      question: item,
+      options: [],
+      answer: 'Explain using the rule from the lesson.',
+      explanation: 'A good answer names the rule, traces the example, and checks the edge case.',
+    };
+  }
+  return {
+    question: item && item.question || '',
+    options: item && item.options || [],
+    answer: item && item.answer || 'Explain using the rule from the lesson.',
+    explanation: item && item.explanation || 'A good answer names the rule, traces the example, and checks the edge case.',
+  };
+}
+
 function curatedFallbackLesson(topic, knowledge, materialTitle, grounding, selectedChunkIds) {
   const canonical = inlineText(knowledge.topic || topic, 90);
   const lesson = baseLesson(canonical, detectLessonType(canonical), materialTitle, grounding, selectedChunkIds);
   const codeExample = Array.isArray(knowledge.codeExamples) && knowledge.codeExamples.length ? knowledge.codeExamples[0] : null;
   const diagram = Array.isArray(knowledge.diagrams) && knowledge.diagrams.length ? knowledge.diagrams[0] : null;
-  const mistakes = (Array.isArray(knowledge.commonMistakes) ? knowledge.commonMistakes : []).slice(0, 4);
+  const mistakes = (Array.isArray(knowledge.commonMistakes) ? knowledge.commonMistakes : []).slice(0, 4).map(mistakeCard);
   const complexity = complexityText(knowledge.complexity);
-  const practice = Array.isArray(knowledge.practiceQuestions) ? knowledge.practiceQuestions : [];
+  const practice = Array.isArray(knowledge.miniQuiz) && knowledge.miniQuiz.length
+    ? knowledge.miniQuiz.map(quizItemFromKnowledge)
+    : (Array.isArray(knowledge.practiceQuestions) ? knowledge.practiceQuestions.map(quizItemFromKnowledge) : []);
   const aliases = Array.isArray(knowledge.aliases) ? knowledge.aliases.slice(0, 3).join(', ') : '';
 
   lesson.learningObjectives = [
     `Define ${canonical} precisely and explain why it matters.`,
     `Trace a concrete ${canonical} example using the diagram and code.`,
-    mistakes.length ? `Avoid common ${canonical} mistakes such as ${videoText(mistakes[0], 64)}.` : `Apply ${canonical} without relying on vague labels.`,
+    mistakes.length ? `Avoid common ${canonical} mistakes such as ${videoText(mistakes[0].title || mistakes[0].text, 64)}.` : `Apply ${canonical} without relying on vague labels.`,
   ];
-  lesson.prerequisites = lesson.lessonType === 'oop' ? ['Classes and objects', 'Methods', 'Basic Java syntax'] : ['Variables', 'References', 'Basic Java syntax'];
+  lesson.prerequisites = Array.isArray(knowledge.prerequisites) && knowledge.prerequisites.length
+    ? knowledge.prerequisites
+    : (lesson.lessonType === 'oop' ? ['Classes and objects', 'Methods', 'Basic Java syntax'] : ['Variables', 'References', 'Basic Java syntax']);
   lesson.sections = [
     section('hook', `Why ${canonical} Matters`, `${canonical} matters because it gives students a reusable mental model instead of isolated facts. ${knowledge.deepExplanation || knowledge.definition || ''}`),
     section('definition', 'Definition', knowledge.definition || `${canonical} is a core computer science concept.`),
     section('deep_explanation', 'Deep Explanation', knowledge.deepExplanation || `Study ${canonical} by naming the parts, tracing one operation, and identifying the rule that must never be broken.`),
-    section('analogy', 'Mental Model', aliases ? `Connect ${canonical} to its neighboring terms: ${aliases}. The analogy is useful only when it preserves the actual rule of the concept.` : `Build a mental model for ${canonical} before memorizing syntax.`),
+    section('analogy', 'Mental Model', knowledge.analogy || (aliases ? `Connect ${canonical} to its neighboring terms: ${aliases}. The analogy is useful only when it preserves the actual rule of the concept.` : `Build a mental model for ${canonical} before memorizing syntax.`)),
     section('diagram', diagram && diagram.caption ? diagram.caption : 'Visual Model', diagram ? `Use this visual model to point to each part of ${canonical} and explain its role.` : `Draw ${canonical} as parts connected by rules.`, {
       diagram: diagram || { type: 'mindmap', nodes: [canonical, 'Definition', 'Example', 'Mistakes'], edges: [[canonical, 'Definition'], [canonical, 'Example']] },
     }),
@@ -582,7 +892,9 @@ function curatedFallbackLesson(topic, knowledge, materialTitle, grounding, selec
       code: codeExample ? {
         language: codeExample.language || 'java',
         content: codeExample.code || codeExample.content || '',
-        explanation: autoCodeExplanations(codeExample.code || codeExample.content || '', canonical),
+        explanation: Array.isArray(codeExample.walkthrough) && codeExample.walkthrough.length
+          ? codeExample.walkthrough
+          : autoCodeExplanations(codeExample.code || codeExample.content || '', canonical),
       } : {
         language: 'text',
         content: `${canonical}: add a concrete operation example`,
@@ -592,17 +904,19 @@ function curatedFallbackLesson(topic, knowledge, materialTitle, grounding, selec
     section('code_walkthrough', 'Line-by-Line Walkthrough', `Trace the example by explaining the setup, the operation line, and the invariant or result. The goal is to say why each line exists, not only what it says.`),
     section('common_mistakes', 'Common Mistakes', '', {
       cards: mistakes.length
-        ? mistakes.map(item => ({ title: videoText(item, 42), text: item }))
+        ? mistakes
         : [{ title: 'Memorizing labels only', text: 'Always connect the name to behavior, code, and a visual example.' }],
     }),
     ...(complexity ? [section('complexity', 'Complexity', complexity)] : []),
-    section('checkpoint', 'Mini Checkpoint', practice[0] || `Explain ${canonical} using one diagram and one code example.`, {
-      quiz: practice[0] ? [{ question: practice[0], options: [], answer: 'Explain using the rule from the lesson.', explanation: 'A good answer names the rule, traces the operation, and checks the edge case.' }] : [],
+    section('checkpoint', 'Mini Checkpoint', practice[0] && practice[0].question || `Explain ${canonical} using one diagram and one code example.`, {
+      quiz: practice[0] ? [practice[0]] : [],
     }),
     section('recap', 'Recap', `${canonical} should now connect three things: the definition, the visual model, and the code behavior.`),
-    section('next_steps', 'Next Steps', practice[1] || `Practice ${canonical} by drawing the state before and after one operation.`),
+    section('next_steps', 'Next Steps', practice[1] && practice[1].question || `Practice ${canonical} by drawing the state before and after one operation.`),
   ];
-  lesson.relatedTopics = Array.isArray(knowledge.aliases) ? knowledge.aliases.slice(0, 5) : [];
+  lesson.relatedTopics = Array.isArray(knowledge.nextTopics) && knowledge.nextTopics.length
+    ? knowledge.nextTopics.slice(0, 5)
+    : (Array.isArray(knowledge.aliases) ? knowledge.aliases.slice(0, 5) : []);
   return normalizeLesson(lesson, { topic: canonical, skipEnsureFallback: true });
 }
 
@@ -700,10 +1014,15 @@ function normalizeSection(raw, index) {
 function ensureRequiredSections(lesson, opts = {}) {
   const existing = new Set(lesson.sections.map(s => s.type));
   const fallback = fallbackLesson(lesson.topic || opts.topic || 'Object-Oriented Programming', {
+    ...opts,
     title: lesson.sourceMaterial && lesson.sourceMaterial.title,
     groundingTier: lesson.sourceMaterial && lesson.sourceMaterial.grounding,
   });
-  const required = ['hook', 'definition', 'deep_explanation', 'diagram', 'code_example', 'code_walkthrough', 'common_mistakes', 'checkpoint', 'recap'];
+  const requiresCode = isCsLessonForQuality(lesson, opts);
+  const required = requiresCode
+    ? ['hook', 'definition', 'deep_explanation', 'diagram', 'code_example', 'code_walkthrough', 'common_mistakes', 'checkpoint', 'recap']
+    : ['hook', 'definition', 'deep_explanation', 'common_mistakes', 'checkpoint', 'recap', 'next_steps'];
+  if (!requiresCode && opts.visualRequired) required.splice(3, 0, 'diagram');
   for (const type of required) {
     if (existing.has(type)) continue;
     const s = fallback.sections.find(item => item.type === type);
@@ -721,7 +1040,7 @@ function normalizeLesson(raw, opts = {}) {
     sourceMaterial: {
       title: inlineText(src.sourceMaterial && src.sourceMaterial.title || opts.materialTitle || opts.title || '', 120),
       grounding: inlineText(src.sourceMaterial && src.sourceMaterial.grounding || opts.groundingTier || 'moderate', 40),
-      selectedChunkIds: Array.isArray(src.sourceMaterial && src.sourceMaterial.selectedChunkIds)
+      selectedChunkIds: Array.isArray(src.sourceMaterial && src.sourceMaterial.selectedChunkIds) && src.sourceMaterial.selectedChunkIds.length
         ? src.sourceMaterial.selectedChunkIds.slice(0, 12)
         : (opts.chunks || []).slice(0, 8).map(c => c.id).filter(Boolean),
     },
@@ -742,14 +1061,117 @@ function normalizeLesson(raw, opts = {}) {
   return lesson;
 }
 
-function scoreLesson(lesson) {
+function isCsLessonForQuality(lesson, opts = {}) {
+  const domain = String(opts.domain || opts.domainInfo && opts.domainInfo.domain || '').toLowerCase();
+  const lessonType = String((lesson && lesson.lessonType) || opts.lessonType || '').toLowerCase();
+  const topic = String((lesson && lesson.topic) || opts.topic || '').toLowerCase();
+  if (domain && domain !== 'cs') return false;
+  if (['oop', 'data_structure', 'algorithm'].includes(lessonType)) return true;
+  return detectLessonType(topic) !== 'general';
+}
+
+const GENERAL_NOTE_INSTRUCTION_RE = /\b(choose one concrete detail|name one key idea|read the material as|for each idea|source-backed ideas|the detailed notes above|this visual only|treat the material like|write the definition|supporting detail and the relationship|strong answer names a source concept)\b/i;
+
+function normalizedForCoverage(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9+#]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function factSignature(value) {
+  const words = normalizedForCoverage(value)
+    .split(/\s+/)
+    .filter(word => word.length >= 4 && !['source', 'material', 'uploaded', 'section', 'details', 'concept', 'important'].includes(word));
+  return words.slice(0, 6);
+}
+
+function countSourceFactCoverage(visible, sourceOutline) {
+  const facts = sourceFactsFromOutline(sourceOutline || {});
+  const values = flattenSourceFacts(facts, ['definitions', 'facts', 'relationships', 'classifications', 'processes', 'examples', 'numbers'], 30);
+  const hay = normalizedForCoverage(visible);
+  let covered = 0;
+  for (const value of values) {
+    const sig = factSignature(value);
+    if (sig.length < 3) continue;
+    const hits = sig.filter(word => hay.includes(word)).length;
+    if (hits >= Math.min(4, sig.length)) covered += 1;
+  }
+  return { covered, available: values.length, values };
+}
+
+function countSourceSectionCoverage(visible, sourceOutline) {
+  const hay = normalizedForCoverage(visible);
+  const sections = Array.isArray(sourceOutline && sourceOutline.meaningfulSections)
+    ? sourceOutline.meaningfulSections.filter(section => section && section.title && !isGenericSourceLabel(section.title))
+    : [];
+  let covered = 0;
+  for (const section of sections) {
+    const titleWords = factSignature(section.title);
+    const titleHit = titleWords.length && titleWords.every(word => hay.includes(word));
+    const facts = sourceFactsFromOutline({ sourceFacts: section.sourceFacts });
+    const sectionFacts = flattenSourceFacts(facts, ['definitions', 'facts', 'relationships', 'classifications', 'processes', 'examples', 'numbers'], 4);
+    const factHit = sectionFacts.some(value => {
+      const sig = factSignature(value);
+      return sig.length >= 3 && sig.filter(word => hay.includes(word)).length >= Math.min(4, sig.length);
+    });
+    if (titleHit || factHit) covered += 1;
+  }
+  return { covered, available: sections.length };
+}
+
+function countTextOccurrences(text, needle) {
+  const hay = normalizedForCoverage(text);
+  const term = normalizedForCoverage(needle);
+  if (!hay || !term || term.length < 4) return 0;
+  return hay.split(term).length - 1;
+}
+
+function hasRepeatedGeneralHeadingLoop(visible, lesson, sourceOutline) {
+  const lines = String(visible || '')
+    .split(/\n+/)
+    .map(line => normalizedForCoverage(line))
+    .filter(line => line.length >= 24);
+  const counts = new Map();
+  for (const line of lines) {
+    if (line.split(/\s+/).length > 8) continue;
+    counts.set(line, (counts.get(line) || 0) + 1);
+  }
+  if ([...counts.values()].some(count => count >= 4)) return true;
+  return false;
+}
+
+function scoreLesson(lesson, opts = {}) {
   const all = JSON.stringify(lesson || {}).toLowerCase();
   const visible = lessonToMarkdown(lesson || {});
   const sections = Array.isArray(lesson && lesson.sections) ? lesson.sections : [];
+  const requiresCode = isCsLessonForQuality(lesson, opts);
   const hasCode = sections.some(s => s.code && s.code.content && s.code.content.length > 40);
   const hasDiagram = sections.some(s => s.diagram && s.diagram.nodes && s.diagram.nodes.length >= 3);
   const hasMistakes = sections.some(s => s.type === 'common_mistakes' && (s.cards.length || s.content.length > 40));
   const hasQuiz = sections.some(s => s.quiz && s.quiz.length);
+  const selectedChunkCount = Array.isArray(lesson && lesson.sourceMaterial && lesson.sourceMaterial.selectedChunkIds)
+    ? lesson.sourceMaterial.selectedChunkIds.length
+    : 0;
+  const outlineEvidenceCount = opts.sourceOutline && Array.isArray(opts.sourceOutline.sourceEvidence)
+    ? opts.sourceOutline.sourceEvidence.length
+    : 0;
+  const hasSourceGrounding = selectedChunkCount > 0 || (Array.isArray(opts.chunks) && opts.chunks.length > 0) || outlineEvidenceCount > 0;
+  const sourceTerms = Array.isArray(opts.chunks)
+    ? sourceConceptsFromChunks(opts.chunks, lesson && lesson.topic, 10).map(term => String(term || '').toLowerCase())
+    : [];
+  const outlineTerms = opts.sourceOutline && Array.isArray(opts.sourceOutline.keyConcepts)
+    ? opts.sourceOutline.keyConcepts.map(term => String(term || '').toLowerCase())
+    : [];
+  const outlineSectionTerms = opts.sourceOutline && Array.isArray(opts.sourceOutline.meaningfulSections)
+    ? opts.sourceOutline.meaningfulSections.flatMap(section => [
+      section && section.title,
+      ...(Array.isArray(section && section.terms) ? section.terms : []),
+    ]).map(term => String(term || '').toLowerCase())
+    : [];
+  const combinedSourceTerms = uniqueList([...sourceTerms, ...outlineTerms, ...outlineSectionTerms], 18).map(term => String(term || '').toLowerCase());
+  const mentionsSourceTerms = combinedSourceTerms.some(term => term && visible.toLowerCase().includes(term));
+  const hasGroundedGeneralContent = !requiresCode && hasSourceGrounding && (
+    mentionsSourceTerms ||
+    sections.filter(s => String(s.content || '').length > 60).length >= 5
+  );
   const genericTopic = /^(document|file|material|chapter\s*\d+|\d+)$/i.test(String(lesson && lesson.topic || '').trim());
   const hasPlaceholders = /(trace an example|define the idea|apply main rule|code sketch|avoid mistakes|placeholder|todo\b|useconcept|concrete example required|replace this with a topic-specific)/i.test(all);
   const hasGenericChapterText = /\bdefine\s+chapter\b|chapter\s+\d+\s+is a cs concept|chapter\s+\d+\s+should be learned as definition/i.test(visible);
@@ -761,11 +1183,28 @@ function scoreLesson(lesson) {
       labels.length >= 4 &&
       labels.filter(label => genericLabels.includes(label)).length >= Math.min(4, labels.length);
   });
-  const genericFailure = genericTopic || hasGenericChapterText || genericMindmapOnly || hasPlaceholders;
+  const sourceFreeGeneral = !requiresCode && !hasSourceGrounding;
+  const generalInstructionalFailure = !requiresCode && GENERAL_NOTE_INSTRUCTION_RE.test(visible);
+  const factCoverage = !requiresCode ? countSourceFactCoverage(visible, opts.sourceOutline) : { covered: 0, available: 0, values: [] };
+  const sectionCoverage = !requiresCode ? countSourceSectionCoverage(visible, opts.sourceOutline) : { covered: 0, available: 0 };
+  const minFactCoverage = factCoverage.available >= 5 ? 5 : Math.min(2, factCoverage.available);
+  const minSectionCoverage = sectionCoverage.available >= 3 ? 3 : Math.min(1, sectionCoverage.available);
+  const weakSourceFactCoverage = !requiresCode && factCoverage.available > 0 && factCoverage.covered < minFactCoverage;
+  const weakSourceSectionCoverage = !requiresCode && sectionCoverage.available > 1 && sectionCoverage.covered < minSectionCoverage;
+  const repeatedGeneralHeadingLoop = !requiresCode && hasRepeatedGeneralHeadingLoop(visible, lesson, opts.sourceOutline);
+  const genericFailure = sourceFreeGeneral ||
+    (genericTopic && !hasGroundedGeneralContent) ||
+    hasGenericChapterText ||
+    (genericMindmapOnly && requiresCode) ||
+    hasPlaceholders ||
+    generalInstructionalFailure ||
+    weakSourceFactCoverage ||
+    weakSourceSectionCoverage ||
+    repeatedGeneralHeadingLoop;
   const criteria = [
     sections.length >= 8,
-    hasCode,
-    hasDiagram,
+    requiresCode ? hasCode : true,
+    requiresCode || opts.visualRequired ? hasDiagram : true,
     hasMistakes,
     hasQuiz,
     !genericFailure,
@@ -779,6 +1218,13 @@ function scoreLesson(lesson) {
     genericTopic,
     hasGenericChapterText,
     genericMindmapOnly,
+    requiresCode,
+    generalInstructionalFailure,
+    factCoverage: { covered: factCoverage.covered, available: factCoverage.available },
+    sectionCoverage,
+    weakSourceFactCoverage,
+    weakSourceSectionCoverage,
+    repeatedGeneralHeadingLoop,
     genericFailure,
   };
 }
@@ -799,7 +1245,11 @@ async function parseLessonJson(raw, opts = {}) {
 
 async function generateEducationalLesson(opts = {}) {
   const topic = inlineText(opts.topic || opts.title || 'Object-Oriented Programming', 90);
-  const curated = opts.curatedKnowledge || loadCuratedKnowledge(topic);
+  const domain = String(opts.domain || opts.domainInfo && opts.domainInfo.domain || '').toLowerCase();
+  const allowCurated = !domain || domain === 'cs';
+  const curated = allowCurated
+    ? (opts.curatedKnowledge || (opts.curatedTopicId ? loadCuratedKnowledge(opts.curatedTopicId) : null) || loadCuratedKnowledge(topic))
+    : null;
   const selectedChunks = (opts.chunks || []).slice(0, 8);
   const fallback = fallbackLesson(topic, { ...opts, chunks: selectedChunks });
   const prompt = prompts.LESSON_GENERATE
@@ -807,6 +1257,9 @@ async function generateEducationalLesson(opts = {}) {
       topic,
       lessonType: opts.lessonType || detectLessonType(topic),
       curatedKnowledge: curatedAsPrompt(curated),
+      educationalContext: opts.educationalContextPrompt || opts.educationalContext || '',
+      sourceOutline: opts.sourceOutline || null,
+      sourceFacts: opts.sourceFacts || opts.sourceOutline || null,
       groundingTier: opts.groundingTier || 'moderate',
       enrichmentPolicyPrompt: opts.enrichmentPolicyPrompt || '',
     })
@@ -824,7 +1277,7 @@ async function generateEducationalLesson(opts = {}) {
       num_predict: opts.num_predict || 3500,
     });
     const lesson = await parseLessonJson(raw, { ...opts, topic, chunks: selectedChunks });
-    const quality = scoreLesson(lesson);
+    const quality = scoreLesson(lesson, opts);
     if (!quality.passed) {
       const merged = normalizeLesson({
         ...fallback,
@@ -941,7 +1394,7 @@ function sectionByType(lesson, type) {
 function textSentences(text, minChars = 170) {
   const value = inlineText(text, 900);
   if (value.length >= minChars) return value;
-  return `${value} Notice the reason behind the rule: the structure is useful because it gives code a predictable way to organize behavior and avoid duplicated or fragile logic.`;
+  return `${value} Notice the reason behind the idea: the structure is useful because it gives the topic a predictable way to organize meaning, examples, and common mistakes.`;
 }
 
 function legacyLessonToVideoScript(lessonInput) {
@@ -958,6 +1411,7 @@ function legacyLessonToVideoScript(lessonInput) {
   const checkpoint = sectionByType(lesson, 'checkpoint');
   const recap = sectionByType(lesson, 'recap');
   const next = sectionByType(lesson, 'next_steps');
+  const hasCodeSection = !!(code && code.code && String(code.code.content || '').trim());
 
   const slide = (slideType, title, bullets, narration, extra = {}) => ({
     slideType,
@@ -985,8 +1439,8 @@ function legacyLessonToVideoScript(lessonInput) {
   const slides = [
     slide('title', lesson.topic, [hook && hook.content, ...(lesson.learningObjectives || []).slice(0, 2)], hook && hook.content || `Today we will learn ${lesson.topic}.`, {
       visual_type: 'mindmap',
-      visual_nodes: [lesson.topic, 'Why it matters', 'Code', 'Diagram', 'Mistakes'],
-      visual_edges: [[lesson.topic, 'Why it matters'], [lesson.topic, 'Code'], [lesson.topic, 'Diagram']],
+      visual_nodes: [lesson.topic, 'Why it matters', hasCodeSection ? 'Code' : 'Example', 'Diagram', 'Mistakes'],
+      visual_edges: [[lesson.topic, 'Why it matters'], [lesson.topic, hasCodeSection ? 'Code' : 'Example'], [lesson.topic, 'Diagram']],
       callouts: lesson.sourceMaterial && lesson.sourceMaterial.grounding === 'weak' ? ['Uploaded material had limited detail; enhanced with standard CS knowledge.'] : [],
     }),
     slide('objectives', 'Learning Objectives', lesson.learningObjectives, `By the end, you should be able to ${lesson.learningObjectives.join(', ').replace(/, ([^,]*)$/, ', and $1')}.`, {
@@ -1028,8 +1482,8 @@ function legacyLessonToVideoScript(lessonInput) {
     }),
     slide('recap', 'Complexity and Recap', [complexity && complexity.content, recap && recap.content, next && next.content].filter(Boolean), `${complexity ? complexity.content : ''} ${recap ? recap.content : ''} ${next ? next.content : ''}`, {
       visual_type: complexity ? 'bigo_chart' : 'summary',
-      visual_nodes: ['Definition', 'Diagram', 'Code', 'Mistake', 'Practice'],
-      visual_edges: [['Definition', 'Diagram'], ['Diagram', 'Code'], ['Code', 'Practice']],
+      visual_nodes: ['Definition', 'Diagram', hasCodeSection ? 'Code' : 'Example', 'Mistake', 'Practice'],
+      visual_edges: [['Definition', 'Diagram'], ['Diagram', hasCodeSection ? 'Code' : 'Example'], [hasCodeSection ? 'Code' : 'Example', 'Practice']],
     }),
     slide('quiz', checkpoint ? checkpoint.title : 'Mini Checkpoint', [quiz && quiz.question, quiz && quiz.answer, checkpoint && checkpoint.content].filter(Boolean), `${checkpoint ? checkpoint.content : ''} ${quiz ? `The answer is ${quiz.answer}. ${quiz.explanation || ''}` : ''}`, {
       visual_type: 'summary',
@@ -1300,6 +1754,10 @@ function animationTypeForVisual(type) {
   if (type === 'hash_table') return 'hash_bucket_trace';
   if (type === 'stack_queue') return 'operation_arrow';
   if (type === 'tree') return 'tree_focus';
+  if (type === 'cards') return 'card_reveal';
+  if (type === 'table') return 'row_highlight';
+  if (type === 'source_reference') return 'source_focus';
+  if (type === 'none') return 'text_focus';
   return 'focus_pointer';
 }
 
@@ -1381,34 +1839,60 @@ function lessonToVideoScenes(lessonInput) {
   const checkpoint = sectionByType(lesson, 'checkpoint');
   const recap = sectionByType(lesson, 'recap');
   const next = sectionByType(lesson, 'next_steps');
-  let diagramVisual = diagram && diagram.diagram ? diagramToVideoVisual(diagram.diagram) : defaultVisualForLesson(lesson);
-  if (lesson.lessonType === 'oop' && diagramVisual.type !== 'class_diagram') {
+  const hasCodeSection = !!(code && code.code && String(code.code.content || '').trim());
+  const requiresCsVisual = ['oop', 'data_structure', 'algorithm'].includes(lesson.lessonType);
+  const sourceCardsForVideo = [
+    ...(deep && Array.isArray(deep.cards) ? deep.cards : []),
+    ...(lesson.sections || []).flatMap(s => Array.isArray(s.cards) ? s.cards : []),
+  ].filter(card => card && (card.title || card.text)).slice(0, 6);
+  const sourceNodesForVideo = sourceCardsForVideo.length
+    ? sourceCardsForVideo.map(card => card.title || card.text).filter(Boolean).slice(0, 6)
+    : (lesson.relatedTopics && lesson.relatedTopics.length
+      ? [lesson.topic, ...lesson.relatedTopics.slice(0, 5)]
+      : [lesson.topic, ...(lesson.learningObjectives || []).slice(0, 4)]);
+  const sourceRowsForVideo = sourceCardsForVideo
+    .map(card => `${card.title || 'Source point'}: ${card.text || ''}`)
+    .slice(0, 5);
+  let diagramVisual = diagram && diagram.diagram ? diagramToVideoVisual(diagram.diagram) : (requiresCsVisual ? defaultVisualForLesson(lesson) : null);
+  if (lesson.lessonType === 'oop' && (!diagramVisual || diagramVisual.type !== 'class_diagram')) {
     diagramVisual = defaultVisualForLesson(lesson);
   }
   const mistakeText = sectionCards(mistakes);
   const quiz = checkpoint && checkpoint.quiz && checkpoint.quiz[0];
 
   const scenes = [
-    scene('hook', lesson.topic, hook && hook.content || `Today we will learn ${lesson.topic} by connecting definition, visual model, code, and common mistakes.`, [
+    scene('hook', lesson.topic, hook && hook.content || `Today we will learn ${lesson.topic} by connecting definition, visual model, ${hasCodeSection ? 'code' : 'examples'}, and common mistakes.`, [
       hook && hook.content,
       ...(lesson.learningObjectives || []).slice(0, 2),
     ], {
       topic: lesson.topic,
-      visual: { type: 'mindmap', nodes: [lesson.topic, 'Why it matters', 'Visual model', 'Code', 'Mistakes'], edges: [[lesson.topic, 'Why it matters'], [lesson.topic, 'Visual model'], [lesson.topic, 'Code']] },
+      visual: requiresCsVisual
+        ? { type: 'mindmap', nodes: [lesson.topic, 'Why it matters', 'Visual model', hasCodeSection ? 'Code' : 'Example', 'Mistakes'], edges: [[lesson.topic, 'Why it matters'], [lesson.topic, 'Visual model'], [lesson.topic, hasCodeSection ? 'Code' : 'Example']] }
+        : { type: 'none', nodes: [], edges: [], caption: 'Source-led opening; no forced diagram.' },
       minChars: 180,
       textMax: 94,
     }),
     scene('objectives', 'What You Will Be Able To Do', `By the end, you should be able to ${lesson.learningObjectives.join(', ').replace(/, ([^,]*)$/, ', and $1')}.`, lesson.learningObjectives, {
       topic: lesson.topic,
-      visual: { type: 'summary', nodes: ['Objectives', ...lesson.learningObjectives.slice(0, 4)], edges: lesson.learningObjectives.slice(0, 4).map(o => ['Objectives', o]) },
+      visual: requiresCsVisual
+        ? { type: 'summary', nodes: ['Objectives', ...lesson.learningObjectives.slice(0, 4)], edges: lesson.learningObjectives.slice(0, 4).map(o => ['Objectives', o]) }
+        : { type: 'cards', nodes: lesson.learningObjectives.slice(0, 4), edges: [], operations: ['state objective', 'connect to source section'], caption: 'Objectives are source-backed study cards.' },
       minChars: 160,
       textMax: 88,
     }),
     scene('definition', def ? def.title : 'Core Definition', [def && def.content, deep && deep.content], [
       def && def.content,
-      'Name the relationship before memorizing syntax',
+      hasCodeSection ? 'Name the relationship before memorizing syntax' : 'Name the relationship before memorizing labels',
       'Check the rule against a concrete example',
     ], (() => {
+      if (!requiresCsVisual) {
+        return {
+          topic: lesson.topic,
+          visual: { type: 'cards', nodes: sourceNodesForVideo.slice(0, 5), edges: [], operations: ['define source concept', 'name supporting detail'], caption: 'Definition is grounded in uploaded source sections.' },
+          minChars: 260,
+          textMax: 96,
+        };
+      }
       const topicNodes = findTopicNodes(lesson.topic, 'definition');
       const visual = topicNodes
         ? { type: 'mindmap', nodes: topicNodes.nodes, edges: topicNodes.edges }
@@ -1417,26 +1901,49 @@ function lessonToVideoScenes(lessonInput) {
     })()),
     scene('deep_explanation', analogy ? analogy.title : 'Mental Model', [analogy && analogy.content, deep && deep.content], [
       analogy && analogy.content || deep && deep.content,
-      'Mental model first, syntax second',
+      hasCodeSection ? 'Mental model first, syntax second' : 'Mental model first, labels second',
       'Know where the analogy stops',
     ], {
       topic: lesson.topic,
-      visual: { type: 'comparison', nodes: ['Mental model', lesson.topic, 'What matches', 'Where it breaks'], edges: [['Mental model', 'What matches'], ['What matches', lesson.topic], [lesson.topic, 'Where it breaks']] },
+      visual: requiresCsVisual
+        ? { type: 'comparison', nodes: ['Mental model', lesson.topic, 'What matches', 'Where it breaks'], edges: [['Mental model', 'What matches'], ['What matches', lesson.topic], [lesson.topic, 'Where it breaks']] }
+        : { type: sourceRowsForVideo.length >= 3 ? 'table' : 'cards', nodes: sourceNodesForVideo.slice(0, 5), edges: [], operations: sourceRowsForVideo.length ? sourceRowsForVideo : ['source concept', 'supporting detail', 'review question'], caption: 'Source details are clearer as cards or a table.' },
       minChars: 260,
     }),
-    scene('diagram', diagram ? diagram.title : 'Visual Model', [diagram && diagram.content, diagram && diagram.diagram && diagram.diagram.caption], [
+  ];
+
+  if (diagram || requiresCsVisual) {
+    scenes.push(scene('diagram', diagram ? diagram.title : 'Visual Model', [diagram && diagram.content, diagram && diagram.diagram && diagram.diagram.caption], [
       diagram && diagram.content,
       diagram && diagram.diagram && diagram.diagram.caption,
       'Point to each part and say its role',
     ], (() => {
-      let visual = diagramVisual;
+      let visual = diagramVisual || defaultVisualForLesson(lesson);
       if (visual.type === 'mindmap' || !visual.nodes || !visual.nodes.length) {
         const topicDiagramNodes = findTopicNodes(lesson.topic, 'diagram');
         if (topicDiagramNodes) visual = { ...visual, type: visual.type || 'mindmap', nodes: topicDiagramNodes.nodes, edges: topicDiagramNodes.edges };
       }
       return { topic: lesson.topic, kind: 'diagram', visual, minChars: 250 };
-    })()),
-  ];
+    })()));
+  } else {
+    const sourceCards = deep && Array.isArray(deep.cards) ? deep.cards.slice(0, 4) : [];
+    const caseNodes = sourceCards.length
+      ? sourceCards.map(card => card.title || card.text).filter(Boolean)
+      : [lesson.topic, 'Source detail', 'Example or case', 'Checkpoint'];
+    scenes.push(scene('deep_explanation', 'Source-Based Example', [
+      deep && deep.content,
+      'Instead of forcing a diagram, use one concrete source detail as the worked example and explain how it proves the concept.',
+    ], [
+      caseNodes[0],
+      caseNodes[1] || 'Source detail',
+      'Apply it once',
+    ], {
+      topic: lesson.topic,
+      visual: { type: 'cards', nodes: caseNodes, edges: [], operations: ['choose source detail', 'explain concept', 'answer checkpoint'], caption: 'Source-based example cards.' },
+      minChars: 230,
+      textMax: 88,
+    }));
+  }
 
   if (code && code.code && code.code.content) {
     scenes.push(scene('code_example', code.title || 'Concrete Code Example', [
@@ -1468,7 +1975,9 @@ function lessonToVideoScenes(lessonInput) {
     `The mistake section matters because students often know the vocabulary of ${lesson.topic} before they know when the idea should or should not be used.`,
   ], mistakeText.length ? mistakeText : [mistakes && mistakes.content, 'Explain the correction, not only the mistake'], {
     topic: lesson.topic,
-    visual: { type: 'comparison', nodes: ['Mistake', 'Why it fails', 'Correct habit', lesson.topic], edges: [['Mistake', 'Why it fails'], ['Why it fails', 'Correct habit']] },
+    visual: requiresCsVisual
+      ? { type: 'comparison', nodes: ['Mistake', 'Why it fails', 'Correct habit', lesson.topic], edges: [['Mistake', 'Why it fails'], ['Why it fails', 'Correct habit']] }
+      : { type: 'table', nodes: ['Mistake', 'Correction'], edges: [], operations: mistakeText.slice(0, 4), caption: 'Compare the weak habit with the source-backed habit.' },
     minChars: 230,
     textMax: 96,
   }));
@@ -1494,7 +2003,9 @@ function lessonToVideoScenes(lessonInput) {
     'Say why the answer is correct',
   ], {
     topic: lesson.topic,
-    visual: { type: 'summary', nodes: ['Question', 'Think', 'Answer', 'Reason'], edges: [['Question', 'Think'], ['Think', 'Answer'], ['Answer', 'Reason']] },
+    visual: requiresCsVisual
+      ? { type: 'summary', nodes: ['Question', 'Think', 'Answer', 'Reason'], edges: [['Question', 'Think'], ['Think', 'Answer'], ['Answer', 'Reason']] }
+      : { type: 'cards', nodes: [quiz && quiz.question || 'Review question', quiz && `Answer: ${quiz.answer}` || 'Source-backed answer', 'Reason'], edges: [], operations: ['answer from source', 'explain evidence'], caption: 'Checkpoint cards keep the review source-grounded.' },
     minChars: 190,
     textMax: 88,
   }));
@@ -1502,14 +2013,16 @@ function lessonToVideoScenes(lessonInput) {
   scenes.push(scene('recap', 'Recap and Next Step', [
     recap && recap.content,
     next && next.content,
-    `A strong understanding of ${lesson.topic} means you can explain the definition, read code, draw the visual model, and predict the common mistake before it happens.`,
+    `A strong understanding of ${lesson.topic} means you can explain the definition, ${hasCodeSection ? 'read code' : 'apply an example'}, use the source evidence, and predict the common mistake before it happens.`,
   ], [
     recap && recap.content,
     next && next.content,
-    'Definition, diagram, code, mistake, practice',
+    `Definition, ${hasCodeSection ? 'code' : 'example'}, mistake, practice`,
   ], {
     topic: lesson.topic,
-    visual: { type: 'summary', nodes: [lesson.topic, 'Definition', 'Diagram', 'Code', 'Mistake', 'Practice'], edges: [[lesson.topic, 'Definition'], [lesson.topic, 'Diagram'], [lesson.topic, 'Code'], [lesson.topic, 'Mistake']] },
+    visual: requiresCsVisual
+      ? { type: 'summary', nodes: [lesson.topic, 'Definition', hasCodeSection ? 'Code' : 'Example', 'Mistake', 'Practice'], edges: [[lesson.topic, 'Definition'], [lesson.topic, hasCodeSection ? 'Code' : 'Example'], [lesson.topic, 'Mistake']] }
+      : { type: 'cards', nodes: sourceNodesForVideo.slice(0, 5), edges: [], operations: ['review concepts', 'name one relationship', 'answer next question'], caption: 'Recap follows source concepts rather than a generic map.' },
     minChars: 180,
   }));
 
@@ -1653,6 +2166,7 @@ module.exports = {
   curatedAsPrompt,
   detectLessonType,
   fallbackLesson,
+  generalMaterialLesson,
   normalizeLesson,
   generateEducationalLesson,
   lessonToMarkdown,

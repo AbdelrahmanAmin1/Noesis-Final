@@ -11,7 +11,10 @@ const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
 const { retrieveWithMeta, retrieveLessonContext, groundingTier: computeGroundingTier } = require('./rag.service');
 const lessons = require('./lesson.service');
+const educationalContext = require('./educational-context.service');
 const topicResolver = require('./topic-resolver.service');
+const domainDetection = require('./domain-detection.service');
+const materialUnderstanding = require('./material-understanding.service');
 const tts = require('./tts.service');
 const slides = require('./slides.service');
 const renderer = require('./renderer.service');
@@ -905,15 +908,52 @@ function inferScriptVisualType(slide, concept, slideType, nodes, bullets, index,
   return byText === 'class_diagram' ? 'mindmap' : byText;
 }
 
+function videoSourceText(chunks) {
+  return (chunks || []).map(chunk => [
+    chunk && chunk.chapter_title,
+    chunk && chunk.heading,
+    chunk && chunk.slide_title,
+    chunk && chunk.section_title,
+    chunk && chunk.text,
+  ].filter(Boolean).join(' ')).join(' ');
+}
+
+function looksLikeProgrammingSource(concept, chunks) {
+  const text = `${normalizeName(concept) || ''} ${videoSourceText(chunks)}`;
+  const strongCode = /```|\b(public\s+class|private\s+(?:int|double|float|string|boolean|char|long|void)|class\s+\w+\s*(?:\{|extends|implements)|extends|implements|linked list|hash table|big.?o|time complexity|space complexity|java|javascript|python|c\+\+|function\s+\w+\s*\(|def\s+\w+\s*\(|node\.next)\b/i.test(text);
+  const dataStructureContext = /\b(stack|queue)\b/i.test(text) && /\b(push|pop|peek|enqueue|dequeue|lifo|fifo|data structure|adt|time complexity|space complexity)\b/i.test(text);
+  const interfaceContext = /\binterface\b/i.test(text) && /\b(java|implements|class|object-oriented|oop|method|contract|abstract)\b/i.test(text);
+  const algorithmContext = /\balgorithm\b/i.test(text) && /\b(data structure|binary search|sorting|search algorithm|graph|tree|time complexity|space complexity)\b/i.test(text);
+  return strongCode || dataStructureContext || interfaceContext || algorithmContext;
+}
+
 function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
   const c = normalizeName(concept) || inferKnownConcept(chunks);
-  const p = conceptProfile(c);
   const sourceNotes = sourceTakeaways(chunks);
+  const sourceText = videoSourceText(chunks);
+  const csLike = looksLikeProgrammingSource(c, chunks);
+  const sourceTerms = [...new Set(String(sourceText || c)
+    .replace(/[^A-Za-z0-9 +#-]+/g, ' ')
+    .split(/\s+/)
+    .filter(word => word.length >= 5)
+    .slice(0, 5))]
+    .map(term => compactText(term, 40));
+  const p = csLike ? conceptProfile(c) : {
+    definition: sourceNotes[0] || `${c} is the central topic in the uploaded material.`,
+    why: sourceNotes[1] || 'It matters because it connects the source concepts into an explanation you can review and apply.',
+    analogy: 'Think of the material as a map: the main idea is the route, and the source terms are landmarks that keep the explanation grounded.',
+    diagramNodes: [c, ...(sourceTerms.length ? sourceTerms : ['Context', 'Key terms', 'Example', 'Checkpoint'])],
+    code: '',
+    steps: ['Identify source context', 'Define key terms', 'Connect relationships', 'Apply a case'],
+    mistakes: ['Memorizing labels only', 'Ignoring source evidence', 'Skipping a concrete example'],
+    quiz: `Which source detail best explains ${c}?`,
+    answer: sourceNotes[0] || 'A strong answer names a source term and explains its role.',
+  };
   const groundingCallout = lowGrounding
-    ? 'Uploaded material had weak support; using general CS knowledge.'
+    ? `Uploaded material had weak support; using general ${csLike ? 'CS' : 'subject'} explanation.`
     : 'Grounded in your study material.';
   const introNarration = lowGrounding
-    ? `The uploaded material does not contain enough specific information about ${c}. I will say that clearly, then teach the standard CS idea using general knowledge.`
+    ? `The uploaded material does not contain enough specific information about ${c}. I will say that clearly, then teach a cautious general ${csLike ? 'CS' : 'subject'} explanation.`
     : `In this lesson, we will study ${c} using the uploaded material where it gives useful evidence.`;
   return {
     topic: c,
@@ -945,20 +985,20 @@ function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
         title: `What is ${c}?`,
         visual_type: 'mindmap',
         bullets: [p.definition, p.why].map(x => compactText(x, 120)),
-        visual_nodes: [c, 'Definition', 'Purpose', 'Interface', 'Trade-off'],
+        visual_nodes: [c, 'Definition', 'Purpose', csLike ? 'Interface' : 'Context', 'Trade-off'],
         visual_edges: [[c, 'Definition'], [c, 'Purpose'], [c, 'Trade-off']],
         callouts: [groundingCallout],
-        narration: `${p.definition} ${p.why} This is the core idea to remember before looking at code.`,
+        narration: `${p.definition} ${p.why} This is the core idea to remember before ${csLike ? 'looking at code' : 'applying it to a source-based example'}.`,
       },
       {
         slideType: 'analogy',
         title: 'Simple Analogy',
         visual_type: 'comparison',
-        bullets: [p.analogy, 'Map the analogy to code', 'Know where it stops'].map(x => compactText(x, 120)),
+        bullets: [p.analogy, csLike ? 'Map the analogy to code' : 'Map the analogy to source', 'Know where it stops'].map(x => compactText(x, 120)),
         visual_nodes: ['Analogy', c, 'Shared idea', 'Limit'],
         visual_edges: [['Analogy', 'Shared idea'], ['Shared idea', c]],
         callouts: ['Analogies build intuition, not proof.'],
-        narration: `${p.analogy} The analogy helps you remember the behavior, but the formal rules still matter when writing code.`,
+        narration: `${p.analogy} The analogy helps you remember the idea, but ${csLike ? 'the formal rules still matter when writing code' : 'the source relationships still matter when explaining the material'}.`,
       },
       {
         slideType: 'diagram',
@@ -971,15 +1011,17 @@ function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
         narration: `This diagram separates the pieces of ${c}. When studying, point to each part and say what role it plays.`,
       },
       {
-        slideType: 'code',
-        title: 'Concrete Code Example',
-        visual_type: 'code',
-        bullets: ['Identify the main operation', 'Read validation first', 'Trace state changes'],
-        visual_nodes: ['Code', 'Input', 'Rule', 'Output'],
-        visual_edges: [['Input', 'Rule'], ['Rule', 'Output']],
-        callouts: ['Trace code line by line.'],
-        example_code: p.code,
-        narration: `Now connect the idea to code. Do not memorize the syntax first; identify the operation, the data it protects or changes, and the condition that keeps it correct.`,
+        slideType: csLike ? 'code' : 'concept',
+        title: csLike ? 'Concrete Code Example' : 'Source-Based Example',
+        visual_type: csLike ? 'code' : 'flow',
+        bullets: csLike ? ['Identify the main operation', 'Read validation first', 'Trace state changes'] : ['Source detail', 'Key relationship', 'Concrete case'],
+        visual_nodes: csLike ? ['Code', 'Input', 'Rule', 'Output'] : ['Source detail', 'Concept', 'Case', 'Takeaway'],
+        visual_edges: csLike ? [['Input', 'Rule'], ['Rule', 'Output']] : [['Source detail', 'Concept'], ['Concept', 'Case'], ['Case', 'Takeaway']],
+        callouts: [csLike ? 'Trace code line by line.' : 'Use the uploaded example as evidence.'],
+        example_code: csLike ? p.code : '',
+        narration: csLike
+          ? `Now connect the idea to code. Do not memorize the syntax first; identify the operation, the data it protects or changes, and the condition that keeps it correct.`
+          : `Now connect the idea to a concrete source-based example. Name the source detail, explain the relationship it shows, and state the takeaway in your own words.`,
       },
       {
         slideType: 'step_by_step',
@@ -998,8 +1040,8 @@ function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
         bullets: p.mistakes.map(x => compactText(x, 100)),
         visual_nodes: ['Mistake', 'Correct Habit', ...p.mistakes.slice(0, 2)],
         visual_edges: [['Mistake', 'Correct Habit']],
-        callouts: ['Most bugs come from violating the main rule.'],
-        narration: `The common mistakes are not random; each one breaks the central rule of ${c}. When debugging, ask which rule was violated.`,
+        callouts: [csLike ? 'Most bugs come from violating the main rule.' : 'Most errors come from losing the source relationship.'],
+        narration: `The common mistakes are not random; each one breaks the central rule of ${c}. When ${csLike ? 'debugging' : 'reviewing'}, ask which rule or relationship was violated.`,
       },
       {
         slideType: 'recap',
@@ -1076,7 +1118,7 @@ function normalizeScript(script, concept, chunks, lowGrounding = false) {
     };
   }).filter(s => s.title && s.bullets.length && s.narration);
   if (lowGrounding && slidesOut[0]) {
-    const disclaimer = 'Uploaded material had weak support; using general CS knowledge.';
+    const disclaimer = `Uploaded material had weak support; using general ${looksLikeProgrammingSource(concept, chunks) ? 'CS' : 'subject'} explanation.`;
     if (!slidesOut[0].narration.toLowerCase().includes('uploaded material')) {
       slidesOut[0].narration = `${disclaimer} ${slidesOut[0].narration}`;
     }
@@ -1179,10 +1221,24 @@ function compactGroqChunks(chunks, opts = {}) {
   }));
 }
 
-function buildCompactGroqVideoPrompt(concept, chunks, lowGrounding, budget = {}) {
+function buildCompactGroqVideoPrompt(concept, chunks, lowGrounding, budget = {}, opts = {}) {
   let topK = budget.topK || env.GROQ_VIDEO_TOP_K_CHUNKS || 4;
   let maxChunkChars = budget.maxChunkChars || env.GROQ_VIDEO_MAX_CHUNK_CHARS || 900;
   const maxInputChars = budget.maxInputChars || env.GROQ_VIDEO_MAX_INPUT_CHARS || 12000;
+  const domain = opts.domain || (opts.domainInfo && opts.domainInfo.domain) || '';
+  const isCsDomain = domain === 'cs' || opts.useCuratedCs === true;
+  const groundingInstruction = isCsDomain
+    ? (lowGrounding ? 'LOW. First slide must disclose weak uploaded-material support, then teach with trusted CS/OOP/Data Structures context.' : 'Use source chunks as foundation, then enhance with relevant CS explanations, code examples, diagrams, and analogies.')
+    : (lowGrounding ? 'LOW. First slide must disclose weak uploaded-material support, then teach using cautious general subject explanation. Do not add CS/OOP/Data Structures unless the source actually discusses them.' : 'Use source chunks as the foundation. Teach the real uploaded subject with examples, cases, concept maps, comparisons, checkpoints, and recaps. Do not include code unless the source is actually about programming.');
+  const requiredSequence = isCsDomain
+    ? 'title, objectives, concept, analogy, diagram, code, step_by_step, mistakes, recap, quiz'
+    : 'title, objectives, concept, analogy, diagram, example/case, step_by_step, mistakes, recap, quiz';
+  const visualGuidance = isCsDomain
+    ? 'Use CS-appropriate visuals when supported: code, class_diagram, tree, stack_queue, linkedlist, hash_table, bigo_chart.'
+    : 'Use non-CS educational visuals: mindmap, flow, comparison, summary, timeline/checklist-style nodes, and case-study layouts.';
+  const educationalBlock = opts.educationalContext
+    ? `\nEducational context:\n${String(opts.educationalContext).slice(0, 4000)}\n`
+    : '';
   let source = '';
   let prompt = '';
   do {
@@ -1192,23 +1248,27 @@ function buildCompactGroqVideoPrompt(concept, chunks, lowGrounding, budget = {})
     )).join('\n\n');
     prompt = `Generate a deep educational AI tutor video lesson JSON for "${concept}".
 
-Grounding: ${lowGrounding ? 'LOW. First slide must disclose weak uploaded-material support, then teach from professional CS knowledge.' : 'Use source chunks as foundation, then enhance with deep CS explanations, code examples, and analogies.'}
+Grounding: ${groundingInstruction}
 
 Source chunks:
 ${source || '(No source chunks available.)'}
+${educationalBlock}
 
 Return ONLY strict JSON with this shape:
 {"topic":"${concept}","audienceLevel":"beginner","learningObjectives":["..."],"slides":[{"slideType":"title|objectives|concept|analogy|diagram|code|step_by_step|mistakes|recap|quiz","title":"...","bullets":["..."],"narration":"...","visual":{"type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|hash_table|bigo_chart","nodes":["..."],"edges":[["...","..."]]},"example_code":"","code_focus":{"lineRange":"1-3","highlightLines":[1,2,3],"explanation":"why these lines exist"}}]}
 
 Rules:
-- 8-12 slides covering: title, objectives, concept, analogy, diagram, code, step_by_step, mistakes, recap, quiz.
-- NARRATION IS THE MOST IMPORTANT PART. Write 4-8 sentences per teaching slide (concept/analogy/code/step_by_step). Explain the WHY, not just WHAT. Teach like a passionate tutor.
+- Uploaded source chunks are the course-specific source of truth.
+- Curated educational context, when provided, is trusted expansion for examples, diagrams, code, common mistakes, and checkpoints.
+- Do not invent course-specific claims. Do not expose raw JSON, chunk IDs, debug trace, or internal metadata in visible slide text.
+- 8-12 slides covering: ${requiredSequence}.
+- NARRATION IS THE MOST IMPORTANT PART. Write 4-8 sentences per teaching slide. Explain the WHY, not just WHAT. Teach like a passionate tutor.
 - Bullets can be up to 120 chars. Write meaningful content, not vague labels like "What X means".
 - visual_nodes must use concrete names (class names, data values) not abstract labels like "Definition".
-- For CODE slides: put complete working code (8-15 lines with comments) in example_code. Narrate line by line.
+- For CODE slides: put complete working code (8-15 lines with comments) in example_code. Use code only for programming/CS source material.
 - Do not include callouts. Do not include raw chunk references in any visible text.
 - Code walkthrough slides must include code_focus.lineRange and explain why those exact lines exist.
-- Use diverse visual types appropriate to the concept.
+- Use diverse visual types appropriate to the concept. ${visualGuidance}
 - Use hash_table for hash tables/maps; include key, hash function, bucket index, collision handling, load factor, resize, expected O(1), and worst O(n).
 - Avoid placeholders and generic text.`;
     if (prompt.length <= maxInputChars || maxChunkChars <= 350) break;
@@ -1222,7 +1282,7 @@ Rules:
   };
 }
 
-async function generateGroqVideoCandidate(concept, chunks, lowGrounding, reason) {
+async function generateGroqVideoCandidate(concept, chunks, lowGrounding, reason, opts = {}) {
   if (!isGroqConfigured()) {
     log.warn('video_script_fallback_unavailable', { provider: 'groq', reason: 'missing_groq_api_key' });
     return { provider: 'groq', valid: false, script: null, quality: { score: 0, passed: false, reasons: ['GROQ_API_KEY missing'] } };
@@ -1232,7 +1292,7 @@ async function generateGroqVideoCandidate(concept, chunks, lowGrounding, reason)
     maxChunkChars: env.GROQ_VIDEO_MAX_CHUNK_CHARS,
     maxInputChars: env.GROQ_VIDEO_MAX_INPUT_CHARS,
   };
-  const built = buildCompactGroqVideoPrompt(concept, chunks, lowGrounding, primaryBudget);
+  const built = buildCompactGroqVideoPrompt(concept, chunks, lowGrounding, primaryBudget, opts);
   log.info('video_script_groq_request', {
     provider: 'groq',
     model: env.GROQ_MODEL,
@@ -1266,7 +1326,7 @@ async function generateGroqVideoCandidate(concept, chunks, lowGrounding, reason)
     topK: 2,
     maxChunkChars: 600,
     maxInputChars: Math.min(env.GROQ_VIDEO_MAX_INPUT_CHARS || 12000, 7000),
-  });
+  }, opts);
   log.warn('video_script_groq_retry_small_context', {
     provider: 'groq',
     model: env.GROQ_MODEL,
@@ -1299,15 +1359,24 @@ function selectBestScript(candidates, fallback, threshold) {
   return fallback;
 }
 
-async function generateVideoScriptWithFallback(concept, chunks, lowGrounding, groundingTier = 'moderate') {
+async function generateVideoScriptWithFallback(concept, chunks, lowGrounding, groundingTier = 'moderate', opts = {}) {
   const threshold = env.VIDEO_SCRIPT_MIN_QUALITY_SCORE;
   const fallbackScript = normalizeScript(fallbackVideoScriptM1(concept, chunks, lowGrounding), concept, chunks, lowGrounding);
   const candidates = [];
   const configuredProvider = env.VIDEO_SCRIPT_PROVIDER === 'groq' ? 'groq' : 'ollama';
-  const localPrompt = prompts.VIDEO_SCRIPT(concept, chunks, { lowGrounding, groundingTier });
+  const localPrompt = prompts.VIDEO_SCRIPT(concept, chunks, {
+    lowGrounding,
+    groundingTier,
+    educationalContext: opts.educationalContextPrompt || opts.educationalContext || '',
+  });
 
   if (configuredProvider === 'groq') {
-    const groq = await generateGroqVideoCandidate(concept, chunks, lowGrounding, 'direct_groq_video_script_provider');
+    const groq = await generateGroqVideoCandidate(concept, chunks, lowGrounding, 'direct_groq_video_script_provider', {
+      educationalContext: opts.educationalContextPrompt || opts.educationalContext || '',
+      domain: opts.domain,
+      domainInfo: opts.domainInfo,
+      useCuratedCs: opts.useCuratedCs,
+    });
     candidates.push(groq);
     if (!groq.valid && !env.VIDEO_SCRIPT_USE_LOCAL_IF_GROQ_FAILS) {
       throw groq.error || new Error('groq_video_script_failed');
@@ -1355,7 +1424,9 @@ async function generateVideoScriptWithFallback(concept, chunks, lowGrounding, gr
         local_score: local.quality && local.quality.score,
         threshold,
       });
-      const groq = await generateGroqVideoCandidate(concept, chunks, lowGrounding, local.valid ? 'local_script_below_threshold' : 'local_script_invalid');
+      const groq = await generateGroqVideoCandidate(concept, chunks, lowGrounding, local.valid ? 'local_script_below_threshold' : 'local_script_invalid', {
+        educationalContext: opts.educationalContextPrompt || opts.educationalContext || '',
+      });
       candidates.push(groq);
       if (groq.valid && groq.quality.passed && (!local.valid || groq.quality.score > local.quality.score)) {
         log.info('video_script_selected', { provider: 'groq', quality_score: groq.quality.score, local_score: local.quality && local.quality.score });
@@ -1380,14 +1451,14 @@ async function generateVideoScriptWithFallback(concept, chunks, lowGrounding, gr
   return fallbackScript;
 }
 
-async function generateVideo({ userId, materialId, concept }) {
+async function generateVideo({ userId, materialId, concept, sourceScope = 'material', chapterId = null, chunkId = null }) {
   await ai.assertModelsAvailable({ generation: false, embedding: true });
   const db = getDb();
   const ins = db.prepare(`INSERT INTO videos (material_id, user_id, status, created_at) VALUES (?,?,?,?)`);
   const r = ins.run(materialId, userId, 'queued', nowIso());
   const videoId = r.lastInsertRowid;
   const job = jobs.create('video', { userId, videoId });
-  enqueue(() => runPipeline({ videoId, userId, materialId, concept, jobId: job.id }));
+  enqueue(() => runPipeline({ videoId, userId, materialId, concept, jobId: job.id, sourceScope, chapterId, chunkId }));
   return { videoId, jobId: job.id };
 }
 
@@ -1527,7 +1598,7 @@ async function generateVideoFromStoryboard({ userId, storyboardId }) {
   return { videoId, jobId: job.id };
 }
 
-async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
+async function runPipeline({ videoId, userId, materialId, concept, jobId, sourceScope = 'material', chapterId = null, chunkId = null }) {
   const db = getDb();
   const setStatus = (s, extra = {}) => {
     const fields = ['status=?'];
@@ -1541,20 +1612,80 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
     jobs.update(jobId, { status: 'running', progress: 5, stage: 'Resolving video topic...' });
 
     // 1. Resolve topic + RAG + script
-    const conceptInfo = await resolveConcept({ materialId, hint: concept });
+    const materialRow = db.prepare('SELECT title FROM materials WHERE id=?').get(materialId) || {};
+    const domainInfo = domainDetection.detectMaterialDomain(userId, materialId, { hint: concept || materialRow.title });
+    const shouldUseCs = domainDetection.shouldUseCuratedCs(domainInfo);
+    const sourceInfo = materialUnderstanding.understandGeneralFromDb(userId, materialId, {
+      explicitQuery: validConceptHint(concept, materialRow),
+      hint: concept,
+      title: materialRow.title,
+      domainInfo,
+      sourceScope,
+      chapterId,
+      chunkId,
+      limit: 24,
+    });
+    const conceptInfo = shouldUseCs
+      ? await resolveConcept({ materialId, hint: concept })
+      : {
+        topic: sourceInfo.topic || validConceptHint(concept, materialRow) || materialRow.title || 'Uploaded Material',
+        source: sourceInfo.source || 'material_source_terms',
+        confidence: sourceInfo.confidence || domainInfo.confidence || 0.4,
+        sourceTitle: materialRow.title || null,
+        alternatives: sourceInfo.alternatives || [],
+        understanding: sourceInfo,
+      };
     const resolvedConcept = conceptInfo.topic;
     if (!resolvedConcept) {
-      throw new Error(`video_topic_resolution_failed: choose a specific CS topic. Candidates: ${(conceptInfo.alternatives || []).map(c => c.topic).join(', ') || 'none'}`);
+      throw new Error(`video_topic_resolution_failed: choose a more specific topic. Candidates: ${(conceptInfo.alternatives || []).map(c => c.topic).join(', ') || 'none'}`);
     }
-    const materialRow = db.prepare('SELECT title FROM materials WHERE id=?').get(materialId) || {};
     setStatus('processing', { resolved_concept: resolvedConcept });
     jobs.update(jobId, { progress: 10, stage: `Retrieving source content for ${resolvedConcept}...` });
 
-    const rag = await retrieveLessonContext(materialId, resolvedConcept, { feature: 'video', k: 10, minScore: 0.08, maxMerged: 14 });
+    const focusTerms = materialUnderstanding.focusTermsForTopic(resolvedConcept, sourceInfo.sourceOutline || null);
+    const avoidTerms = materialUnderstanding.competingTermsForTopic(resolvedConcept, sourceInfo.sourceOutline || null);
+    const rag = await retrieveLessonContext(materialId, resolvedConcept, {
+      feature: 'video',
+      k: 10,
+      minScore: 0.08,
+      maxMerged: 14,
+      sourceScope,
+      chapterId,
+      chunkId,
+      focusTopic: resolvedConcept,
+      focusTerms,
+      avoidTerms,
+      includeSystem: shouldUseCs,
+    });
     const chunks = rag.chunks || [];
     const uploadedRag = rag.uploaded || rag;
+    const uploadedChunks = uploadedRag.chunks || [];
     const lowGrounding = (uploadedRag.chunks || []).length < 2 || uploadedRag.maxScore < 0.16 || uploadedRag.meanScore < 0.10;
     const groundingTier = computeGroundingTier(uploadedRag);
+    const sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
+      explicitQuery: resolvedConcept,
+      hint: resolvedConcept,
+      title: materialRow.title,
+      materialTitle: materialRow.title,
+      domainInfo,
+    });
+    const videoContext = (env.KNOWLEDGE_CONTEXT_ENABLED && env.KNOWLEDGE_USE_FOR_VIDEO)
+      ? educationalContext.buildEducationalContext({
+        userId,
+        materialId,
+        topic: resolvedConcept,
+        query: resolvedConcept,
+        feature: 'video',
+        ragResult: rag,
+        retrievedChunks: chunks,
+        domainInfo,
+        audienceLevel: 'beginner',
+      })
+      : null;
+    const educationalContextPrompt = videoContext
+      ? educationalContext.formatVideoEducationalContextForPrompt(videoContext)
+      : '';
+    const curatedTopicId = videoContext && videoContext.curatedKnowledge && videoContext.curatedKnowledge.id || null;
     log.info('video_rag', {
       videoId,
       materialId,
@@ -1566,19 +1697,56 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
       chunks: chunks.map(c => ({ id: c.id, score: Number(c.score || 0).toFixed(3), chapter: c.chapter_title || '' })),
     });
     jobs.update(jobId, { progress: 12, stage: 'Building educational lesson model...' });
-    const lesson = await lessons.generateEducationalLesson({
+    let lesson = await lessons.generateEducationalLesson({
       topic: resolvedConcept,
       title: resolvedConcept,
       materialTitle: materialRow.title || resolvedConcept,
-      chunks,
+      chunks: uploadedChunks,
       groundingTier,
       lessonType: lessons.detectLessonType(resolvedConcept),
+      domainInfo,
+      domain: domainInfo.domain,
+      educationalContextPrompt,
+      curatedTopicId,
+      sourceOutline,
+      focusTerms,
+      avoidTerms,
     });
-    const script = normalizeScript(lessons.lessonToVideoScript(lesson), resolvedConcept, chunks, lowGrounding);
+    let drift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
+      focusTopic: resolvedConcept,
+      sourceOutline,
+      focusTerms,
+      competingTerms: avoidTerms,
+    });
+    if (drift.drifted) {
+      lesson = shouldUseCs
+        ? lessons.fallbackLesson(resolvedConcept, {
+          materialTitle: materialRow.title || resolvedConcept,
+          chunks: uploadedChunks,
+          groundingTier,
+          domainInfo,
+          domain: domainInfo.domain,
+          sourceOutline,
+        })
+        : lessons.generalMaterialLesson(resolvedConcept, materialRow.title || resolvedConcept, groundingTier, uploadedChunks.map(c => c.id).filter(Boolean), uploadedChunks, {
+          domainInfo,
+          sourceOutline,
+          topic: resolvedConcept,
+        });
+      drift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
+        focusTopic: resolvedConcept,
+        sourceOutline,
+        focusTerms,
+        competingTerms: avoidTerms,
+      });
+    }
+    const script = normalizeScript(lessons.lessonToVideoScript(lesson), resolvedConcept, uploadedChunks, lowGrounding);
     const quality = scoreVideoScript(script, {
       concept: resolvedConcept,
-      chunks: uploadedRag.chunks || [],
+      chunks: uploadedChunks,
       lowGrounding,
+      domainInfo,
+      domain: domainInfo.domain,
       threshold: env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
     });
     if (!quality.passed) {
@@ -1590,12 +1758,21 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId }) {
       storyboard_json: JSON.stringify(script.scenes || script.slides),
       quality_json: JSON.stringify({
         script: quality,
-        lesson: lesson.quality || lessons.scoreLesson(lesson),
+        lesson: lesson.quality || lessons.scoreLesson(lesson, { domainInfo, topic: resolvedConcept, chunks: uploadedChunks, sourceOutline }),
+        drift,
         resolved_topic: resolvedConcept,
         topic_confidence: conceptInfo.confidence || null,
         topic_source: conceptInfo.source || null,
         source_title: conceptInfo.sourceTitle || materialRow.title || null,
         candidates: conceptInfo.alternatives || [],
+        domain: domainInfo,
+        educationalContext: {
+          curatedMatched: !!curatedTopicId,
+          curatedTopicId,
+          contextChars: educationalContextPrompt.length,
+          uploadedChunkCount: uploadedChunks.length,
+          systemChunkCount: videoContext && videoContext.trace && videoContext.trace.systemChunkCount || 0,
+        },
       }),
     });
     jobs.update(jobId, { progress: 25, stage: 'Creating narration...' });

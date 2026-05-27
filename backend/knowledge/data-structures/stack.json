@@ -1,27 +1,88 @@
 {
+  "id": "ds_stack",
+  "schemaVersion": 1,
+  "domain": "data-structures",
   "topic": "Stack",
-  "aliases": ["LIFO", "push", "pop", "peek", "call stack"],
-  "definition": "A stack is a Last-In, First-Out data structure where insertion and removal happen at the top.",
-  "deepExplanation": "A stack models nested or reversible work. push adds a new top item, pop removes the current top item, and peek reads the current top without removing it. Empty-stack operations must be handled to avoid underflow.",
+  "aliases": ["LIFO", "Push", "Pop", "Peek", "Call Stack", "Undo Stack"],
+  "difficulty": "beginner",
+  "prerequisites": ["Array", "Linked List", "Method Call", "Reference"],
+  "nextTopics": ["Queue", "Recursion", "Depth-First Search", "Expression Evaluation"],
+  "definition": "A stack is a Last-In, First-Out data structure where insertion and removal happen at the same end, called the top.",
+  "deepExplanation": "A stack models nested or reversible work. The newest item is always the first item removed. push places a value on top, pop removes and returns the top value, and peek reads the top value without removing it. Because only the top is active, stack operations are simple and usually constant time. Empty-stack operations must be handled carefully because popping or peeking when no item exists causes underflow.",
+  "whyItMatters": "Stacks appear in undo/redo systems, browser history, recursion, expression evaluation, and depth-first traversal.",
+  "analogy": "A stack is like a pile of plates. You add a plate to the top, and the next plate you remove is also from the top.",
   "codeExamples": [
     {
       "language": "java",
-      "title": "Integer stack",
-      "code": "class IntStack {\n  private final java.util.ArrayList<Integer> data = new java.util.ArrayList<>();\n  void push(int value) { data.add(value); }\n  int peek() { return data.get(data.size() - 1); }\n  int pop() {\n    if (data.isEmpty()) throw new IllegalStateException(\"underflow\");\n    return data.remove(data.size() - 1);\n  }\n}"
+      "title": "ArrayList-backed integer stack",
+      "code": "class IntStack {\n  private final java.util.ArrayList<Integer> data = new java.util.ArrayList<>();\n\n  void push(int value) {\n    data.add(value);\n  }\n\n  int peek() {\n    if (data.isEmpty()) {\n      throw new IllegalStateException(\"underflow\");\n    }\n    return data.get(data.size() - 1);\n  }\n\n  int pop() {\n    if (data.isEmpty()) {\n      throw new IllegalStateException(\"underflow\");\n    }\n    return data.remove(data.size() - 1);\n  }\n}",
+      "walkthrough": [
+        {
+          "lineRange": "2",
+          "text": "The ArrayList stores stack items in order, with the end of the list acting as the top."
+        },
+        {
+          "lineRange": "4-6",
+          "text": "push appends the new value at the top in constant time on average."
+        },
+        {
+          "lineRange": "8-13",
+          "text": "peek checks for underflow and then reads the top item without removing it."
+        },
+        {
+          "lineRange": "15-20",
+          "text": "pop checks for underflow and removes the top item, preserving LIFO behavior."
+        }
+      ]
     }
   ],
   "diagrams": [
     {
       "type": "stack",
-      "nodes": ["top: C", "B", "A", "bottom"],
-      "edges": [["push(D)", "top"], ["pop()", "C"]],
-      "caption": "After pushing A, B, C, the next pop returns C."
+      "title": "Stack Top Operation Model",
+      "nodes": ["top", "C", "B", "A", "bottom"],
+      "edges": [
+        ["push(D)", "top", "adds new top"],
+        ["pop()", "C", "removes current top"],
+        ["top", "C", "points to"]
+      ],
+      "caption": "After pushing A, B, then C, the next pop returns C because the newest item leaves first."
+    },
+    {
+      "type": "operation_sequence",
+      "title": "Push and Pop Trace",
+      "nodes": ["push A", "push B", "push C", "pop returns C", "top becomes B"],
+      "edges": [
+        ["push A", "push B", "then"],
+        ["push B", "push C", "then"],
+        ["push C", "pop returns C", "then"],
+        ["pop returns C", "top becomes B", "after removal"]
+      ],
+      "caption": "The last pushed value is the first value popped."
     }
   ],
   "commonMistakes": [
-    "Confusing LIFO with FIFO.",
-    "Popping from an empty stack without handling underflow.",
-    "Removing from the bottom instead of the top."
+    {
+      "mistake": "Confusing LIFO stacks with FIFO queues.",
+      "whyItHappens": "Both structures add and remove items, but the removal end is different.",
+      "correction": "Use a stack when the newest item should be handled first; use a queue when the oldest item should be handled first."
+    },
+    {
+      "mistake": "Popping from an empty stack without checking underflow.",
+      "whyItHappens": "Examples often show only happy-path operations.",
+      "correction": "Check whether the stack is empty before peek or pop, then throw an error or return a safe result."
+    },
+    {
+      "mistake": "Removing from the bottom of the collection.",
+      "whyItHappens": "Students may picture the bottom as the first inserted item and remove it accidentally.",
+      "correction": "Always push, pop, and peek at the same top end."
+    }
+  ],
+  "bestPractices": [
+    "Choose one end as the top and use it consistently.",
+    "Handle underflow explicitly before pop or peek.",
+    "Use a dynamic array or linked list implementation depending on memory and operation needs.",
+    "Name operations push, pop, and peek to make LIFO behavior obvious."
   ],
   "complexity": {
     "push": "O(1)",
@@ -30,8 +91,40 @@
     "search": "O(n)",
     "space": "O(n)"
   },
-  "practiceQuestions": [
-    "Push A, then B, then C. What does pop return?"
+  "miniQuiz": [
+    {
+      "question": "Push A, then B, then C. What does the first pop return?",
+      "options": ["A", "B", "C", "null"],
+      "answer": "C",
+      "explanation": "A stack is LIFO, so the last item pushed is the first item popped."
+    },
+    {
+      "question": "What stack error happens when pop is called on an empty stack?",
+      "options": ["Overflow", "Underflow", "Collision", "Rehashing"],
+      "answer": "Underflow",
+      "explanation": "Underflow means a removal or read operation was attempted when the stack had no items."
+    }
   ],
-  "visualTemplates": ["stack", "operation_sequence", "complexity_table"]
+  "flashcards": [
+    {
+      "front": "What does LIFO mean?",
+      "back": "Last-In, First-Out: the newest item added is the first item removed.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "What are the three core stack operations?",
+      "back": "push adds to the top, pop removes from the top, and peek reads the top without removing it.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "Why is stack search O(n)?",
+      "back": "A stack does not support direct lookup by value; finding an arbitrary item may require scanning the stored items.",
+      "difficulty": "medium"
+    }
+  ],
+  "visualTemplates": ["stack", "operation_sequence", "complexity_table"],
+  "source": {
+    "type": "curated",
+    "license": "project-authored"
+  }
 }

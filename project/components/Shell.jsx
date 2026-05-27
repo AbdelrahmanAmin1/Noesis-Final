@@ -4,7 +4,7 @@ const Logo = ({ size = 24, showWord = true, onClick }) => (
     onClick={onClick}
     disabled={!onClick}
     style={{
-      display: 'inline-flex', alignItems: 'center', gap: 10, color: 'var(--fg-0)',
+      display: 'inline-flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))', color: 'var(--fg-0)',
       background: 'transparent', padding: 0, cursor: onClick ? 'pointer' : 'default',
     }}
   >
@@ -22,7 +22,7 @@ const Logo = ({ size = 24, showWord = true, onClick }) => (
     />
     {showWord && (
       <span style={{
-        fontFamily: 'var(--font-display)', fontSize: size * 0.82,
+        fontFamily: 'var(--font-display)', fontSize: `calc(${size * 0.82}px * var(--app-font-scale))`,
         letterSpacing: '-0.015em', fontWeight: 400,
       }}>
         Noēsis
@@ -77,11 +77,11 @@ const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
         <button style={ss.sbNewBtn} onClick={() => onNav('tutor')}>
           <Icon.Plus size={14} />
           <span>New session</span>
-          <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--fg-3)' }} className="mono">⌘K</span>
+          <span style={{ marginLeft: 'auto', fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--fg-3)' }} className="mono">⌘K</span>
         </button>
       </div>
 
-      <nav style={{ padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+      <nav style={{ padding: '12px 10px', display: 'flex', flexDirection: 'column', gap: 'calc(1px * var(--app-density-scale))' }}>
         {SIDEBAR.map(item => {
           const IconCmp = Icon[item.icon];
           const active = current === item.key;
@@ -99,21 +99,21 @@ const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
       <div style={{ marginTop: 'auto', padding: '12px', position: 'relative' }}>
         <div style={ss.streakBox}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 10, letterSpacing: '0.08em', color: 'var(--fg-3)', textTransform: 'uppercase' }}>Streak</span>
+            <span style={{ fontSize: 'calc(10px * var(--app-font-scale))', letterSpacing: '0.08em', color: 'var(--fg-3)', textTransform: 'uppercase' }}>Streak</span>
             <Icon.Flame size={12} style={{ color: 'var(--accent)' }} />
           </div>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 4 }}>
-            <span style={{ fontFamily: 'var(--font-display)', fontSize: 28, color: 'var(--fg-0)' }}>{streakDays}</span>
-            <span style={{ fontSize: 11, color: 'var(--fg-2)' }}>days</span>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 'calc(6px * var(--app-density-scale))', marginTop: 'calc(4px * var(--app-density-scale))' }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(28px * var(--app-font-scale))', color: 'var(--fg-0)' }}>{streakDays}</span>
+            <span style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-2)' }}>days</span>
           </div>
-          <div style={{ display: 'flex', gap: 2, marginTop: 8 }}>
+          <div style={{ display: 'flex', gap: 'calc(2px * var(--app-density-scale))', marginTop: 'calc(8px * var(--app-density-scale))' }}>
             {Array.from({ length: 7 }).map((_, i) => (
               <div key={i} style={{ flex: 1, height: 4, borderRadius: 2, background: weekBars[i] > 0 ? 'var(--accent)' : 'var(--line)' }} />
             ))}
           </div>
         </div>
 
-        <button onClick={onSettings} style={{ ...ss.sbItem, marginTop: 6 }}>
+        <button onClick={onSettings} style={{ ...ss.sbItem, marginTop: 'calc(6px * var(--app-density-scale))' }}>
           <Icon.Cog size={16} />
           <span>Settings</span>
         </button>
@@ -121,8 +121,8 @@ const Sidebar = ({ current, onNav, onSettings, onLogout, onHome }) => {
         <button onClick={() => setMenuOpen(v => !v)} style={ss.profile}>
           <div style={ss.avatar}>{(userName || 'N')[0].toUpperCase()}</div>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0, flex: 1 }}>
-            <span style={{ fontSize: 12, color: 'var(--fg-0)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 }}>{userName || 'User'}</span>
-            <span style={{ fontSize: 10, color: 'var(--fg-3)' }}>{userSub || 'Student'}</span>
+            <span style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130 }}>{userName || 'User'}</span>
+            <span style={{ fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{userSub || 'Student'}</span>
           </div>
           <Icon.ChevronRight size={14} style={{ color: 'var(--fg-3)', transform: menuOpen ? 'rotate(90deg)' : 'none', transition: 'transform 160ms var(--ease-out)' }} />
         </button>
@@ -155,18 +155,18 @@ const ss = {
     flexShrink: 0,
   },
   sbNewBtn: {
-    display: 'flex', alignItems: 'center', gap: 10,
+    display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))',
     width: '100%', padding: '8px 12px',
     borderRadius: 'var(--r-md)',
     background: 'var(--bg-2)', border: '1px solid var(--line)',
-    color: 'var(--fg-1)', fontSize: 12.5,
+    color: 'var(--fg-1)', fontSize: 'calc(12.5px * var(--app-font-scale))',
     transition: 'all 160ms var(--ease-out)',
   },
   sbItem: {
-    display: 'flex', alignItems: 'center', gap: 10,
+    display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))',
     width: '100%', padding: '7px 10px',
     borderRadius: 'var(--r-sm)',
-    color: 'var(--fg-2)', fontSize: 13,
+    color: 'var(--fg-2)', fontSize: 'calc(13px * var(--app-font-scale))',
     transition: 'all 140ms var(--ease-out)',
     position: 'relative',
   },
@@ -185,17 +185,17 @@ const ss = {
     color: 'var(--fg-1)',
   },
   profile: {
-    display: 'flex', alignItems: 'center', gap: 10,
+    display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))',
     width: '100%', padding: '8px',
     borderRadius: 'var(--r-md)',
     background: 'transparent',
-    marginTop: 4,
+    marginTop: 'calc(4px * var(--app-density-scale))',
     transition: 'background 140ms var(--ease-out)',
   },
   avatar: {
     width: 28, height: 28, borderRadius: 8,
     background: 'linear-gradient(135deg, var(--accent) 0%, var(--parchment) 100%)',
-    color: 'var(--bg-0)', fontSize: 12, fontWeight: 600,
+    color: 'var(--bg-0)', fontSize: 'calc(12px * var(--app-font-scale))', fontWeight: 600,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontFamily: 'var(--font-display)',
     flexShrink: 0,
@@ -203,15 +203,15 @@ const ss = {
   menu: {
     position: 'absolute', bottom: 'calc(100% - 8px)', left: 12, right: 12,
     background: 'var(--bg-1)', border: '1px solid var(--line)',
-    borderRadius: 'var(--r-md)', padding: 4,
+    borderRadius: 'var(--r-md)', padding: 'calc(4px * var(--app-density-scale))',
     boxShadow: 'var(--shadow-lg)', zIndex: 40,
     animation: 'slideUp 180ms var(--ease-out)',
   },
   menuItem: {
-    display: 'flex', alignItems: 'center', gap: 10,
+    display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))',
     width: '100%', padding: '8px 10px',
     borderRadius: 'var(--r-sm)',
-    fontSize: 12.5, color: 'var(--fg-1)', textAlign: 'left',
+    fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-1)', textAlign: 'left',
     transition: 'background 140ms var(--ease-out)',
   },
 };
@@ -221,29 +221,29 @@ const Topbar = ({ title, crumbs = [], right = null }) => {
   const Icon = window.Icon;
   return (
     <header style={{
-      display: 'flex', alignItems: 'center', gap: 12,
+      display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))',
       padding: '14px 28px',
       borderBottom: '1px solid var(--line-soft)',
       background: 'var(--bg-0)',
       position: 'sticky', top: 0, zIndex: 20,
       minHeight: 56,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', flex: 1, minWidth: 0 }}>
         {crumbs.map((c, i) => (
           <React.Fragment key={i}>
-            <span style={{ fontSize: 12.5, color: 'var(--fg-2)' }}>{c}</span>
+            <span style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-2)' }}>{c}</span>
             <Icon.ChevronRight size={11} style={{ color: 'var(--fg-3)' }} />
           </React.Fragment>
         ))}
-        <span style={{ fontSize: 13, color: 'var(--fg-0)', fontWeight: 500 }}>{title}</span>
+        <span style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{title}</span>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'calc(6px * var(--app-density-scale))' }}>
         {right}
-        <button className="btn btn-bare" style={{ padding: 7, opacity: 0.4 }} disabled>
+        <button className="btn btn-bare" style={{ padding: 'calc(7px * var(--app-density-scale))', opacity: 0.4 }} disabled>
           <Icon.Search size={15} />
         </button>
-        <button className="btn btn-bare" style={{ padding: 7, opacity: 0.4 }} disabled>
+        <button className="btn btn-bare" style={{ padding: 'calc(7px * var(--app-density-scale))', opacity: 0.4 }} disabled>
           <Icon.Bell size={15} />
         </button>
       </div>

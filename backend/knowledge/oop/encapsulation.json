@@ -1,34 +1,143 @@
 {
+  "id": "oop_encapsulation",
+  "schemaVersion": 1,
+  "domain": "oop",
   "topic": "Encapsulation",
-  "aliases": ["data hiding", "private fields", "getters", "setters", "class invariant"],
-  "definition": "Encapsulation bundles data with the methods that protect and operate on it, usually by keeping fields private and exposing controlled public behavior.",
-  "deepExplanation": "Encapsulation is about control, not secrecy for its own sake. A class owns its state and decides which operations are safe. Private fields prevent outside code from putting the object into an invalid state. Public methods become the small doorway where validation, invariants, and meaningful behavior live.",
+  "aliases": ["Data Hiding", "Information Hiding", "Private Fields", "Getters and Setters", "Class Invariant"],
+  "difficulty": "beginner",
+  "prerequisites": ["Class", "Object", "Instance Field", "Method"],
+  "nextTopics": ["Abstraction", "Inheritance", "Interface vs Abstract Class"],
+  "definition": "Encapsulation is the OOP practice of keeping an object's data protected inside the class and exposing safe public methods for using or changing that data.",
+  "deepExplanation": "Encapsulation is about control over valid state. A class owns its fields, decides which operations are allowed, and keeps invalid values from leaking into the object. Private fields prevent outside code from changing data directly. Public methods become the controlled doorway where validation, naming, and business rules live. A good encapsulated class does not only hide data; it protects the meaning of that data.",
+  "whyItMatters": "Encapsulation makes code safer to change because other classes depend on behavior instead of directly depending on internal field layout.",
+  "analogy": "Think of an ATM. You do not open the bank vault and edit your balance. You use controlled buttons like deposit and withdraw, and the ATM checks whether each operation is allowed.",
   "codeExamples": [
     {
       "language": "java",
-      "title": "Bank account invariant",
-      "code": "class BankAccount {\n  private double balance;\n\n  BankAccount(double openingBalance) {\n    if (openingBalance < 0) throw new IllegalArgumentException();\n    balance = openingBalance;\n  }\n\n  void deposit(double amount) {\n    if (amount <= 0) throw new IllegalArgumentException();\n    balance += amount;\n  }\n\n  double getBalance() { return balance; }\n}"
+      "title": "Bad public field example",
+      "code": "class BadBankAccount {\n  public double balance;\n}\n\nBadBankAccount account = new BadBankAccount();\naccount.balance = -500;",
+      "walkthrough": [
+        {
+          "lineRange": "1-2",
+          "text": "The balance field is public, so any other code can change it directly."
+        },
+        {
+          "lineRange": "5-6",
+          "text": "The account can be placed into an invalid state because no method checks the new value."
+        }
+      ]
+    },
+    {
+      "language": "java",
+      "title": "BankAccount encapsulation with validation",
+      "code": "class BankAccount {\n  private double balance;\n\n  BankAccount(double openingBalance) {\n    if (openingBalance < 0) {\n      throw new IllegalArgumentException(\"Opening balance cannot be negative\");\n    }\n    balance = openingBalance;\n  }\n\n  void deposit(double amount) {\n    if (amount <= 0) {\n      throw new IllegalArgumentException(\"Deposit must be positive\");\n    }\n    balance += amount;\n  }\n\n  boolean withdraw(double amount) {\n    if (amount <= 0 || amount > balance) {\n      return false;\n    }\n    balance -= amount;\n    return true;\n  }\n\n  double getBalance() {\n    return balance;\n  }\n}",
+      "walkthrough": [
+        {
+          "lineRange": "2",
+          "text": "The balance field is private, so outside code cannot assign arbitrary values to it."
+        },
+        {
+          "lineRange": "4-9",
+          "text": "The constructor protects the first invariant: an account cannot start with a negative balance."
+        },
+        {
+          "lineRange": "11-16",
+          "text": "deposit is a public operation, but it rejects invalid amounts before changing state."
+        },
+        {
+          "lineRange": "18-24",
+          "text": "withdraw protects the object from overdrawing and reports whether the operation succeeded."
+        },
+        {
+          "lineRange": "26-28",
+          "text": "getBalance exposes information without letting callers rewrite the field directly."
+        }
+      ]
     }
   ],
   "diagrams": [
     {
       "type": "uml_class",
+      "title": "BankAccount Encapsulation",
       "nodes": [
-        { "id": "BankAccount", "label": "BankAccount", "fields": ["balance: double"], "methods": ["deposit(amount)", "getBalance()"] }
+        {
+          "id": "BankAccount",
+          "label": "BankAccount",
+          "fields": ["- balance: double"],
+          "methods": ["+ deposit(amount)", "+ withdraw(amount)", "+ getBalance()"]
+        },
+        {
+          "id": "OutsideCode",
+          "label": "Outside Code",
+          "fields": [],
+          "methods": ["calls public methods"]
+        }
       ],
-      "edges": [],
-      "caption": "Private state stays inside; public methods guard valid changes."
+      "edges": [
+        ["OutsideCode", "BankAccount", "uses public methods"],
+        ["BankAccount", "balance", "protects private field"]
+      ],
+      "caption": "Outside code interacts with public methods while the private balance stays protected inside the class."
     }
   ],
   "commonMistakes": [
-    "Making every field public and losing control over valid state.",
-    "Writing setters that blindly assign values without validation.",
-    "Thinking encapsulation means adding getters and setters for everything."
+    {
+      "mistake": "Making every field public because it is convenient.",
+      "whyItHappens": "Beginners often focus on getting access quickly and forget that unrestricted access can break object rules.",
+      "correction": "Keep fields private and expose methods that preserve valid state."
+    },
+    {
+      "mistake": "Writing setters that blindly assign any value.",
+      "whyItHappens": "A setter can look encapsulated while still allowing invalid data.",
+      "correction": "Validate inside setters or replace them with meaningful operations such as deposit and withdraw."
+    },
+    {
+      "mistake": "Thinking encapsulation means hiding everything from the user.",
+      "whyItHappens": "The word hiding can sound like secrecy instead of controlled access.",
+      "correction": "Expose the behavior learners need, but keep the internal representation protected."
+    }
   ],
-  "complexity": {},
-  "practiceQuestions": [
-    "Why should balance be private in a BankAccount class?",
-    "What invariant should deposit protect?"
+  "bestPractices": [
+    "Prefer private fields unless a field truly must be part of a public constant API.",
+    "Name public methods after meaningful operations instead of exposing every field through setters.",
+    "Protect class invariants in constructors and state-changing methods.",
+    "Return copies or read-only views when exposing mutable internal collections."
   ],
-  "visualTemplates": ["uml_class", "comparison", "invariant_card"]
+  "complexity": null,
+  "miniQuiz": [
+    {
+      "question": "Why should the balance field in BankAccount be private?",
+      "options": ["To make the code longer", "To prevent invalid direct changes", "To make inheritance impossible", "To avoid constructors"],
+      "answer": "To prevent invalid direct changes",
+      "explanation": "Private balance forces callers to use methods such as deposit and withdraw, where validation can happen."
+    },
+    {
+      "question": "Which method design is more encapsulated: setBalance(-500) or withdraw(500)?",
+      "options": ["setBalance(-500)", "withdraw(500)", "Both are identical", "Neither can change state"],
+      "answer": "withdraw(500)",
+      "explanation": "withdraw represents a meaningful operation and can reject invalid amounts or insufficient funds."
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "What is encapsulation?",
+      "back": "Encapsulation protects object state inside a class and exposes safe public operations for using or changing it.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "What is a class invariant?",
+      "back": "A rule that should always remain true for an object, such as a bank balance never being negative.",
+      "difficulty": "medium"
+    },
+    {
+      "front": "Why can a public setter still be a problem?",
+      "back": "If it assigns values without validation, it allows callers to break the object's rules.",
+      "difficulty": "medium"
+    }
+  ],
+  "visualTemplates": ["uml_class", "bad_vs_good_code", "invariant_card"],
+  "source": {
+    "type": "curated",
+    "license": "project-authored"
+  }
 }

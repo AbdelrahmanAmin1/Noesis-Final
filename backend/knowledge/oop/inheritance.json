@@ -1,35 +1,134 @@
 {
+  "id": "oop_inheritance",
+  "schemaVersion": 1,
+  "domain": "oop",
   "topic": "Inheritance",
-  "aliases": ["Inheritance in OOP", "extends", "Superclass", "Subclass", "Parent class", "Child class"],
-  "definition": "Inheritance is an object-oriented mechanism where a subclass receives fields and methods from a superclass and may add or override behavior.",
-  "deepExplanation": "Use inheritance when the child class truly is a specialized kind of the parent. The parent should hold the shared contract or shared behavior, while each child class supplies details that are specific to that child. In Java, extends declares the relationship, and @Override marks a child implementation of an inherited method.",
+  "aliases": ["Inheritance in OOP", "Extends", "Superclass", "Subclass", "Parent Class", "Child Class", "Is-A Relationship"],
+  "difficulty": "beginner",
+  "prerequisites": ["Class", "Object", "Method", "Encapsulation"],
+  "nextTopics": ["Polymorphism", "Abstract Class", "Interface vs Abstract Class", "Composition vs Inheritance"],
+  "definition": "Inheritance is an OOP relationship where a subclass receives fields or methods from a superclass and can add or override behavior.",
+  "deepExplanation": "Inheritance should model a true is-a relationship. The superclass captures shared behavior, shared contracts, or shared structure. A subclass is a more specific version of that parent type. In Java, extends declares the relationship, and @Override marks a method that replaces or specializes inherited behavior. Inheritance is powerful, but it also couples the child class to the parent design, so it should not be used only to avoid duplicated code.",
+  "whyItMatters": "Inheritance helps learners organize related types and prepares them for polymorphism, where one parent reference can work with many child objects.",
+  "analogy": "Think of Vehicle as a broad category. A Car is a Vehicle and a Bicycle is a Vehicle, but a Car has an Engine. The is-a relationship fits inheritance; the has-a relationship fits composition.",
   "codeExamples": [
     {
       "language": "java",
-      "title": "Shape hierarchy",
-      "code": "abstract class Shape {\n  abstract double area();\n}\n\nclass Circle extends Shape {\n  private final double radius;\n  Circle(double radius) { this.radius = radius; }\n  @Override double area() { return Math.PI * radius * radius; }\n}\n\nclass Rectangle extends Shape {\n  private final double width, height;\n  Rectangle(double width, double height) { this.width = width; this.height = height; }\n  @Override double area() { return width * height; }\n}"
+      "title": "Shape hierarchy with inheritance",
+      "code": "abstract class Shape {\n  abstract double area();\n}\n\nclass Circle extends Shape {\n  private final double radius;\n\n  Circle(double radius) {\n    this.radius = radius;\n  }\n\n  @Override\n  double area() {\n    return Math.PI * radius * radius;\n  }\n}\n\nclass Rectangle extends Shape {\n  private final double width;\n  private final double height;\n\n  Rectangle(double width, double height) {\n    this.width = width;\n    this.height = height;\n  }\n\n  @Override\n  double area() {\n    return width * height;\n  }\n}",
+      "walkthrough": [
+        {
+          "lineRange": "1-3",
+          "text": "Shape is the superclass. It defines the shared promise that every Shape can compute area."
+        },
+        {
+          "lineRange": "5",
+          "text": "Circle extends Shape, so Circle is a specialized kind of Shape."
+        },
+        {
+          "lineRange": "12-15",
+          "text": "Circle overrides area because a circle has its own formula."
+        },
+        {
+          "lineRange": "18",
+          "text": "Rectangle is another subclass of Shape, not a sibling that copies Circle."
+        },
+        {
+          "lineRange": "27-30",
+          "text": "Rectangle overrides the same parent method with rectangle-specific behavior."
+        }
+      ]
     }
   ],
   "diagrams": [
     {
       "type": "uml_class",
+      "title": "Shape Inheritance Tree",
       "nodes": [
-        { "id": "Shape", "label": "Shape", "methods": ["area()"] },
-        { "id": "Circle", "label": "Circle", "fields": ["radius"], "methods": ["area()"] },
-        { "id": "Rectangle", "label": "Rectangle", "fields": ["width", "height"], "methods": ["area()"] }
+        {
+          "id": "Shape",
+          "label": "Shape",
+          "fields": [],
+          "methods": ["area()"]
+        },
+        {
+          "id": "Circle",
+          "label": "Circle",
+          "fields": ["radius"],
+          "methods": ["area()"]
+        },
+        {
+          "id": "Rectangle",
+          "label": "Rectangle",
+          "fields": ["width", "height"],
+          "methods": ["area()"]
+        }
       ],
-      "edges": [["Circle", "Shape", "extends"], ["Rectangle", "Shape", "extends"]],
-      "caption": "Circle and Rectangle are specialized Shapes."
+      "edges": [
+        ["Circle", "Shape", "extends"],
+        ["Rectangle", "Shape", "extends"]
+      ],
+      "caption": "Circle and Rectangle point to Shape because both are specialized Shapes."
     }
   ],
   "commonMistakes": [
-    "Using inheritance only to avoid duplicated code instead of modeling a true is-a relationship.",
-    "Confusing inheritance with composition: a Car is a Vehicle, but a Car has an Engine.",
-    "Forgetting @Override and accidentally creating a different method signature."
+    {
+      "mistake": "Using inheritance only to reuse code.",
+      "whyItHappens": "The child may need some code from the parent, but it may not actually be a kind of the parent.",
+      "correction": "Use inheritance when the child truly is-a parent; otherwise prefer composition."
+    },
+    {
+      "mistake": "Confusing is-a with has-a.",
+      "whyItHappens": "Both relationships connect classes, but they mean different things.",
+      "correction": "Use inheritance for Dog is an Animal; use fields/composition for Dog has a Collar."
+    },
+    {
+      "mistake": "Forgetting @Override on methods meant to replace parent behavior.",
+      "whyItHappens": "A typo in the method signature can silently create a new method.",
+      "correction": "Use @Override so the compiler checks that the parent method is actually being overridden."
+    }
   ],
-  "complexity": {},
-  "practiceQuestions": [
-    "Which relationship should use inheritance: Dog is an Animal, or Dog has a Collar?"
+  "bestPractices": [
+    "Ask whether the child is truly a specialized parent before using extends.",
+    "Keep parent classes stable because child classes depend on their design.",
+    "Use @Override whenever a subclass replaces parent behavior.",
+    "Prefer composition when an object merely owns or uses another object."
   ],
-  "visualTemplates": ["uml_class", "inheritance_tree", "comparison"]
+  "complexity": null,
+  "miniQuiz": [
+    {
+      "question": "Which relationship is best modeled with inheritance?",
+      "options": ["Car has an Engine", "Car is a Vehicle", "Course has Students", "Playlist has Songs"],
+      "answer": "Car is a Vehicle",
+      "explanation": "Inheritance models is-a relationships. The other examples are has-a relationships."
+    },
+    {
+      "question": "What does @Override help catch?",
+      "options": ["Private field access", "Method signature mistakes", "Infinite loops", "Package installation errors"],
+      "answer": "Method signature mistakes",
+      "explanation": "@Override tells the compiler that the method must match a method from the parent type."
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "What is inheritance?",
+      "back": "Inheritance lets a subclass receive and specialize behavior from a superclass.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "What relationship should inheritance model?",
+      "back": "A true is-a relationship, such as Circle is a Shape.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "When should you prefer composition over inheritance?",
+      "back": "When one object has or uses another object instead of being a specialized version of it.",
+      "difficulty": "medium"
+    }
+  ],
+  "visualTemplates": ["uml_class", "inheritance_tree", "is_a_vs_has_a_comparison"],
+  "source": {
+    "type": "curated",
+    "license": "project-authored"
+  }
 }

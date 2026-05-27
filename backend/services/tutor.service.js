@@ -7,8 +7,10 @@ const jobs = require('./jobs.service');
 const { HttpError } = require('../middleware/error');
 const { retrieveLessonContext, groundingTier } = require('./rag.service');
 const topicResolver = require('./topic-resolver.service');
+const materialUnderstanding = require('./material-understanding.service');
 const learningMaps = require('./learning-map.service');
 const materialService = require('./material.service');
+const domainDetection = require('./domain-detection.service');
 const { recordConceptOutcome } = require('./mastery.service');
 const log = require('../utils/logger');
 
@@ -63,6 +65,32 @@ function isGeneric(value) {
 function sourceTitleFromChunks(chunks, fallback) {
   const title = (chunks || []).map(c => c.chapter_title || c.heading || c.slide_title || c.section_title).find(Boolean);
   return cleanText(title || fallback || '', 120);
+}
+
+function parseKeywords(value) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed.filter(Boolean).map(String) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function topicFromMaterialSource(userId, materialId, hint, fallback, domainInfo) {
+  const understanding = materialUnderstanding.understandGeneralFromDb(userId, materialId, {
+    explicitQuery: hint,
+    title: fallback,
+    hint,
+    domainInfo,
+    limit: 24,
+  });
+  return {
+    topic: understanding.topic || cleanText(fallback, 120) || 'Uploaded Material',
+    confidence: understanding.confidence || 0.3,
+    source: understanding.source || 'material_source_terms',
+    alternatives: understanding.alternatives || [],
+    understanding,
+  };
 }
 
 function sourceChunksForClient(chunks, materialTitle) {
@@ -225,8 +253,59 @@ function codeForTopic(topic) {
   return null;
 }
 
-function contentForTopic(topic) {
+function contentFromUnderstanding(topic, understanding = {}) {
+  const keyConcepts = Array.isArray(understanding.keyConcepts) && understanding.keyConcepts.length
+    ? understanding.keyConcepts.slice(0, 6)
+    : [topic].filter(Boolean);
+  const excerpts = Array.isArray(understanding.representativeExcerpts) && understanding.representativeExcerpts.length
+    ? understanding.representativeExcerpts
+    : (Array.isArray(understanding.sourceEvidence) ? understanding.sourceEvidence.map(item => item && item.quote).filter(Boolean) : []);
+  const primary = keyConcepts[0] || topic || 'the uploaded material';
+  const secondary = keyConcepts[1] || keyConcepts[0] || topic || 'the next key idea';
+  const excerpt = excerpts[0] || `The source frames ${topic} through ${keyConcepts.slice(0, 3).join(', ') || 'its key ideas'}.`;
+  const conceptList = keyConcepts.slice(0, 5).join(', ') || topic || 'the source concepts';
+  return {
+    warmup: {
+      title: `Start with ${primary}`,
+      content: `${topic} is best learned from the uploaded material by anchoring on ${primary}. The source gives you concrete details first, then the tutor can help connect those details into a study-ready explanation.`,
+      question: `What does the source say is most important about ${primary}?`,
+      hint: `Start from this source detail: ${cleanText(excerpt, 220)}`,
+      example: `Use the source excerpt as your first example, then explain why ${primary} matters.`,
+    },
+    intuition: {
+      title: 'How the ideas fit',
+      content: `The intuition is to connect ${conceptList}. Instead of memorizing labels, look for the relationship: which concept defines the issue, which one explains the mechanism, and which one shows the consequence.`,
+      question: `How does ${primary} connect to ${secondary}?`,
+      hint: 'Look for cause, contrast, sequence, or purpose in the source wording.',
+      example: excerpts[1] || `Make a small concept map with ${primary} in the center and the supporting terms around it.`,
+    },
+    trick: {
+      title: 'Common confusion',
+      content: `A common confusion is treating the headings as isolated vocabulary. For this material, the safer move is to explain how each source term changes the meaning of the next one.`,
+      question: 'Which term would be easy to memorize but hard to apply?',
+      hint: 'Pick the most abstract term and attach it to a concrete source detail.',
+      example: excerpts[2] || `Turn ${secondary} into a short scenario, example, event, or case from the material.`,
+    },
+    formalize: {
+      title: 'Study-ready explanation',
+      content: `A complete answer about ${topic} should define the main idea, name the key source concepts, explain one relationship among them, and include one concrete detail from the uploaded material.`,
+      question: `What would a complete answer about ${topic} need to include?`,
+      hint: `Use this order: define ${primary}, connect it to ${secondary}, then cite one source detail.`,
+      example: `Definition plus relationship plus source example is the minimum study unit.`,
+    },
+    apply: {
+      title: 'Apply it',
+      content: `Now apply the material by using ${conceptList} to analyze a short case, event, problem, or decision from the subject. The goal is to prove you can use the idea, not just repeat the heading.`,
+      question: `Can you create one source-based example or checkpoint question for ${topic}?`,
+      hint: 'Use the exact source terms, then ask what changes, why it matters, or what mistake to avoid.',
+      example: excerpts[3] || `Create a mini case from the uploaded material and explain the result using ${primary}.`,
+    },
+  };
+}
+
+function contentForTopic(topic, understanding = null) {
   const t = String(topic || '').toLowerCase();
+  if (understanding && topicKind(topic) === 'general') return contentFromUnderstanding(topic, understanding);
   if (t.includes('polymorphism')) {
     return {
       warmup: {
@@ -342,16 +421,16 @@ function contentForTopic(topic) {
     };
   }
   return {
-    warmup: { title: `Start with ${topic}`, content: `${topic} is easier to learn when you connect the definition to a concrete example and one common mistake.`, question: `What problem does ${topic} help solve?`, hint: 'Look for the behavior or trade-off the concept controls.', example: `We will define ${topic}, build a mental model, and apply it.` },
-    intuition: { title: 'Core intuition', content: `The intuition is to identify the moving parts of ${topic} and how they interact.`, question: 'Which part changes, and which rule stays stable?', hint: 'Separate vocabulary from behavior.', example: 'Draw the parts before memorizing terms.' },
-    trick: { title: 'Key trick', content: `Most mistakes happen when students memorize ${topic} without tracing a concrete example.`, question: 'What is the smallest example you can trace?', hint: 'Use a tiny input or object setup.', example: 'Trace state before and after one operation.' },
-    formalize: { title: 'Formal rule', content: `A formal explanation names the rule, the constraints, and the edge cases for ${topic}.`, question: 'What edge case would break a shallow understanding?', hint: 'Think about empty inputs, nulls, or boundary cases.', example: 'Write the rule, then test a boundary.' },
-    apply: { title: 'Practice it', content: `Apply ${topic} by explaining it, drawing it, and solving one small problem.`, question: 'Can you explain it in one sentence and one example?', hint: 'A good explanation includes purpose and behavior.', example: 'Definition plus example is the minimum study unit.' },
+    warmup: { title: `Start with ${topic}`, content: `${topic} is easier to learn when you connect the main definition to the specific examples and vocabulary in the uploaded material.`, question: `What problem, decision, or idea does ${topic} help explain?`, hint: 'Look for the purpose the source gives before memorizing terms.', example: `Use one source example to explain why ${topic} matters.` },
+    intuition: { title: 'Core intuition', content: `The intuition is to identify the key terms in ${topic}, then describe how they relate to each other in plain language.`, question: 'Which idea is central, and which details support it?', hint: 'Separate the main claim from examples, labels, and supporting facts.', example: 'Turn the source heading into a one-sentence explanation.' },
+    trick: { title: 'Common confusion', content: `Most mistakes happen when students memorize words from ${topic} without connecting them to a concrete scenario from the material.`, question: 'What is one example that would make the idea less abstract?', hint: 'Use a familiar situation, case, or decision from the source.', example: 'Explain the concept with a real case, then name the likely misconception.' },
+    formalize: { title: 'Study-ready rule', content: `A strong explanation of ${topic} names the concept, gives its purpose, and shows one consequence or application from the material.`, question: 'What would a complete exam answer need to include?', hint: 'Include definition, purpose, and one concrete detail.', example: 'Definition plus source-based example is the minimum study unit.' },
+    apply: { title: 'Practice it', content: `Apply ${topic} by summarizing it, mapping the important terms, and answering one checkpoint question about how it works in context.`, question: 'Can you explain it in one sentence and one example?', hint: 'A good explanation includes purpose, evidence, and a small application.', example: 'Use the uploaded material to create a mini scenario and explain the outcome.' },
   };
 }
 
-function baseSteps(topic) {
-  const topicContent = contentForTopic(topic);
+function baseSteps(topic, opts = {}) {
+  const topicContent = contentForTopic(topic, opts.understanding || null);
   const code = codeForTopic(topic);
   return STEP_META.map((meta, index) => {
     const data = topicContent[meta.id] || topicContent.warmup;
@@ -383,8 +462,8 @@ function validateStep(step) {
   return step;
 }
 
-function buildPlan(topic, currentStepIndex = 0) {
-  const steps = baseSteps(topic).map((step, index) => ({
+function buildPlan(topic, currentStepIndex = 0, opts = {}) {
+  const steps = baseSteps(topic, opts).map((step, index) => ({
     ...step,
     status: index < currentStepIndex ? 'completed' : (index === currentStepIndex ? 'active' : 'locked'),
   }));
@@ -425,7 +504,7 @@ function createSkeletonSession(userId, payload = {}) {
   const material = ownedMaterial(db, userId, materialId);
   const requested = cleanText(payload.concept || '', 120);
   const mode = ['socratic', 'explain', 'example'].includes(payload.mode) ? payload.mode : 'socratic';
-  const initialTopic = isGeneric(requested) ? (material && material.display_title) || 'Resolving topic' : requested || (material && material.display_title) || 'Object-Oriented Programming basics';
+  const initialTopic = isGeneric(requested) ? (material && material.display_title) || 'Resolving topic' : requested || (material && material.display_title) || 'Uploaded Material';
   const plan = {
     steps: STEP_META.map((s, i) => ({
       id: s.id,
@@ -464,11 +543,12 @@ async function resolveTopicCached(materialId, hint) {
   return cacheSet(cache.topic, key, { ...info, cacheHit: false });
 }
 
-async function retrieveContextCached(materialId, topic) {
-  const key = `${materialId || 'system'}:${topic}`;
+async function retrieveContextCached(materialId, topic, opts = {}) {
+  const includeSystem = opts.includeSystem !== false;
+  const key = `${materialId || 'system'}:${topic}:system:${includeSystem ? 1 : 0}`;
   const hit = cacheGet(cache.rag, key);
   if (hit) return { ...hit, cacheHit: true };
-  const ctx = await retrieveLessonContext(materialId || null, topic, { feature: 'tutor', k: 6, minScore: 0.05, maxMerged: 10 });
+  const ctx = await retrieveLessonContext(materialId || null, topic, { feature: 'tutor', k: 6, minScore: 0.05, maxMerged: 10, includeSystem });
   return cacheSet(cache.rag, key, { ...ctx, cacheHit: false });
 }
 
@@ -504,13 +584,20 @@ async function runStartJob(userId, sessionId, jobId = null) {
     jobUpdate({ progress: 25, message: 'Resolving topic...' });
     updateSessionProgress(sessionId, { status: 'resolving_topic', trace: { message: 'Resolving topic...' } });
     const topicStarted = Date.now();
-    const topicInfo = await resolveTopicCached(session.material_id, session.concept || (material && material.title));
-    const topic = topicInfo.topic || (!isGeneric(session.concept) && session.concept) || 'Object-Oriented Programming basics';
+    const domainInfo = session.material_id
+      ? domainDetection.detectMaterialDomain(userId, session.material_id, { hint: session.concept || (material && material.title) })
+      : { domain: 'general', confidence: 0.3, evidence: [], source: 'system' };
+    const useCuratedCs = domainDetection.shouldUseCuratedCs(domainInfo);
+    const topicInfo = useCuratedCs
+      ? await resolveTopicCached(session.material_id, session.concept || (material && material.title))
+      : topicFromMaterialSource(userId, session.material_id, session.concept, material && (material.display_title || material.title), domainInfo);
+    const sourceTopic = topicInfo.topic || (!isGeneric(session.concept) && session.concept) || (material && (material.display_title || material.title));
+    const topic = cleanText(sourceTopic, 120) || 'Uploaded Material';
 
     jobUpdate({ progress: 45, message: 'Retrieving material context...' });
     updateSessionProgress(sessionId, { status: 'retrieving_context', trace: { message: 'Retrieving material context...', topic } });
     const retrievalStarted = Date.now();
-    const context = await retrieveContextCached(session.material_id, topic);
+    const context = await retrieveContextCached(session.material_id, topic, { includeSystem: useCuratedCs });
     const materialTitle = material && material.display_title || topic;
     const sources = sourceChunksForClient(context.chunks, materialTitle);
     const sourceTitle = sourceTitleFromChunks(context.chunks, topicInfo.sourceTitle || materialTitle);
@@ -518,7 +605,7 @@ async function runStartJob(userId, sessionId, jobId = null) {
     jobUpdate({ progress: 75, message: 'Generating warm-up...' });
     updateSessionProgress(sessionId, { status: 'generating_step', trace: { message: 'Generating warm-up...', sourceTitle } });
     const generationStarted = Date.now();
-    const plan = buildPlan(topic, 0);
+    const plan = buildPlan(topic, 0, { understanding: topicInfo.understanding || null });
     const sourceRefs = sources.slice(0, 3).map(s => s.id);
     plan.steps = plan.steps.map((step, index) => ({ ...step, sourceRefs: index === 0 ? sourceRefs : [] }));
     const learningMap = learningMaps.buildLearningMap(userId, { materialId: session.material_id, rootTopic: topic });
@@ -528,6 +615,9 @@ async function runStartJob(userId, sessionId, jobId = null) {
       topic,
       topicConfidence: topicInfo.confidence || 0,
       topicSource: topicInfo.topic_source || topicInfo.source || 'resolver',
+      domain: domainInfo,
+      materialUnderstanding: topicInfo.understanding || null,
+      curatedCs: useCuratedCs,
       sourceTitle,
       retrievalMs: Date.now() - retrievalStarted,
       generationMs: Date.now() - generationStarted,
@@ -663,6 +753,7 @@ function topicKind(topic) {
   const text = String(topic || '').toLowerCase();
   if (/(encapsulation|inheritance|polymorphism|abstraction|class|object|oop)/.test(text)) return 'oop';
   if (/(linked list|node|stack|queue|tree|hash|heap|graph|data structure)/.test(text)) return 'ds';
+  if (/(algorithm|binary search|linear search|sorting|big-o|big o|complexity)/.test(text)) return 'algorithm';
   return 'general';
 }
 
@@ -818,7 +909,8 @@ function modePrefix(mode, action) {
   return 'Here is the clear version:';
 }
 
-function modeSystemPrompt(mode) {
+function modeSystemPrompt(mode, topic = '') {
+  const kind = topicKind(topic);
   if (mode === 'socratic') return [
     'You are a Socratic tutor. NEVER give the full answer directly.',
     '- Ask one guiding question at a time.',
@@ -829,23 +921,31 @@ function modeSystemPrompt(mode) {
   ].join('\n');
   if (mode === 'example') return [
     'You are an example-first tutor.',
-    '- Lead with a concrete, runnable code example immediately.',
-    '- Explain each line of the code.',
+    kind === 'general'
+      ? '- Lead with a concrete scenario or source-based example immediately.'
+      : '- Lead with a concrete, runnable code example immediately.',
+    kind === 'general'
+      ? '- Explain each part of the example step by step.'
+      : '- Explain each line of the code.',
     '- Connect the example back to the concept.',
     '- Mention one common mistake.',
-    '- End with: "Try modifying this: [specific challenge]"',
+    kind === 'general'
+      ? '- End with: "Try applying this: [specific challenge]"'
+      : '- End with: "Try modifying this: [specific challenge]"',
   ].join('\n');
   return [
     'You are a clear, direct tutor explaining concepts.',
     '- Start with a concise definition.',
     '- Use a real-world analogy.',
-    '- Give a concrete code example for OOP/Data Structures topics.',
+    '- Give a concrete code example only for OOP/Data Structures/Algorithms topics.',
+    '- For other subjects, give a concrete scenario or case instead of code.',
     '- Walk through the example step by step.',
     '- End with a checkpoint: ask one question to verify understanding.',
   ].join('\n');
 }
 
-function actionPromptSection(action) {
+function actionPromptSection(action, topic = '') {
+  const kind = topicKind(topic);
   if (action === 'im_confused') return [
     'The learner is confused. Respond by:',
     '1. Restate the concept in simpler terms (no jargon).',
@@ -854,8 +954,12 @@ function actionPromptSection(action) {
     '4. Ask ONE simple yes/no or fill-in-the-blank question.',
   ].join('\n');
   if (action === 'give_example') return [
-    'Give a REAL, complete code example. For OOP topics use Java.',
-    'Include: class definition, method, and a main() that demonstrates the concept.',
+    kind === 'general'
+      ? 'Give a concrete, source-based scenario or example. Do not include code unless the uploaded material is actually about programming.'
+      : 'Give a REAL, complete code example. For OOP topics use Java.',
+    kind === 'general'
+      ? 'Include the setup, the decision or action, and the result.'
+      : 'Include: class definition, method, and a main() that demonstrates the concept.',
     'Explain each part. Connect to the concept. Mention one common mistake.',
   ].join('\n');
   if (action === 'check_answer') return [
@@ -935,12 +1039,12 @@ function deterministicFeedback({ action, mode, topic, current, answer, hasMcq, c
       feedback: [
         `${prefix} ${current.title || 'this idea'} is one rule plus one example.`,
         `Simpler version: ${current.hint || current.content}`,
-        `Analogy: think of it like a checkpoint at a door. The door controls what can happen, so the inside state does not get broken.`,
+        `Analogy: think of it like a checklist. Each item helps you see whether the idea fits the situation.`,
         `Mini example: ${current.example || topicExample(topic, current).split('\n')[0]}`,
-        `One small check: ${current.question || 'Which part is unclear: the definition, the example, or the code?'}`,
+        `One small check: ${current.question || 'Which part is unclear: the definition, the example, or the application?'}`,
       ].join('\n\n'),
       professorCue: 'listening',
-      followUpQuestion: current.question || 'Which part feels unclear: the definition, the example, or the code?',
+      followUpQuestion: current.question || 'Which part feels unclear: the definition, the example, or the application?',
     };
   }
   if (action === 'give_example') {
@@ -1001,14 +1105,14 @@ function tutorReplyIsUseful(text, { action, topic, mode }) {
   if (/^\s*[{[]/.test(value) && /"?(explanation|question|hint|example|code)"?\s*:/i.test(value)) return false;
   if (/we will define|trace an example|placeholder|apply it\.?$/i.test(value)) return false;
   if (action === 'give_example') {
-    if (!/(example|for instance|```|class|node|stack|queue|hash|bankaccount)/i.test(value)) return false;
+    if (!/(example|for instance|scenario|case|worked|source|material|```|class|node|stack|queue|hash|bankaccount)/i.test(value)) return false;
     if (topicKind(topic) !== 'general' && !/```|class\s+\w+|new\s+\w+|Node|push|pop|enqueue|hash/i.test(value)) return false;
   }
   if (action === 'im_confused' && !/(simpler|analogy|think of|imagine|mini example|small check|jargon)/i.test(value)) return false;
   if (action === 'im_confused' && !/\?/.test(value)) return false;
   if (action === 'check_answer' && !/(correct|missing|better|not quite|feedback|sharpen|correction)/i.test(value)) return false;
   if (mode === 'socratic' && action !== 'give_example' && !/\?/.test(value)) return false;
-  if (mode === 'example' && action !== 'check_answer' && action !== 'im_confused' && !/```/.test(value)) return false;
+  if (mode === 'example' && topicKind(topic) !== 'general' && action !== 'check_answer' && action !== 'im_confused' && !/```/.test(value)) return false;
   return true;
 }
 
@@ -1019,10 +1123,10 @@ async function modelFeedbackOrFallback(s, current, answerText, correct, fallback
   const mode = normalizeTutorMode(ctx.mode || s.mode);
   const sources = tutorSourcesForFeedback(s);
   const prompt = [
-    modeSystemPrompt(mode),
+    modeSystemPrompt(mode, s.topic || s.concept),
     '',
     `Topic: ${s.topic || s.concept}.`,
-    actionPromptSection(action),
+    actionPromptSection(action, s.topic || s.concept),
     '',
     '- Be concrete and step-by-step.',
     '- If action is give_example for OOP/Data Structures, include a real runnable code example in a ``` block.',

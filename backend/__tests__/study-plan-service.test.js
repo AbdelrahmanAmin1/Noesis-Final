@@ -89,4 +89,33 @@ describe('study-plan.service', () => {
     const updated = studyPlans.completeTask(userId, firstTaskId);
     expect(updated.tasks.find(t => t.id === firstTaskId).status).toBe('completed');
   });
+
+  it('builds global plans from uploaded non-CS materials instead of defaulting to CS paths', () => {
+    const materialId = db.prepare(`INSERT INTO materials
+      (user_id, course_id, title, type, file_path, mime, size_bytes, status, progress, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`)
+      .run(userId, null, 'French Revolution Lecture', 'pdf', '/tmp/history.pdf', 'application/pdf', 1200, 'ready', 100, new Date().toISOString())
+      .lastInsertRowid;
+    db.prepare(`
+      INSERT INTO chunks (material_id, chapter_id, idx, text, token_count, chapter_title, heading, has_code, keywords_json)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `).run(
+      materialId,
+      null,
+      0,
+      'The French Revolution was shaped by social inequality, financial crisis, Enlightenment ideas, and conflict between the estates.',
+      34,
+      'French Revolution',
+      'Causes and Estates',
+      0,
+      JSON.stringify(['French Revolution', 'social inequality', 'financial crisis', 'Enlightenment', 'estates'])
+    );
+
+    const draft = studyPlans.createPlan(userId);
+    const focuses = draft.plan.dailyPlan.map(day => day.focusTopic).join(' ');
+
+    expect(draft.plan.learningMap.materialGrounding.combined).toBe(true);
+    expect(focuses).toMatch(/French Revolution|Causes|Estates|Inequality|Enlightenment/i);
+    expect(focuses).not.toMatch(/Encapsulation|Polymorphism|Stack Applications/i);
+  });
 });

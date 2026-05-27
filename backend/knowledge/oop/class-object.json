@@ -1,0 +1,153 @@
+{
+  "id": "oop_class_object",
+  "schemaVersion": 1,
+  "domain": "oop",
+  "topic": "Class and Object",
+  "aliases": ["Class/Object", "Class", "Object", "Instance", "Blueprint", "Instance Variable"],
+  "difficulty": "beginner",
+  "prerequisites": ["Variable", "Method", "Data Type"],
+  "nextTopics": ["Constructor", "Encapsulation", "Inheritance", "Abstraction"],
+  "definition": "A class is a blueprint that defines fields and methods, while an object is a concrete instance created from that class.",
+  "deepExplanation": "A class describes what kind of data and behavior a group of objects will have. It is not the actual object; it is the pattern used to create objects. Each object has its own identity and its own field values. Methods define behavior that objects can perform. Understanding the difference between class and object is the foundation for constructors, encapsulation, inheritance, and polymorphism.",
+  "whyItMatters": "Most OOP mistakes become easier to fix when learners can clearly separate the blueprint from the created instances.",
+  "analogy": "A class is like a cookie cutter, and objects are the cookies made from it. The cutter describes the shape, but each cookie is a separate thing.",
+  "codeExamples": [
+    {
+      "language": "java",
+      "title": "Student class and two Student objects",
+      "code": "class Student {\n  String name;\n  int score;\n\n  void study() {\n    score = score + 5;\n  }\n}\n\nStudent alice = new Student();\nalice.name = \"Alice\";\nalice.score = 80;\n\nStudent omar = new Student();\nomar.name = \"Omar\";\nomar.score = 70;\n\nalice.study();",
+      "walkthrough": [
+        {
+          "lineRange": "1-8",
+          "text": "Student is the class. It defines the fields and method that Student objects will have."
+        },
+        {
+          "lineRange": "2-3",
+          "text": "name and score are instance fields, so each object gets its own values."
+        },
+        {
+          "lineRange": "5-7",
+          "text": "study is behavior that can change the score of the object receiving the method call."
+        },
+        {
+          "lineRange": "10-12",
+          "text": "alice is one object created from the Student class with its own name and score."
+        },
+        {
+          "lineRange": "14-16",
+          "text": "omar is a second object with separate field values from alice."
+        },
+        {
+          "lineRange": "18",
+          "text": "Calling alice.study changes alice's score, not Omar's score."
+        }
+      ]
+    },
+    {
+      "language": "java",
+      "title": "Common class/object confusion",
+      "code": "Student.name = \"Alice\"; // incorrect for an instance field\n\nStudent alice = new Student();\nalice.name = \"Alice\"; // correct: use an object reference",
+      "walkthrough": [
+        {
+          "lineRange": "1",
+          "text": "Student is the class name, not a specific object, so it cannot receive an instance-field assignment."
+        },
+        {
+          "lineRange": "3-4",
+          "text": "alice is an object reference, so alice.name refers to the name field inside that specific object."
+        }
+      ]
+    }
+  ],
+  "diagrams": [
+    {
+      "type": "uml_class",
+      "title": "Class Blueprint and Object Instances",
+      "nodes": [
+        {
+          "id": "StudentClass",
+          "label": "Student class",
+          "fields": ["name", "score"],
+          "methods": ["study()"]
+        },
+        {
+          "id": "aliceObject",
+          "label": "alice object",
+          "fields": ["name = Alice", "score = 85"],
+          "methods": ["study()"]
+        },
+        {
+          "id": "omarObject",
+          "label": "omar object",
+          "fields": ["name = Omar", "score = 70"],
+          "methods": ["study()"]
+        }
+      ],
+      "edges": [
+        ["StudentClass", "aliceObject", "creates instance"],
+        ["StudentClass", "omarObject", "creates instance"]
+      ],
+      "caption": "One class can create many objects, and each object has its own field values."
+    }
+  ],
+  "commonMistakes": [
+    {
+      "mistake": "Thinking the class itself stores every object's instance data.",
+      "whyItHappens": "The class definition visually contains the field names, so it can look like the values live there.",
+      "correction": "Remember that the class defines fields, but each object stores its own field values."
+    },
+    {
+      "mistake": "Using the class name when an object reference is needed.",
+      "whyItHappens": "Beginners may write Student.name because name is written inside the Student class.",
+      "correction": "Use an object reference such as alice.name for instance fields."
+    },
+    {
+      "mistake": "Forgetting that two objects from the same class can have different state.",
+      "whyItHappens": "Students focus on the shared blueprint and miss that instances are separate.",
+      "correction": "Trace each object's fields independently when reading code."
+    }
+  ],
+  "bestPractices": [
+    "Name classes with nouns that describe the kind of object being modeled.",
+    "Create objects when you need actual state, not just a blueprint.",
+    "Use constructors to initialize objects consistently.",
+    "Distinguish instance fields from static fields before explaining object state."
+  ],
+  "complexity": null,
+  "miniQuiz": [
+    {
+      "question": "What is the difference between a class and an object?",
+      "options": ["A class is an instance; an object is a method", "A class is a blueprint; an object is an instance", "A class stores only numbers; an object stores only text", "There is no difference"],
+      "answer": "A class is a blueprint; an object is an instance",
+      "explanation": "The class defines fields and methods, while each object is a concrete instance created from that class."
+    },
+    {
+      "question": "If alice and omar are two Student objects, does alice.study() change Omar's score?",
+      "options": ["Yes, all objects share the same score", "No, it changes only alice's score", "It deletes Omar", "It changes the class name"],
+      "answer": "No, it changes only alice's score",
+      "explanation": "Instance fields belong to each object separately unless they are explicitly static."
+    }
+  ],
+  "flashcards": [
+    {
+      "front": "What is a class?",
+      "back": "A blueprint that defines the fields and methods objects of that type will have.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "What is an object?",
+      "back": "A concrete instance created from a class, with its own identity and field values.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "What does new Student() do in Java?",
+      "back": "It creates a new Student object from the Student class.",
+      "difficulty": "easy"
+    }
+  ],
+  "visualTemplates": ["uml_class", "blueprint_vs_instance", "object_state_table"],
+  "source": {
+    "type": "curated",
+    "license": "project-authored"
+  }
+}

@@ -99,4 +99,15 @@ describe('learning map hybrid layout', () => {
     expect(pathData).toMatch(/H/);
     expect(pathData).toMatch(/V/);
   });
+
+  it('wraps long SVG labels into bounded lines with ellipsis', () => {
+    const internals = loadLearningMapInternals();
+    const label = 'Appendicular skeleton upper limb bones lower limb bones shoulder girdle and pelvic girdle classification';
+    const lines = internals.wrapSvgLabel(label, 18, 3);
+
+    expect(lines.length).toBeLessThanOrEqual(3);
+    expect(lines.every(line => line.length <= 19)).toBe(true);
+    expect(lines.join(' ')).toMatch(/Appendicular skeleton/i);
+    expect(lines[lines.length - 1]).toMatch(/\.\.\.$/);
+  });
 });

@@ -81,11 +81,11 @@ function getChunks(userId, materialId, chapterId) {
   const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
   if (!m) throw new HttpError(404, 'material_not_found');
   if (chapterId) {
-    return db.prepare(`SELECT id, idx, text, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json
+    return db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json
                        FROM chunks WHERE material_id=? AND chapter_id=? ORDER BY idx`)
       .all(materialId, chapterId);
   }
-  return db.prepare(`SELECT id, idx, text, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json
+  return db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json
                      FROM chunks WHERE material_id=? ORDER BY idx`).all(materialId);
 }
 
@@ -164,8 +164,8 @@ async function processMaterial(materialId, jobId) {
     const chunks = chunkByChapter(text, chapters);
     if (chunks.length === 0) throw new Error('no_chunks_created');
     const insChunk = db.prepare(`INSERT INTO chunks
-      (material_id, chapter_id, idx, text, token_count, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (material_id, chapter_id, idx, text, token_count, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const inserted = [];
     db.transaction(() => {
       for (const c of chunks) {
@@ -175,6 +175,7 @@ async function processMaterial(materialId, jobId) {
           c.idx,
           c.text,
           c.token_count,
+          c.source_page || null,
           c.chapter_title || '',
           c.heading || '',
           c.slide_number || null,

@@ -52,7 +52,7 @@ const Landing = ({ onEnter, onAuth, isAuthed }) => {
 
       <section id="home" style={ls.hero} className="landing-hero">
         <div style={ls.heroText} className="fade-in">
-          <div className="chip" style={{ marginBottom: 22 }}>
+          <div className="chip" style={{ marginBottom: 'calc(22px * var(--app-density-scale))' }}>
             <span style={ls.liveDot} />
             <span>AI study system for OOP and Data Structures</span>
           </div>
@@ -132,20 +132,20 @@ const Landing = ({ onEnter, onAuth, isAuthed }) => {
         </div>
       </section>
 
-      <section id="how" style={{ ...ls.section, paddingTop: 24 }}>
-        <div style={{ marginBottom: 32 }}>
+      <section id="how" style={{ ...ls.section, paddingTop: 'calc(24px * var(--app-density-scale))' }}>
+        <div style={{ marginBottom: 'calc(32px * var(--app-density-scale))' }}>
           <div style={ls.eyebrow}>How it works</div>
           <h2 style={ls.h2}>A simple loop: ingest, understand, rehearse, improve.</h2>
         </div>
 
         <div className="card landing-showcase" style={ls.showcase}>
           <div style={ls.showcaseChrome}>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 'calc(6px * var(--app-density-scale))' }}>
               <span style={ls.chromeDot} />
               <span style={ls.chromeDot} />
               <span style={ls.chromeDot} />
             </div>
-            <span className="mono" style={{ fontSize: 10.5, color: 'var(--fg-3)' }}>noesis.local / materials / arrays-and-complexity</span>
+            <span className="mono" style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)' }}>noesis.local / materials / arrays-and-complexity</span>
           </div>
           <div style={ls.showcaseBody}>
             <StudyFlowPreview t={t} />
@@ -161,14 +161,14 @@ const Landing = ({ onEnter, onAuth, isAuthed }) => {
           Your first upload becomes the source for notes, flashcards, quizzes, tutor help,
           and dashboard analytics.
         </p>
-        <button className="btn btn-accent" onClick={() => auth('signup')} style={{ ...ls.cta, marginTop: 24 }}>
+        <button className="btn btn-accent" onClick={() => auth('signup')} style={{ ...ls.cta, marginTop: 'calc(24px * var(--app-density-scale))' }}>
           Create account <Icon.ArrowRight size={14} />
         </button>
       </section>
 
       <footer style={ls.footer}>
         <window.Logo size={16} />
-        <div style={{ fontSize: 11.5, color: 'var(--fg-3)' }}>Noesis AI Learning Assistant - graduation project build</div>
+        <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)' }}>Noesis AI Learning Assistant - graduation project build</div>
       </footer>
     </div>
   );
@@ -230,8 +230,8 @@ const StudyFlowPreview = ({ t }) => {
             <div key={title} style={{ ...ls.previewNode, transform: `translateY(${Math.sin(t * 1.4 + i) * 3}px)` }}>
               <div style={ls.previewIcon}><C size={13}/></div>
               <div>
-                <div style={{ fontSize: 12.5, color: 'var(--fg-0)', fontWeight: 500 }}>{title}</div>
-                <div style={{ fontSize: 11.5, color: 'var(--fg-3)', marginTop: 2 }}>{text}</div>
+                <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{title}</div>
+                <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(2px * var(--app-density-scale))' }}>{text}</div>
               </div>
             </div>
           );
@@ -265,15 +265,15 @@ const ls = {
     zIndex: 30,
   },
   navLinks: {
-    display: 'flex', gap: 6, fontSize: 13, color: 'var(--fg-2)',
+    display: 'flex', gap: 'calc(6px * var(--app-density-scale))', fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-2)',
     padding: '4px', background: 'color-mix(in oklab, var(--bg-1) 60%, transparent)',
     borderRadius: 999, border: '1px solid var(--line-soft)',
   },
   navLink: { cursor: 'pointer', transition: 'all 160ms var(--ease-out)', padding: '6px 14px', borderRadius: 999 },
-  navActions: { display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'flex-end' },
+  navActions: { display: 'flex', gap: 'calc(10px * var(--app-density-scale))', alignItems: 'center', justifyContent: 'flex-end' },
   hero: {
     display: 'grid', gridTemplateColumns: '1fr 1fr',
-    alignItems: 'center', gap: 60,
+    alignItems: 'center', gap: 'calc(60px * var(--app-density-scale))',
     padding: '80px 56px 110px', maxWidth: 1400, margin: '0 auto',
     position: 'relative', zIndex: 2,
   },
@@ -281,47 +281,47 @@ const ls = {
   liveDot: { width: 5, height: 5, borderRadius: 3, background: 'var(--accent)', boxShadow: '0 0 16px var(--accent)' },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 'clamp(48px, 7vw, 78px)', fontWeight: 300, lineHeight: 1.02,
+    fontSize: 'clamp(calc(48px * var(--app-font-scale)), 7vw, calc(78px * var(--app-font-scale)))', fontWeight: 300, lineHeight: 1.02,
     letterSpacing: '-0.025em', margin: '0 0 28px',
   },
   em: { fontStyle: 'italic', color: 'var(--accent)', fontWeight: 300 },
-  subtitle: { fontSize: 16, color: 'var(--fg-1)', lineHeight: 1.6, maxWidth: 520, margin: 0 },
-  ctaRow: { display: 'flex', gap: 10, marginTop: 36, flexWrap: 'wrap' },
-  cta: { padding: '12px 18px', fontSize: 14 },
-  trustRow: { marginTop: 44, display: 'flex', gap: 28, color: 'var(--fg-3)', fontSize: 11.5 },
-  trustTitle: { fontFamily: 'var(--font-display)', fontSize: 21, color: 'var(--fg-0)' },
+  subtitle: { fontSize: 'calc(16px * var(--app-font-scale))', color: 'var(--fg-1)', lineHeight: 1.6, maxWidth: 520, margin: 0 },
+  ctaRow: { display: 'flex', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(36px * var(--app-density-scale))', flexWrap: 'wrap' },
+  cta: { padding: '12px 18px', fontSize: 'calc(14px * var(--app-font-scale))' },
+  trustRow: { marginTop: 'calc(44px * var(--app-density-scale))', display: 'flex', gap: 'calc(28px * var(--app-density-scale))', color: 'var(--fg-3)', fontSize: 'calc(11.5px * var(--app-font-scale))' },
+  trustTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(21px * var(--app-font-scale))', color: 'var(--fg-0)' },
   heroVisual: { display: 'flex', alignItems: 'center', justifyContent: 'center' },
   section: { padding: '80px 56px', maxWidth: 1400, margin: '0 auto', position: 'relative', zIndex: 2 },
-  sectionHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 36, marginBottom: 48 },
-  sectionCopy: { fontSize: 12.5, color: 'var(--fg-2)', maxWidth: 340, textAlign: 'right', lineHeight: 1.6 },
-  eyebrow: { fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 14, fontWeight: 500 },
-  h2: { fontFamily: 'var(--font-display)', fontSize: 'clamp(34px, 5vw, 48px)', fontWeight: 300, letterSpacing: '-0.02em', lineHeight: 1.1, margin: 0, maxWidth: 780 },
-  methodGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 },
-  methodCard: { padding: 28, minHeight: 220, display: 'flex', flexDirection: 'column' },
-  cardTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 },
-  cardNum: { fontSize: 10.5, color: 'var(--fg-3)', letterSpacing: '0.1em' },
-  cardTitle: { fontFamily: 'var(--font-display)', fontSize: 22, margin: '0 0 10px', fontWeight: 400, letterSpacing: '-0.01em' },
-  cardText: { fontSize: 13, color: 'var(--fg-2)', margin: 0, lineHeight: 1.55 },
+  sectionHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 'calc(36px * var(--app-density-scale))', marginBottom: 'calc(48px * var(--app-density-scale))' },
+  sectionCopy: { fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-2)', maxWidth: 340, textAlign: 'right', lineHeight: 1.6 },
+  eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 'calc(14px * var(--app-density-scale))', fontWeight: 500 },
+  h2: { fontFamily: 'var(--font-display)', fontSize: 'clamp(calc(34px * var(--app-font-scale)), 5vw, calc(48px * var(--app-font-scale)))', fontWeight: 300, letterSpacing: '-0.02em', lineHeight: 1.1, margin: 0, maxWidth: 780 },
+  methodGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 'calc(16px * var(--app-density-scale))' },
+  methodCard: { padding: 'calc(28px * var(--app-density-scale))', minHeight: 220, display: 'flex', flexDirection: 'column' },
+  cardTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'calc(22px * var(--app-density-scale))' },
+  cardNum: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em' },
+  cardTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(22px * var(--app-font-scale))', margin: '0 0 10px', fontWeight: 400, letterSpacing: '-0.01em' },
+  cardText: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-2)', margin: 0, lineHeight: 1.55 },
   showcase: { overflow: 'hidden', borderRadius: 'var(--r-xl)', boxShadow: 'var(--shadow-lg)' },
   showcaseChrome: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--line)', background: 'var(--bg-1)' },
   chromeDot: { width: 10, height: 10, borderRadius: 5, background: 'var(--line-strong)' },
   showcaseBody: { background: 'var(--bg-1)' },
   preview: { display: 'grid', gridTemplateColumns: '1.1fr 1fr', minHeight: 430 },
-  previewSource: { padding: 28, borderRight: '1px solid var(--line)' },
-  previewPanel: { padding: 28, background: 'var(--bg-2)', display: 'flex', flexDirection: 'column', gap: 12, justifyContent: 'center' },
-  previewEyebrow: { fontSize: 11, color: 'var(--fg-3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12 },
-  previewTitle: { fontFamily: 'var(--font-display)', fontSize: 24, margin: '0 0 14px', fontWeight: 400 },
-  previewText: { fontSize: 13, color: 'var(--fg-1)', lineHeight: 1.7, margin: 0 },
-  previewTags: { marginTop: 20, display: 'flex', gap: 6, flexWrap: 'wrap' },
-  previewNode: { padding: 14, borderRadius: 'var(--r-md)', border: '1px solid var(--line)', background: 'var(--bg-1)', display: 'flex', gap: 12, alignItems: 'center', transition: 'transform 200ms var(--ease-out)' },
+  previewSource: { padding: 'calc(28px * var(--app-density-scale))', borderRight: '1px solid var(--line)' },
+  previewPanel: { padding: 'calc(28px * var(--app-density-scale))', background: 'var(--bg-2)', display: 'flex', flexDirection: 'column', gap: 'calc(12px * var(--app-density-scale))', justifyContent: 'center' },
+  previewEyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 'calc(12px * var(--app-density-scale))' },
+  previewTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(24px * var(--app-font-scale))', margin: '0 0 14px', fontWeight: 400 },
+  previewText: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-1)', lineHeight: 1.7, margin: 0 },
+  previewTags: { marginTop: 'calc(20px * var(--app-density-scale))', display: 'flex', gap: 'calc(6px * var(--app-density-scale))', flexWrap: 'wrap' },
+  previewNode: { padding: 'calc(14px * var(--app-density-scale))', borderRadius: 'var(--r-md)', border: '1px solid var(--line)', background: 'var(--bg-1)', display: 'flex', gap: 'calc(12px * var(--app-density-scale))', alignItems: 'center', transition: 'transform 200ms var(--ease-out)' },
   previewIcon: { width: 28, height: 28, borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   footerCta: { maxWidth: 1400, margin: '60px auto', padding: '80px 56px', textAlign: 'center', borderTop: '1px solid var(--line-soft)', borderBottom: '1px solid var(--line-soft)', position: 'relative', zIndex: 2 },
   footer: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '30px 56px', position: 'relative', zIndex: 2 },
   orbit: { position: 'relative', width: 520, height: 520, display: 'flex', alignItems: 'center', justifyContent: 'center' },
   orbitGlow: { position: 'absolute', inset: 40, background: 'radial-gradient(closest-side, var(--accent-glow), transparent 70%)', filter: 'blur(20px)', animation: 'drift 8s ease-in-out infinite' },
   ring: { position: 'absolute', border: '1px solid var(--line)', borderRadius: '50%', opacity: 0.45 },
-  orbitCore: { width: 72, height: 72, borderRadius: '50%', background: 'radial-gradient(circle at 30% 30%, var(--parchment), var(--accent) 70%)', boxShadow: '0 0 60px 10px var(--accent-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--bg-0)', fontFamily: 'var(--font-display)', fontSize: 30 },
-  orbitChip: { position: 'absolute', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 11, color: 'var(--fg-1)', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-sm)' },
+  orbitCore: { width: 72, height: 72, borderRadius: '50%', background: 'radial-gradient(circle at 30% 30%, var(--parchment), var(--accent) 70%)', boxShadow: '0 0 60px 10px var(--accent-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--bg-0)', fontFamily: 'var(--font-display)', fontSize: 'calc(30px * var(--app-font-scale))' },
+  orbitChip: { position: 'absolute', display: 'flex', alignItems: 'center', gap: 'calc(6px * var(--app-density-scale))', padding: '5px 10px', background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 999, fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-1)', whiteSpace: 'nowrap', boxShadow: 'var(--shadow-sm)' },
 };
 
 window.Landing = Landing;

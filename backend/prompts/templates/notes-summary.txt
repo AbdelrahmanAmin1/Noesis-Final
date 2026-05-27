@@ -1,8 +1,18 @@
 {{SYSTEM_BASE}}
 
-Task: Write a study-quality markdown note titled "{{TITLE}}". Use the source excerpts below. Cite chunk ids inline as [chunk:ID] when grounding a claim. Structure the note as: (1) Definition / Overview, (2) Key properties and characteristics, (3) Implementation details with code examples where relevant, (4) Time and space complexity analysis if applicable, (5) Common mistakes or misconceptions, (6) Exam-ready summary. Use h2/h3 headings, short paragraphs, and bullet lists where helpful.
+Task: Write a study-quality markdown note titled "{{TITLE}}". Use uploaded source excerpts for course-specific facts. Use educational context for trusted depth only when it matches the uploaded subject. Structure the note as: (1) Definition / Overview, (2) Key properties and characteristics, (3) concrete example or implementation details, with code only when relevant, (4) practical analysis or complexity only if applicable, (5) Common mistakes or misconceptions, (6) Exam-ready summary. Use h2/h3 headings, short paragraphs, and bullet lists where helpful.
 
 Source excerpts:
 {{SOURCE_EXCERPTS}}
+
+Educational context:
+{{EDUCATIONAL_CONTEXT}}
+
+Rules:
+- Uploaded material is the primary source for course-specific facts.
+- Curated knowledge is trusted expansion only when it matches the uploaded subject, not a replacement.
+- If uploaded source coverage is weak, briefly say the material has limited coverage, then teach using curated context if matched.
+- Do not include raw chunk IDs, raw internal JSON, or source identifiers in the visible note.
+- Never use placeholder phrases such as "We will define", "Code sketch", "Trace example", "Apply main rule", "Example here", or "Definition goes here".
 
 Output: ONLY the markdown body. No preamble.

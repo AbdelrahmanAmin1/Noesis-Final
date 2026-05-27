@@ -3,7 +3,7 @@
 You are choosing the real educational topic for a tutor video.
 
 Reject generic labels such as Document, File, Material, Untitled, Chapter 1, or uploaded filenames.
-Choose the most specific CS topic actually supported by the excerpts. Prefer OOP and Data Structures concepts such as Encapsulation, Inheritance, Polymorphism, Stack, Queue, Linked List, Binary Search Tree, Big-O, Array, Recursion, or Hash Table when supported.
+Choose the most specific educational topic actually supported by the excerpts. Prefer OOP and Data Structures concepts only when the source is clearly CS; otherwise choose the real business, marketing, science, humanities, or general topic from the material.
 
 Material title: "{{MATERIAL_TITLE}}"
 Rejected hint: "{{REJECTED_HINT}}"
@@ -12,4 +12,4 @@ Source excerpts:
 {{SOURCE_EXCERPTS}}
 
 Output STRICT JSON only:
-{"topic":"Encapsulation","alternatives":["Class","Object","Abstraction"]}
+{"topic":"Specific Source Topic","alternatives":["Key Concept One","Key Concept Two","Key Concept Three"]}

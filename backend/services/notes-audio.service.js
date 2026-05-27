@@ -23,6 +23,31 @@ function cleanText(value, max = 8000) {
     .slice(0, max);
 }
 
+function markdownToSpeechText(value, opts = {}) {
+  const mode = normalizeStyle(opts.mode || opts.style || 'brief');
+  let text = String(value || '');
+  text = text.replace(/```([\w-]+)?\n([\s\S]*?)```/g, (_m, lang, code) => {
+    if (mode === 'brief') return ' Code example omitted for the brief audio. ';
+    const lines = String(code || '').split(/\n+/).map(line => line.trim()).filter(Boolean);
+    const first = lines.find(line => !/^[{}()[\];,]+$/.test(line)) || '';
+    return ` Code example in ${lang || 'the note'}: it demonstrates the step described here. ${first ? `The first important line is ${first.replace(/[{}()[\];,*_`#|<>]/g, ' ')}.` : ''} `;
+  });
+  text = text
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/^>\s*/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, 'Next point: ')
+    .replace(/^\s*\d+[.)]\s+/gm, 'Next step: ')
+    .replace(/\|/g, ' ')
+    .replace(/[*_~`#]/g, '')
+    .replace(/\[chunk\s*:?\s*\d+\]/gi, '')
+    .replace(/source[_\s-]*chunk[_\s-]*id\s*:?\s*\d+/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return cleanText(text, opts.max || 10000);
+}
+
 function parseJson(value, fallback) {
   try { return value ? JSON.parse(value) : fallback; } catch (_) { return fallback; }
 }
@@ -48,9 +73,9 @@ function noteTopic(note) {
 function noteBody(note) {
   const lesson = parseJson(note.lesson_json, null);
   if (lesson && Array.isArray(lesson.sections)) {
-    return cleanText(lesson.sections.map(s => `${s.title || s.type || 'Section'}: ${s.content || ''}`).join('\n\n'));
+    return markdownToSpeechText(lesson.sections.map(s => `${s.title || s.type || 'Section'}: ${s.content || ''}`).join('\n\n'), { mode: 'detailed' });
   }
-  return cleanText(note.body_md || '');
+  return markdownToSpeechText(note.body_md || '', { mode: 'detailed' });
 }
 
 function fallbackScript(note, style) {
@@ -111,14 +136,14 @@ async function generateScript(note, style) {
           max_tokens: style === 'brief' ? 520 : 900,
           num_predict: style === 'brief' ? 520 : 900,
         });
-        const script = cleanText(generated && (generated.text || generated.output || generated), 10000);
+        const script = markdownToSpeechText(generated && (generated.text || generated.output || generated), { mode: style, max: 10000 });
         if (scriptLooksEducational(script, note, style)) return script;
       } catch (err) {
         log.warn('notes_audio_script_fallback', err.message || err);
       }
     }
   }
-  return fallbackScript(note, style);
+  return markdownToSpeechText(fallbackScript(note, style), { mode: style, max: 10000 });
 }
 
 function completedAudioFor(db, userId, noteId, style, voice, speed, hash) {
@@ -160,7 +185,7 @@ async function generateNoteAudio(userId, noteId, opts = {}, jobId = null) {
 
   try {
     updateJob({ status: 'running', progress: 20, message: 'Writing voice explanation script...' });
-    const script = await generateScript(note, style);
+    const script = markdownToSpeechText(await generateScript(note, style), { mode: style, max: 10000 });
     if (!scriptLooksEducational(script, note, style)) throw new Error('notes_audio_script_quality_failed');
     db.prepare('UPDATE note_audio SET script_md=?, updated_at=? WHERE id=?').run(script, nowIso(), audioId);
     updateJob({ progress: 60, message: 'Generating speech audio...' });
@@ -216,5 +241,5 @@ module.exports = {
   generateNoteAudio,
   latestAudio,
   publicAudioResult,
-  _internals: { fallbackScript, scriptLooksEducational, normalizeStyle },
+  _internals: { fallbackScript, scriptLooksEducational, normalizeStyle, markdownToSpeechText },
 };

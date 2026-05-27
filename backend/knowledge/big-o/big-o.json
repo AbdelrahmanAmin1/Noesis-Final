@@ -1,39 +1,144 @@
 {
-  "topic": "Big-O",
-  "aliases": ["Big O", "time complexity", "space complexity", "asymptotic analysis"],
-  "definition": "Big-O describes how an algorithm's resource use grows as the input size grows, focusing on the dominant growth rate.",
-  "deepExplanation": "Big-O is not a timer. It is a way to compare growth. O(1) means the work does not grow with input size, O(log n) means each step cuts the problem down, O(n) means one pass over the input, and O(n^2) usually means nested work over pairs. Constants and small details matter in real performance, but Big-O helps predict scaling.",
+  "id": "big_o_notation",
+  "schemaVersion": 1,
+  "domain": "big-o",
+  "topic": "Big-O Notation",
+  "aliases": ["Big O", "Big-O", "Time Complexity", "Space Complexity", "Asymptotic Analysis", "Growth Rate"],
+  "difficulty": "beginner",
+  "prerequisites": ["Loop", "Input Size", "Function Growth"],
+  "nextTopics": ["Array Complexity", "Linked List Complexity", "Binary Search", "Sorting Algorithms"],
+  "definition": "Big-O notation describes how an algorithm's resource use grows as input size grows, focusing on the dominant growth pattern instead of exact runtime seconds.",
+  "deepExplanation": "Big-O answers the question: what happens to the amount of work when n gets large? It ignores machine speed and small constant details so algorithms can be compared by growth rate. O(1) stays constant as n grows. O(log n) grows slowly because the problem shrinks by a factor each step. O(n) grows in proportion to the input. O(n log n) often appears in efficient divide-and-conquer sorting. O(n^2) often appears when code compares many pairs with nested loops.",
+  "whyItMatters": "Big-O lets students predict whether code will scale before they run it on a huge input.",
+  "analogy": "Imagine grading assignments. Checking the first paper only is O(1). Checking every paper is O(n). Comparing every paper with every other paper is O(n^2).",
   "codeExamples": [
     {
       "language": "java",
-      "title": "Common growth patterns",
-      "code": "int first(int[] a) { return a[0]; }          // O(1)\n\nboolean contains(int[] a, int x) {             // O(n)\n  for (int value : a) if (value == x) return true;\n  return false;\n}\n\nvoid printPairs(int[] a) {                     // O(n^2)\n  for (int left : a)\n    for (int right : a)\n      System.out.println(left + \",\" + right);\n}"
+      "title": "Common growth patterns in Java",
+      "code": "int first(int[] values) {\n  return values[0];\n}\n\nboolean contains(int[] values, int target) {\n  for (int value : values) {\n    if (value == target) {\n      return true;\n    }\n  }\n  return false;\n}\n\nvoid printPairs(int[] values) {\n  for (int left : values) {\n    for (int right : values) {\n      System.out.println(left + \",\" + right);\n    }\n  }\n}",
+      "walkthrough": [
+        {
+          "lineRange": "1-3",
+          "text": "first reads one array element, so the work does not grow with n. This is O(1)."
+        },
+        {
+          "lineRange": "5-12",
+          "text": "contains may inspect every value once, so the worst-case work grows linearly. This is O(n)."
+        },
+        {
+          "lineRange": "14-20",
+          "text": "printPairs has one loop inside another over the same input, so it performs about n times n operations. This is O(n^2)."
+        }
+      ]
+    },
+    {
+      "language": "pseudocode",
+      "title": "Binary search as O(log n)",
+      "code": "while low <= high:\n  mid = middle index\n  if values[mid] == target: return mid\n  if values[mid] < target: low = mid + 1\n  else: high = mid - 1",
+      "walkthrough": [
+        {
+          "lineRange": "1",
+          "text": "The loop continues only while there is still a search range."
+        },
+        {
+          "lineRange": "2-5",
+          "text": "Each step discards about half of the remaining values, which creates logarithmic growth."
+        }
+      ]
     }
   ],
   "diagrams": [
     {
       "type": "big_o_chart",
+      "title": "Growth Rate Comparison",
       "nodes": ["O(1)", "O(log n)", "O(n)", "O(n log n)", "O(n^2)"],
+      "edges": [
+        ["O(1)", "O(log n)", "slower growth to faster growth"],
+        ["O(log n)", "O(n)", "slower growth to faster growth"],
+        ["O(n)", "O(n log n)", "slower growth to faster growth"],
+        ["O(n log n)", "O(n^2)", "slower growth to faster growth"]
+      ],
+      "caption": "As input grows, higher-order growth rates become dramatically more expensive."
+    },
+    {
+      "type": "complexity_table",
+      "title": "Loop Pattern Table",
+      "nodes": ["Single statement: O(1)", "Half each step: O(log n)", "One loop: O(n)", "Divide and merge: O(n log n)", "Nested loops: O(n^2)"],
       "edges": [],
-      "operations": ["compare growth curves", "identify dominant term"],
-      "caption": "As n grows, the dominant term explains the shape of the cost curve."
+      "caption": "Common code shapes often map to common Big-O categories."
     }
   ],
   "commonMistakes": [
-    "Treating Big-O as exact runtime instead of growth rate.",
-    "Keeping constants and lower-order terms in the final Big-O answer.",
-    "Ignoring worst-case input shape for data structures such as unbalanced BSTs."
+    {
+      "mistake": "Treating Big-O as exact runtime seconds.",
+      "whyItHappens": "Students naturally connect performance to time on a laptop.",
+      "correction": "Use Big-O to describe growth as n changes; actual seconds also depend on hardware, constants, and implementation."
+    },
+    {
+      "mistake": "Keeping constants and lower-order terms in the final answer.",
+      "whyItHappens": "The counting step may produce expressions like 3n + 10.",
+      "correction": "For Big-O, keep the dominant growth term, so 3n + 10 becomes O(n)."
+    },
+    {
+      "mistake": "Assuming every nested loop is automatically O(n^2).",
+      "whyItHappens": "Nested loops are a useful warning sign, but their ranges still matter.",
+      "correction": "Count how many times each loop can run; nested loops over different bounded ranges may not be n squared."
+    }
+  ],
+  "bestPractices": [
+    "Define n before analyzing code.",
+    "Analyze worst case unless the problem asks for best or average case.",
+    "Identify the dominant term after counting major operations.",
+    "Explain Big-O with code shape and input growth, not only a memorized label."
   ],
   "complexity": {
     "constant": "O(1)",
     "logarithmic": "O(log n)",
     "linear": "O(n)",
     "linearithmic": "O(n log n)",
-    "quadratic": "O(n^2)"
+    "quadratic": "O(n^2)",
+    "exponential": "O(2^n)"
   },
-  "practiceQuestions": [
-    "What is the Big-O of one loop over n items?",
-    "Why do nested loops over the same array often produce O(n^2)?"
+  "miniQuiz": [
+    {
+      "question": "What is the Big-O of one loop that may inspect every item once?",
+      "options": ["O(1)", "O(log n)", "O(n)", "O(n^2)"],
+      "answer": "O(n)",
+      "explanation": "One pass over n items grows in direct proportion to the input size."
+    },
+    {
+      "question": "Why is Big-O not the same as runtime seconds?",
+      "options": ["It ignores growth", "It measures memory addresses", "It describes scaling as n changes", "It only applies to Java"],
+      "answer": "It describes scaling as n changes",
+      "explanation": "Big-O compares growth rates, while runtime seconds also depend on hardware, constants, and implementation details."
+    },
+    {
+      "question": "What does O(log n) usually mean in an algorithm?",
+      "options": ["The algorithm checks every pair", "The problem size shrinks by a factor each step", "The algorithm never loops", "The input must be a string"],
+      "answer": "The problem size shrinks by a factor each step",
+      "explanation": "Binary search is O(log n) because each comparison removes about half of the remaining search space."
+    }
   ],
-  "visualTemplates": ["big_o_chart", "complexity_table", "comparison"]
+  "flashcards": [
+    {
+      "front": "What does Big-O describe?",
+      "back": "How resource use grows as input size grows, focusing on the dominant growth rate.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "What is a common code shape for O(n^2)?",
+      "back": "Nested loops that each range over the same n-sized input.",
+      "difficulty": "easy"
+    },
+    {
+      "front": "Why does binary search have O(log n) time?",
+      "back": "Each step discards about half of the remaining search space.",
+      "difficulty": "medium"
+    }
+  ],
+  "visualTemplates": ["big_o_chart", "complexity_table", "growth_curve_comparison"],
+  "source": {
+    "type": "curated",
+    "license": "project-authored"
+  }
 }

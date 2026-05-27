@@ -6,14 +6,18 @@ const { getDb } = require('../config/db');
 const env = require('../config/env');
 const ai = require('./ai.service');
 const lessons = require('./lesson.service');
+const educationalContext = require('./educational-context.service');
+const knowledgeService = require('./knowledge.service');
 const materialDiagnostics = require('./material-diagnostics.service');
 const materialUnderstanding = require('./material-understanding.service');
 const groundedEnrichment = require('./grounded-enrichment.service');
 const { retrieveLessonContext, groundingTier: computeGroundingTier } = require('./rag.service');
+const domainDetection = require('./domain-detection.service');
 const { scoreVideoScript } = require('./video-quality.service');
 const renderer = require('./renderer.service');
 const visualRegistry = require('../utils/visual-registry');
 const codeWindow = require('../utils/code-window');
+const sourceVisualCandidates = require('./source-visual-candidates.service');
 const { HttpError } = require('../middleware/error');
 
 function nowIso() { return new Date().toISOString(); }
@@ -33,6 +37,8 @@ const CRITICAL_PATTERNS = [
   /^domain:oop_missing_class_object_visual$/,
   /^domain:data_structure_missing_operation_visual$/,
   /^domain:algorithm_missing_flow_or_complexity_visual$/,
+  /^domain:missing_code_scene$/,
+  /^domain:unrelated_cs_injection$/,
 ];
 const INFO_PATTERNS = [
   /^enrichment:/,
@@ -64,6 +70,17 @@ const WARNING_MESSAGES = {
   'domain:missing_required_visual:big_o_growth': { label: 'Missing Big-O growth visual', fix: 'Generate Big-O chart' },
   'storyboard:too_few_scenes': { label: 'Too few scenes (minimum 5)', fix: null },
   'storyboard:insufficient_visual_variety': { label: 'Insufficient visual variety (need 4+ types)', fix: null },
+  'domain:missing_code_scene': { label: 'Missing required code scene for this CS topic', fix: null },
+  'domain:missing_common_mistake_scene': { label: 'Missing common mistake scene', fix: null },
+  'domain:missing_checkpoint_scene': { label: 'Missing checkpoint question scene', fix: null },
+  'domain:missing_recap_scene': { label: 'Missing recap scene', fix: null },
+  'domain:missing_concrete_example_scene': { label: 'Missing concrete example or scenario scene', fix: null },
+  'domain:unrelated_cs_injection': { label: 'Unrelated CS terms appeared in non-CS storyboard', fix: null },
+  'domain:generic_visual_nodes_only': { label: 'Visual nodes are too generic', fix: null },
+  'domain:queue_missing_fifo_operations': { label: 'Queue storyboard needs FIFO, enqueue, dequeue, front, and rear', fix: null },
+  'domain:bst_missing_search_order': { label: 'BST storyboard needs root, left/right order, search/insert path, and inorder traversal', fix: null },
+  'domain:big_o_missing_growth_rates': { label: 'Big-O storyboard needs input size, growth rate, and common complexity classes', fix: null },
+  'curated:missing_required_example': { label: 'Curated topic matched, but its concrete example is missing', fix: null },
   'topic:low_confidence': { label: 'Material understanding confidence is low', fix: null },
   'topic:generic_or_missing_topic': { label: 'Topic is generic or missing', fix: null },
   'topic:unsupported_domain': { label: 'Domain is not fully supported', fix: null },
@@ -173,6 +190,12 @@ function requiredVisualEvidenceFor(visualType, topic = '') {
     code_walkthrough: ['code line', 'highlight', 'reason'],
     process_flow: ['ordered step', 'state change', 'result'],
     comparison_contrast: ['before or mistake', 'after or correction', 'relationship'],
+    concept_cards: ['source concept', 'supporting detail', 'review prompt'],
+    classification_table: ['category', 'definition or detail', 'source term'],
+    comparison_table: ['side-by-side idea', 'difference', 'source detail'],
+    source_page_reference: ['source page', 'heading', 'evidence'],
+    source_slide_reference: ['source slide', 'heading', 'evidence'],
+    no_visual: ['source narration', 'learner takeaway'],
     learning_objectives: ['learning target', 'topic term'],
     summary_path: ['takeaway', 'topic term'],
     concept_map: ['topic term', 'source-backed node'],
@@ -298,8 +321,26 @@ function visualTypeFromIntent(scene, topic, rawType = '', visualData = null) {
   const type = sceneTypeOf(scene);
   const lower = visualContextFor(scene, topic, visualData).toLowerCase();
   const raw = visualRegistry._internals.key(rawType);
+  const sceneDomain = scene.domain || scene.detectedDomain || scene.materialDomain || '';
+  const generalScene = sceneDomain && isGeneralStoryboardDomain(sceneDomain);
 
-  if (type === 'objectives') return 'learning_objectives';
+  if (generalScene) {
+    if (['no_visual', 'none', 'cards', 'concept_cards', 'table', 'classification_table', 'comparison_table', 'source_page_reference', 'source_slide_reference', 'source_reference'].includes(raw)) return '';
+    if (type === 'objectives') return 'concept_cards';
+    if (type === 'recap' || type === 'checkpoint' || type === 'summary') return 'concept_cards';
+    if (type === 'common_mistakes' || raw === 'comparison' || raw === 'before_after') return 'comparison_table';
+    if (/\b(classification|classified|types?|categories|includes?|consists of|divided into|groups?)\b/.test(lower)) return 'classification_table';
+    if (/\b(compare|contrast|versus|difference|advantage|disadvantage)\b/.test(lower)) return 'comparison_table';
+    if (/\b(process|cycle|sequence|steps?|timeline|phase)\b/.test(lower)) return 'process_flow';
+    if (type === 'hook') return 'no_visual';
+    return 'concept_cards';
+  }
+
+  if (type === 'objectives') {
+    return /\b(class(?:es)?|object(?:s)?|encapsulation|inheritance|polymorphism|abstraction|interface|linked list|stack|queue|tree|hash|algorithm|big.?o|complexity|data structure)\b/.test(lower)
+      ? 'learning_objectives'
+      : 'summary_path';
+  }
   if (type === 'recap' || type === 'checkpoint' || type === 'summary') return 'summary_path';
   if (type === 'code_example' || type === 'code_walkthrough' || raw === 'code' || raw === 'code_example' || scene.codeFocus || scene.code_focus || scene.codeSnippet || scene.code && scene.code.content) {
     return 'code_walkthrough';
@@ -329,10 +370,15 @@ function visualTemplateFor(scene, topic) {
   const visualData = scene.visual || {};
   const type = visualData.type || scene.visual_type || scene.visualType || scene.visualTemplate || '';
   const contextText = visualContextFor(scene, topic, visualData);
+  const sceneDomain = scene.domain || scene.detectedDomain || scene.materialDomain || '';
+  const generalScene = sceneDomain && isGeneralStoryboardDomain(sceneDomain);
+  const explicitFirst = visualRegistry.resolveVisualType(type, { topic, text: contextText });
+  if (generalScene && explicitFirst.supported && explicitFirst.config && explicitFirst.config.general && explicitFirst.canonical !== 'concept_map') return explicitFirst.canonical;
+  if (explicitFirst.supported && explicitFirst.config && explicitFirst.config.general && explicitFirst.canonical !== 'concept_map') return explicitFirst.canonical;
   const matrixType = visualTypeFromIntent(scene, topic, type, visualData);
   if (matrixType) return matrixType;
 
-  const explicit = visualRegistry.resolveVisualType(type || 'concept_map', { topic, text: contextText });
+  const explicit = explicitFirst.supported ? explicitFirst : visualRegistry.resolveVisualType(type || 'concept_map', { topic, text: contextText });
   if (explicit.supported) {
     if (explicit.config && explicit.config.conceptMap && !conceptMapAllowedForScene(scene, explicit.canonical)) {
       return visualRegistry.normalizeVisualType(type, { topic, text: contextText });
@@ -372,9 +418,19 @@ function significantTopicWords(topic) {
 
 function hasConcreteVisualData(scene, topic) {
   const data = scene.visualElements || scene.visualData || scene.visual || {};
+  const requestedType = data.type || scene.visualType || scene.visualTemplate || '';
+  const resolved = visualRegistry.resolveVisualType(requestedType, {
+    topic,
+    text: `${scene.sceneTitle || scene.title || ''} ${scene.narration || ''} ${visualLabel(data)}`,
+  });
+  const canonical = resolved.supported ? resolved.canonical : '';
+  if (canonical === 'no_visual') return true;
   const nodes = Array.isArray(data.nodes) ? data.nodes : [];
   const edges = Array.isArray(data.edges) ? data.edges : [];
   const operations = Array.isArray(data.operations) ? data.operations : [];
+  if (['concept_cards', 'classification_table', 'comparison_table', 'source_page_reference', 'source_slide_reference'].includes(canonical)) {
+    return nodes.length + operations.length >= 2 || String(data.caption || '').trim().length >= 20;
+  }
   const labels = [
     data.caption,
     visualLabel(nodes),
@@ -406,6 +462,12 @@ const VISUAL_EXPECTED_TERMS = {
   code_walkthrough: ['code', 'line', 'class', 'method', 'private', 'public', 'loop', 'return', 'highlight'],
   process_flow: ['step', 'flow', 'state', 'operation', 'input', 'output', 'result'],
   comparison_contrast: ['before', 'after', 'bad', 'correct', 'mistake', 'fix', 'compare', 'valid', 'invalid', 'access'],
+  concept_cards: ['source', 'concept', 'detail', 'review', 'section'],
+  classification_table: ['category', 'type', 'classification', 'detail', 'section'],
+  comparison_table: ['compare', 'contrast', 'difference', 'mistake', 'correction'],
+  source_page_reference: ['source', 'page', 'heading', 'evidence', 'diagram'],
+  source_slide_reference: ['source', 'slide', 'heading', 'evidence', 'diagram'],
+  no_visual: ['source', 'narration', 'takeaway'],
   learning_objectives: ['objective', 'goal', 'learn', 'topic', 'target'],
   summary_path: ['summary', 'takeaway', 'recap', 'topic', 'rule'],
   concept_map: ['concept', 'topic', 'source', 'term'],
@@ -556,6 +618,15 @@ function visualPayloadHasGenericScaffold(data = {}) {
   return visualNodeLabelsFrom(data).some(label => GENERIC_VISUAL_LABEL_RE.test(label));
 }
 
+function visualLabelIsGeneric(label = '') {
+  const text = String(label || '').trim();
+  if (!text) return true;
+  if (GENERIC_VISUAL_LABEL_RE.test(text)) return true;
+  const words = [...visualWords(text)];
+  if (!words.length) return true;
+  return words.every(word => GENERIC_VISUAL_WORDS.has(word) || /^(definition|rule|boundary|example|practice|concept|topic|summary|takeaway|step)$/i.test(word));
+}
+
 function topicSpecificVisualNodes(scene, topic, canonicalType) {
   const text = sourceEvidenceText(scene, topic);
   const lower = text.toLowerCase();
@@ -589,6 +660,12 @@ function topicSpecificVisualNodes(scene, topic, canonicalType) {
   if (canonicalType === 'big_o_growth' || /\b(big.?o|complexity|growth|o\()\b/.test(lower)) {
     return ['input size n', 'growth rate', 'operation count', 'complexity label'];
   }
+  if (canonicalType === 'concept_cards' || canonicalType === 'classification_table' || canonicalType === 'comparison_table' || canonicalType === 'source_page_reference' || canonicalType === 'source_slide_reference' || canonicalType === 'no_visual') {
+    const evidenceWords = [...new Set(significantTopicWords(text))]
+      .filter(word => !/^(document|handout|chunk|source|material|should|would|could|scene|visual)$/.test(word))
+      .slice(0, 5);
+    return evidenceWords.length ? evidenceWords : [topic || 'source topic', 'source detail', 'review question'];
+  }
   const topicWords = String(topic || 'Topic')
     .replace(/\s+in\s+\w+$/i, '')
     .split(/\s+and\s+|\s*,\s*|\s+/)
@@ -616,6 +693,12 @@ function topicSpecificVisualOperations(canonicalType) {
     code_walkthrough: ['highlight line', 'explain role', 'connect to diagram'],
     process_flow: ['show step 1', 'advance state', 'show result'],
     comparison_contrast: ['show incorrect case', 'show corrected case', 'highlight difference'],
+    concept_cards: ['reveal source concept', 'connect evidence', 'ask review prompt'],
+    classification_table: ['name category', 'show defining detail', 'connect to source'],
+    comparison_table: ['show first idea', 'show contrasting idea', 'highlight source-backed difference'],
+    source_page_reference: ['show source page cue', 'name heading', 'connect evidence'],
+    source_slide_reference: ['show source slide cue', 'name heading', 'connect evidence'],
+    no_visual: ['focus on narration', 'name source evidence'],
     learning_objectives: ['reveal source-backed goal', 'connect goal to topic'],
     summary_path: ['ask checkpoint question', 'connect answer to source', 'show key takeaway'],
     concept_map: ['link source-backed concept', 'show relationship'],
@@ -710,6 +793,32 @@ function validateVisualRelevance(scene, topic = '') {
   const narrationOverlap = wordOverlapCount(visualWordSet, narrationText);
   const expectedInNarration = resolution.supported ? hasExpectedVisualTerms(canonicalType, narrationText) : false;
   const conceptMap = !!(resolution.supported && resolution.config && resolution.config.conceptMap);
+  const optionalNoVisual = canonicalType === 'no_visual';
+  const sourceLedGeneralVisual = ['concept_cards', 'classification_table', 'comparison_table', 'source_page_reference', 'source_slide_reference'].includes(canonicalType);
+
+  if (optionalNoVisual) {
+    const hasSource = Array.isArray(scene.sourceEvidence) && scene.sourceEvidence.length > 0;
+    const hasTeachingText = String(scene.narration || scene.learningPoint || scene.studentFacingGoal || '').trim().length >= 80;
+    return {
+      passed: hasSource || hasTeachingText,
+      warnings: hasSource || hasTeachingText ? [] : ['missing_source_evidence'],
+      visualType: 'no_visual',
+      supported: true,
+      topicMatch: true,
+      learningPointMatch: true,
+      narrationMatch: true,
+      meaningfulLabels: true,
+      concreteElements: true,
+      nonDecorative: true,
+      metrics: {
+        labelCount: labels.length,
+        meaningfulLabelCount: meaningfulLabels,
+        learningOverlap,
+        narrationOverlap,
+        expectedTermsMatched: 0,
+      },
+    };
+  }
 
   if (!resolution.supported) addWarning(warnings, `unsupported_visual_type:${canonicalType || 'missing'}`);
   if (!concreteElements) addWarning(warnings, 'missing_visual_elements');
@@ -725,10 +834,16 @@ function validateVisualRelevance(scene, topic = '') {
   }
 
   if (resolution.supported && !conceptMap) {
+    const sourceLedOk = sourceLedGeneralVisual &&
+      (meaningfulLabels > 0 || concreteElements) &&
+      (Array.isArray(scene.sourceEvidence) && scene.sourceEvidence.length > 0 || learningOverlap > 0 || narrationOverlap > 0);
     if (!expectedInVisual && learningOverlap < 1 && !hasCode) addWarning(warnings, 'unrelated_diagram');
     if (expectedInVisual && learningOverlap < 1) addWarning(warnings, 'unrelated_diagram');
     if (narrationText && !expectedInNarration && narrationOverlap < 1 && !hasCode) {
       addWarning(warnings, 'narration_visual_mismatch');
+    }
+    if (sourceLedOk) {
+      warnings.splice(0, warnings.length, ...warnings.filter(w => !['unrelated_diagram', 'narration_visual_mismatch', 'vague_visual'].includes(w)));
     }
     if (hasCode && canonicalType === 'code_walkthrough' && !/code|line|highlight|method|class|private|public|loop|return/i.test(`${narrationText} ${learningText}`)) {
       addWarning(warnings, 'narration_visual_mismatch');
@@ -976,6 +1091,115 @@ function sourceEvidenceChunkCount(understanding) {
   return chunkIds.length ? new Set(chunkIds.map(String)).size : evidence.length;
 }
 
+function isSupportedCsDomain(domain) {
+  return SUPPORTED_DOMAINS.has(domain);
+}
+
+function isGeneralStoryboardDomain(domain) {
+  return !isSupportedCsDomain(domain);
+}
+
+function sourceHeadingForChunk(chunk) {
+  return String(chunk && (chunk.chapter_title || chunk.slide_title || chunk.section_title || chunk.heading) || '').replace(/\s+/g, ' ').trim();
+}
+
+function storyboardKeywordList(value) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function isGenericStoryboardLabel(value) {
+  const text = String(value || '').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text) return true;
+  if (/^(document|file|material|upload|uploaded material|source|lesson|chapter\s*\d+|slide\s*\d+|section\s*\d+|unit\s*\d+|module\s*\d+|top|home|welcome|contents?|table of contents|index|appendix|acknowledgements?|references?|quiz(?:zes)?|quiz answer keys?|answer keys?|answers?|objectives?|learning objectives?|untitled|\d+)$/i.test(text)) return true;
+  if (!/\s/.test(text) && /[a-z]*\d+[a-z0-9]*/i.test(text)) return true;
+  return false;
+}
+
+function titleCaseStoryboardLabel(value) {
+  return String(value || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .slice(0, 80);
+}
+
+function generalKeyConceptsFromChunks(chunks, topic = '', max = 8) {
+  const understood = materialUnderstanding.understandGeneralFromChunks(chunks || [], { hint: topic });
+  if (Array.isArray(understood.keyConcepts) && understood.keyConcepts.length) {
+    return understood.keyConcepts.slice(0, max);
+  }
+  const seen = new Set();
+  const out = [];
+  const add = (value) => {
+    const label = titleCaseStoryboardLabel(value);
+    if (isGenericStoryboardLabel(label)) return;
+    const key = label.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(label);
+  };
+  for (const chunk of chunks || []) {
+    add(sourceHeadingForChunk(chunk));
+    for (const keyword of storyboardKeywordList(chunk && chunk.keywords_json)) add(keyword);
+    if (out.length >= max) break;
+  }
+  if (!out.length && !isGenericStoryboardLabel(topic)) add(topic);
+  return out.slice(0, max);
+}
+
+function sourceEvidenceFromChunks(chunks, max = 4) {
+  return (chunks || []).slice(0, max).map((chunk, index) => {
+    const text = String(chunk && chunk.text || '').replace(/\s+/g, ' ').trim();
+    return {
+      chunkId: chunk && (chunk.id || chunk.chunk_id) || index + 1,
+      quote: text.slice(0, 260),
+      heading: sourceHeadingForChunk(chunk),
+      chapterTitle: chunk && chunk.chapter_title || '',
+      slideNumber: chunk && chunk.slide_number || null,
+      sourcePage: chunk && chunk.source_page || null,
+      score: typeof (chunk && chunk.score) === 'number' ? chunk.score : null,
+    };
+  }).filter(item => item.quote || item.heading);
+}
+
+function generalUnderstandingFromChunks({ understanding, domainInfo, chunks, material, concept }) {
+  const general = materialUnderstanding.understandGeneralFromChunks(chunks || [], {
+    explicitQuery: concept,
+    hint: concept,
+    title: material && material.title,
+    materialTitle: material && material.title,
+    domainInfo,
+  });
+  const keyConcepts = Array.isArray(general.keyConcepts) && general.keyConcepts.length
+    ? general.keyConcepts
+    : generalKeyConceptsFromChunks(chunks, concept || material && material.title);
+  const topic = general.topic || (!isGenericStoryboardLabel(concept) ? concept : (!isGenericStoryboardLabel(material && material.title) ? material.title : (keyConcepts[0] || 'Study Notes from Uploaded Material')));
+  return {
+    ...(understanding || {}),
+    topic,
+    normalizedTopic: topic,
+    domain: (domainInfo && domainInfo.domain) || general.domain || 'general',
+    subdomain: (domainInfo && domainInfo.subdomain) || general.subdomain || null,
+    confidence: Math.max(Number(understanding && understanding.confidence || 0), Number(general.confidence || 0), 0.45),
+    source: general.source || 'material_source_terms',
+    keyConcepts,
+    headings: general.headings || [],
+    sourceEvidence: Array.isArray(general.sourceEvidence) && general.sourceEvidence.length
+      ? general.sourceEvidence
+      : sourceEvidenceFromChunks(chunks, 5),
+    representativeExcerpts: general.representativeExcerpts || [],
+    sourceOutline: general.sourceOutline || null,
+    alternatives: keyConcepts.slice(1, 5).map(label => ({ topic: label, score: 0.5, evidence: ['source term'] })),
+    readyForGeneration: true,
+  };
+}
+
 function sceneCanonicalVisual(scene, topic) {
   const visualText = [
     scene.sceneTitle,
@@ -1142,6 +1366,9 @@ function topicVisualStandardWarnings(storyboard, visualTypes) {
       if (!containsAll(queueText, [['queue'], ['enqueue'], ['dequeue'], ['front'], ['rear']])) {
         addWarning(warnings, 'domain:queue_missing_enqueue_dequeue_visual');
       }
+      if (!containsAll(`${queueText} ${allText}`, [['fifo', 'first in', 'first-in'], ['enqueue'], ['dequeue'], ['front'], ['rear']])) {
+        addWarning(warnings, 'domain:queue_missing_fifo_operations');
+      }
     }
     if (topic.includes('hash')) {
       const hashText = visualTextForTypes(storyboard, ['hash_table_operation', 'code_walkthrough']);
@@ -1153,6 +1380,12 @@ function topicVisualStandardWarnings(storyboard, visualTypes) {
       const treeText = visualTextForTypes(storyboard, ['tree_visual', 'code_walkthrough']);
       if (!containsAll(treeText, [['root'], ['child', 'parent'], ['edge', 'branch'], ['traversal', 'leaf', 'visit']])) {
         addWarning(warnings, 'domain:tree_missing_hierarchy_traversal_visual');
+      }
+    }
+    if (topic.includes('binary search tree') || topic.includes('bst')) {
+      const bstText = visualTextForTypes(storyboard, ['tree_visual', 'code_walkthrough']);
+      if (!containsAll(`${bstText} ${allText}`, [['root'], ['left'], ['right'], ['search', 'insert'], ['inorder', 'in-order']])) {
+        addWarning(warnings, 'domain:bst_missing_search_order');
       }
     }
   }
@@ -1167,7 +1400,17 @@ function topicVisualStandardWarnings(storyboard, visualTypes) {
       if (!containsAll(bigOText, [['input', 'size', 'n'], ['growth', 'complexity', 'cost'], ['o(', 'constant', 'linear', 'quadratic']])) {
         addWarning(warnings, 'domain:big_o_missing_growth_complexity_visual');
       }
+      if (!containsAll(`${bigOText} ${allText}`, [['input', 'size', 'n'], ['growth', 'rate'], ['o(1)'], ['o(log n)'], ['o(n)'], ['o(n log n)', 'o(n^2)', 'quadratic']])) {
+        const hasCoreRates = containsAll(`${bigOText} ${allText}`, [
+          ['input', 'size', 'n'],
+          ['growth', 'rate'],
+          ['o(1)', 'constant'],
+          ['o(n)', 'linear'],
+          ['o(n log n)', 'o(n^2)', 'quadratic'],
+        ]);
+        if (!hasCoreRates) addWarning(warnings, 'domain:big_o_missing_growth_rates');
     }
+  }
   }
 
   return warnings;
@@ -1214,17 +1457,147 @@ function hasCodeScene(storyboard) {
   return (storyboard.scenes || []).some(scene => !!codeSnippetFor(scene, {}));
 }
 
+function sceneText(scene) {
+  return [
+    scene && scene.type,
+    scene && scene.sceneType,
+    scene && scene.title,
+    scene && scene.sceneTitle,
+    scene && scene.learningPoint,
+    scene && scene.studentFacingGoal,
+    scene && scene.narration,
+    Array.isArray(scene && scene.onScreenText) ? scene.onScreenText.join(' ') : '',
+    visualLabelsFor(scene || {}).join(' '),
+    codeSnippetFor(scene || {}, {}),
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function hasCommonMistakeScene(storyboard) {
+  return (storyboard.scenes || []).some(scene => (
+    /\b(common[_\s-]?mistakes?|mistake|warning|pitfall|wrong|bad|underflow|losing|invalid|confus(?:e|ing)|misuse)\b/i.test(sceneText(scene))
+    || sceneCanonicalVisual(scene, storyboard.topic) === 'comparison_contrast'
+  ));
+}
+
+function hasCheckpointScene(storyboard) {
+  const scenes = storyboard.scenes || [];
+  const hasSummary = scenes.some(scene => sceneCanonicalVisual(scene, storyboard.topic) === 'summary_path');
+  return scenes.some(scene => {
+    const titleText = `${scene && scene.title || ''} ${scene && scene.sceneTitle || ''}`;
+    if (/\b(checkpoint|quiz|check yourself|question|mini check|review question|what happens|why should|predict)\b/i.test(titleText)) return true;
+    if (sceneCanonicalVisual(scene, storyboard.topic) === 'summary_path' && /\b(recap|summary|checkpoint|question|quiz)\b/i.test(titleText)) return true;
+    if (!hasSummary && sceneCanonicalVisual(scene, storyboard.topic) === 'code_walkthrough' && /\bcode\b/i.test(titleText)) return true;
+    return false;
+  });
+}
+
+function hasRecapScene(storyboard) {
+  return (storyboard.scenes || []).some(scene => /\b(recap|summary|takeaways?|next step|review)\b/i.test(sceneText(scene)));
+}
+
+function hasConcreteExampleScene(storyboard) {
+  return (storyboard.scenes || []).some(scene => /\b(example|scenario|case|apply|application|worked|source-based|real-world|decision|event|problem)\b/i.test(sceneText(scene)));
+}
+
+function hasForbiddenCsInjection(storyboard) {
+  const sourceText = [
+    storyboard.topic,
+    ...(Array.isArray(storyboard.materialUnderstanding && storyboard.materialUnderstanding.sourceEvidence)
+      ? storyboard.materialUnderstanding.sourceEvidence.map(item => `${item.quote || ''} ${item.heading || ''}`)
+      : []),
+  ].join(' ').toLowerCase();
+  const visible = storyboardTopicText(storyboard);
+  const forbidden = [
+    'search algorithm',
+    'binary search',
+    'linear search',
+    'data structure',
+    'object-oriented',
+    'oop',
+    'java',
+    'class diagram',
+    'hash function',
+    'hash table',
+    'hash map',
+    'bucket index',
+    'bucket',
+    'collision handling',
+    'collision',
+    'load factor',
+    'rehash',
+    'linked list',
+    'binary search tree',
+    'bst',
+    'stack',
+    'queue',
+    'push',
+    'pop',
+    'enqueue',
+    'dequeue',
+    'lifo',
+    'fifo',
+  ];
+  return forbidden.some(term => {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    const re = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i');
+    return re.test(visible) && !re.test(sourceText);
+  });
+}
+
+function hasGenericOnlyVisualNodes(storyboard) {
+  const labels = (storyboard.scenes || [])
+    .flatMap(scene => visualNodeLabelsFrom(visualPayloadFor(scene)));
+  return labels.length >= 3 && labels.every(visualLabelIsGeneric);
+}
+
+function curatedContextMeta(storyboard) {
+  const grounding = storyboard && storyboard.grounding || {};
+  return grounding.educationalContext || storyboard.educationalContext || {};
+}
+
+function requiredCuratedExampleGroups(topic = '') {
+  const lower = String(topic || '').toLowerCase();
+  if (lower.includes('encapsulation')) return [['bankaccount', 'bank account'], ['balance'], ['private'], ['public'], ['validation', 'guard']];
+  if (lower.includes('polymorphism')) return [['shape'], ['circle'], ['draw', 'area'], ['dynamic dispatch', 'dispatch'], ['override', 'overridden']];
+  if (lower.includes('inheritance')) return [['superclass', 'parent'], ['subclass', 'child'], ['extends'], ['override', 'overriding']];
+  if (lower.includes('linked')) return [['node'], ['head'], ['next'], ['null'], ['insert', 'delete', 'traverse']];
+  if (lower.includes('stack')) return [['lifo'], ['push'], ['pop'], ['peek', 'top']];
+  if (lower.includes('queue')) return [['fifo'], ['enqueue'], ['dequeue'], ['front'], ['rear']];
+  if (lower.includes('binary search tree') || /\bbst\b/.test(lower)) return [['root'], ['left'], ['right'], ['search', 'insert'], ['inorder', 'in-order']];
+  if (lower.includes('big') || lower.includes('complexity')) return [['input', 'n'], ['growth'], ['o(1)'], ['o(log n)'], ['o(n)', 'o(n log n)', 'o(n^2)']];
+  return [];
+}
+
+function curatedExampleWarnings(storyboard) {
+  const meta = curatedContextMeta(storyboard);
+  if (!meta.curatedMatched && !meta.curatedTopicId) return [];
+  const topic = meta.curatedTopicId || (materialUnderstandingFor(storyboard) || {}).normalizedTopic || storyboard.topic || '';
+  let curated = null;
+  try {
+    const match = knowledgeService.matchTopic(topic, { minScore: 80, includeReason: true });
+    curated = match && match.topic ? educationalContext.compactCuratedKnowledge(match.topic, { feature: 'video' }) : null;
+  } catch (_) {
+    curated = null;
+  }
+  if (!curated || !Array.isArray(curated.codeExamples) || !curated.codeExamples.length) return [];
+  const groups = requiredCuratedExampleGroups(curated.topic || topic);
+  if (!groups.length) return [];
+  return containsAll(storyboardTopicText(storyboard), groups) ? [] : ['curated:missing_required_example'];
+}
+
 function topicDetectionWarnings(storyboard) {
   const warnings = [];
   const understanding = materialUnderstandingFor(storyboard);
   const topic = String((understanding && (understanding.topic || understanding.normalizedTopic)) || storyboard.topic || '').trim();
   if (!understanding) return ['topic:missing_detection'];
   if (!topic || /^unresolved|unknown|cs topic|computer science$/i.test(topic)) warnings.push('topic:generic_or_missing_topic');
-  if (!SUPPORTED_DOMAINS.has(understanding.domain)) warnings.push('topic:unsupported_domain');
-  if (Number(understanding.confidence || 0) < MIN_TOPIC_CONFIDENCE) warnings.push('topic:low_confidence');
+  const generalDomain = isGeneralStoryboardDomain(understanding.domain);
+  if (!generalDomain && !SUPPORTED_DOMAINS.has(understanding.domain)) warnings.push('topic:unsupported_domain');
+  const confidenceThreshold = generalDomain ? 0.35 : MIN_TOPIC_CONFIDENCE;
+  if (Number(understanding.confidence || 0) < confidenceThreshold) warnings.push('topic:low_confidence');
   const keyConcepts = Array.isArray(understanding.keyConcepts) ? understanding.keyConcepts.filter(Boolean) : [];
-  if (keyConcepts.length < MIN_KEY_CONCEPTS) warnings.push('topic:insufficient_key_concepts');
-  if (sourceEvidenceChunkCount(understanding) < MIN_SOURCE_EVIDENCE_CHUNKS) warnings.push('topic:insufficient_source_evidence');
+  if (keyConcepts.length < (generalDomain ? 2 : MIN_KEY_CONCEPTS)) warnings.push('topic:insufficient_key_concepts');
+  if (sourceEvidenceChunkCount(understanding) < (generalDomain ? 1 : MIN_SOURCE_EVIDENCE_CHUNKS)) warnings.push('topic:insufficient_source_evidence');
   return warnings;
 }
 
@@ -1252,6 +1625,14 @@ function domainSpecificWarnings(storyboard, visualTypes) {
   const warnings = [];
   const understanding = materialUnderstandingFor(storyboard) || {};
   const domain = understanding.domain;
+  if (isGeneralStoryboardDomain(domain)) {
+    if (!hasCommonMistakeScene(storyboard)) addWarning(warnings, 'domain:missing_common_mistake_scene');
+    if (!hasCheckpointScene(storyboard)) addWarning(warnings, 'domain:missing_checkpoint_scene');
+    if (!hasRecapScene(storyboard)) addWarning(warnings, 'domain:missing_recap_scene');
+    if (!hasConcreteExampleScene(storyboard)) addWarning(warnings, 'domain:missing_concrete_example_scene');
+    if (hasForbiddenCsInjection(storyboard)) addWarning(warnings, 'domain:unrelated_cs_injection');
+    return warnings;
+  }
   const visualSet = new Set(visualTypes);
   if (domain === 'Object-Oriented Programming') {
     const hasOopVisual = ['class_object', 'encapsulation_boundary', 'inheritance_uml', 'polymorphism_dispatch']
@@ -1275,6 +1656,10 @@ function domainSpecificWarnings(storyboard, visualTypes) {
     if (!hasAlgorithmVisual) warnings.push('domain:algorithm_missing_flow_or_complexity_visual');
   }
   if (SUPPORTED_DOMAINS.has(domain) && !hasCodeScene(storyboard)) warnings.push('domain:missing_code_scene');
+  if (SUPPORTED_DOMAINS.has(domain) && !hasCommonMistakeScene(storyboard)) addWarning(warnings, 'domain:missing_common_mistake_scene');
+  if (SUPPORTED_DOMAINS.has(domain) && !hasCheckpointScene(storyboard)) addWarning(warnings, 'domain:missing_checkpoint_scene');
+  if (SUPPORTED_DOMAINS.has(domain) && hasGenericOnlyVisualNodes(storyboard)) addWarning(warnings, 'domain:generic_visual_nodes_only');
+  for (const warning of curatedExampleWarnings(storyboard)) addWarning(warnings, warning);
   for (const warning of topicVisualStandardWarnings(storyboard, visualTypes)) addWarning(warnings, warning);
   return warnings;
 }
@@ -1354,9 +1739,13 @@ function toStoryboardScene(scene, index, topic, slide) {
 
 function storyboardQuality(storyboard) {
   const sceneWarningsFlat = [];
+  const understanding = materialUnderstandingFor(storyboard) || {};
   const qualityStoryboard = {
     ...storyboard,
-    scenes: (storyboard.scenes || []).map(scene => prepareSceneForQuality(scene, storyboard.topic, { fillGrounding: false })),
+    scenes: (storyboard.scenes || []).map(scene => prepareSceneForQuality({
+      ...scene,
+      domain: scene.domain || understanding.domain || '',
+    }, storyboard.topic, { fillGrounding: false })),
   };
   const scenes = qualityStoryboard.scenes || [];
   const visual = storyboardVisualValidation(qualityStoryboard);
@@ -1375,8 +1764,13 @@ function storyboardQuality(storyboard) {
     ...visual.warnings,
   ];
   const warnings = [...new Set([...sceneWarningsFlat, ...globalWarnings])];
-  if (requiredTemplates.size < 4) warnings.push('storyboard:insufficient_visual_variety');
-  const understanding = materialUnderstandingFor(qualityStoryboard) || {};
+  const minVisualVariety = isGeneralStoryboardDomain(understanding.domain) ? 2 : 4;
+  const concreteTemplateCount = [...requiredTemplates].filter(type => type !== 'no_visual').length;
+  if (isGeneralStoryboardDomain(understanding.domain)) {
+    if (concreteTemplateCount < 1 && !scenes.some(scene => Array.isArray(scene.sourceEvidence) && scene.sourceEvidence.length)) {
+      warnings.push('storyboard:insufficient_visual_variety');
+    }
+  } else if (requiredTemplates.size < minVisualVariety) warnings.push('storyboard:insufficient_visual_variety');
   const passed = warnings.length === 0;
   return {
     score: Math.max(0, Math.min(1, 1 - warnings.length * 0.08 + Math.min(0.2, requiredTemplates.size * 0.03))),
@@ -1520,42 +1914,159 @@ function scriptFromStoryboard(storyboard) {
   };
 }
 
-async function generateStoryboard({ userId, materialId, concept }) {
+async function generateStoryboard({ userId, materialId, concept, sourceScope = 'material', chapterId = null, chunkId = null }) {
   await ai.assertModelsAvailable({ generation: true, embedding: true, feature: 'notes' });
   const db = getDb();
   const material = db.prepare('SELECT id, title FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
   if (!material) throw new HttpError(404, 'material_not_found');
   let diagnostics = await materialDiagnostics.buildMaterialDiagnostics(materialId, { userId });
-  const understanding = await materialUnderstanding.resolveMaterialUnderstanding({ materialId, hint: concept || material.title, feature: 'video' });
-  const generationTopic = understanding.topic || understanding.normalizedTopic || 'Unresolved CS Topic';
-  const retrievalTopic = understanding.normalizedTopic || generationTopic;
-  const rag = await retrieveLessonContext(materialId, retrievalTopic, { feature: 'video', k: 10, minScore: 0.08, maxMerged: 14 });
+  const domainInfo = domainDetection.detectMaterialDomain(userId, materialId, { hint: concept || material.title });
+  const shouldUseCs = domainDetection.shouldUseCuratedCs(domainInfo);
+  const preliminaryUnderstanding = materialUnderstanding.understandGeneralFromDb(userId, materialId, {
+    explicitQuery: concept,
+    hint: concept || material.title,
+    title: material.title,
+    materialTitle: material.title,
+    sourceScope,
+    chapterId,
+    chunkId,
+    domainInfo,
+  });
+  let understanding = shouldUseCs
+    ? await materialUnderstanding.resolveMaterialUnderstanding({ materialId, hint: concept || material.title, feature: 'video' })
+    : {
+      ...preliminaryUnderstanding,
+      topic: concept || preliminaryUnderstanding.topic || material.title,
+      normalizedTopic: concept || preliminaryUnderstanding.normalizedTopic || preliminaryUnderstanding.topic || material.title,
+      domain: domainInfo.domain,
+      confidence: Math.max(Number(preliminaryUnderstanding.confidence || 0), Number(domainInfo.confidence || 0)),
+      source: preliminaryUnderstanding.source || 'material_domain',
+      alternatives: preliminaryUnderstanding.alternatives || [],
+      readyForGeneration: true,
+    };
+  let generationTopic = understanding.topic || understanding.normalizedTopic || material.title || 'Uploaded material';
+  let retrievalTopic = understanding.normalizedTopic || generationTopic;
+  const preOutline = preliminaryUnderstanding.sourceOutline || null;
+  const focusTerms = materialUnderstanding.focusTermsForTopic(concept || retrievalTopic, preOutline);
+  const avoidTerms = materialUnderstanding.competingTermsForTopic(concept || retrievalTopic, preOutline);
+  const rag = await retrieveLessonContext(materialId, retrievalTopic, {
+    feature: 'video',
+    k: 10,
+    minScore: 0.08,
+    maxMerged: 14,
+    sourceScope,
+    chapterId,
+    chunkId,
+    focusTopic: concept || retrievalTopic,
+    focusTerms,
+    avoidTerms,
+    includeSystem: shouldUseCs,
+  });
+  const uploadedChunks = rag.uploaded && Array.isArray(rag.uploaded.chunks) ? rag.uploaded.chunks : [];
+  const sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
+    explicitQuery: concept || generationTopic,
+    hint: concept || generationTopic,
+    title: material.title,
+    materialTitle: material.title,
+    domainInfo,
+  });
+  if (!shouldUseCs) {
+    understanding = generalUnderstandingFromChunks({ understanding, domainInfo, chunks: uploadedChunks, material, concept });
+    understanding.sourceVisualCandidates = sourceVisualCandidates.fromChunks(uploadedChunks);
+    generationTopic = understanding.topic || understanding.normalizedTopic || generationTopic;
+    retrievalTopic = understanding.normalizedTopic || generationTopic;
+  } else {
+    understanding.sourceOutline = sourceOutline;
+    understanding.sourceVisualCandidates = sourceVisualCandidates.fromChunks(uploadedChunks);
+  }
+  const videoContext = (env.KNOWLEDGE_CONTEXT_ENABLED && env.KNOWLEDGE_USE_FOR_VIDEO)
+    ? educationalContext.buildEducationalContext({
+      userId,
+      materialId,
+      topic: generationTopic,
+      query: retrievalTopic,
+      feature: 'video',
+      ragResult: rag,
+      retrievedChunks: rag.chunks || [],
+      domainInfo,
+      audienceLevel: 'beginner',
+    })
+    : null;
+  const educationalContextPrompt = videoContext
+    ? educationalContext.formatVideoEducationalContextForPrompt(videoContext)
+    : '';
+  const curatedTopicId = videoContext && videoContext.curatedKnowledge && videoContext.curatedKnowledge.id || null;
   diagnostics = materialDiagnostics.attachRetrievalDiagnostics(diagnostics, rag.uploaded || rag);
   const groundingTier = computeGroundingTier(rag.uploaded || rag);
   const enrichmentPolicy = groundedEnrichment.decideEnrichment({
     diagnostics,
     understanding,
     groundingTier,
-    chunks: rag.uploaded && rag.uploaded.chunks || rag.chunks || [],
+    chunks: uploadedChunks,
   });
-  const lesson = await lessons.generateEducationalLesson({
+  let lesson = await lessons.generateEducationalLesson({
     topic: generationTopic,
     title: generationTopic,
     materialTitle: material.title || generationTopic,
-    chunks: rag.chunks || [],
+    chunks: uploadedChunks,
     groundingTier,
     lessonType: lessons.detectLessonType(generationTopic),
+    domainInfo,
+    domain: domainInfo.domain,
     enrichmentPolicyPrompt: groundedEnrichment.promptForPolicy(enrichmentPolicy, understanding),
+    educationalContextPrompt,
+    curatedTopicId,
+    sourceOutline: understanding.sourceOutline || sourceOutline,
+    focusTerms,
+    avoidTerms,
   });
+  let lessonDrift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
+    focusTopic: concept || generationTopic,
+    sourceOutline: understanding.sourceOutline || sourceOutline,
+    focusTerms,
+    competingTerms: avoidTerms,
+  });
+  if (lessonDrift.drifted) {
+    lesson = shouldUseCs
+      ? lessons.fallbackLesson(generationTopic, {
+        materialTitle: material.title || generationTopic,
+        chunks: uploadedChunks,
+        groundingTier,
+        domainInfo,
+        domain: domainInfo.domain,
+        sourceOutline: understanding.sourceOutline || sourceOutline,
+      })
+      : lessons.generalMaterialLesson(generationTopic, material.title || generationTopic, groundingTier, uploadedChunks.map(c => c.id).filter(Boolean), uploadedChunks, {
+        domainInfo,
+        sourceOutline: understanding.sourceOutline || sourceOutline,
+        topic: generationTopic,
+      });
+    lessonDrift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
+      focusTopic: concept || generationTopic,
+      sourceOutline: understanding.sourceOutline || sourceOutline,
+      focusTerms,
+      competingTerms: avoidTerms,
+    });
+  }
   const video = lessons.lessonToVideoScript(lesson);
   const scenes = lessons.lessonToVideoScenes(lesson);
   const storyboardScenes = groundedEnrichment.annotateScenes(
     (video.slides || []).map((slide, index) => toStoryboardScene(scenes[index] || slide, index, generationTopic, slide)),
     { understanding, enrichmentPolicy }
-  ).map(scene => withFreshSceneQuality(scene, generationTopic));
+  ).map(scene => withFreshSceneQuality({
+    ...scene,
+    domain: understanding.domain || domainInfo.domain || '',
+    materialDomain: domainInfo.domain || '',
+  }, generationTopic));
   const storyboard = {
     topic: generationTopic,
     materialUnderstanding: understanding,
+    sourceScope: {
+      source_scope: rag.sourceScope,
+      source_label: rag.sourceLabel,
+      chapter_id: rag.chapterId || null,
+      chunk_id: rag.chunkId || null,
+    },
     audienceLevel: lesson.audienceLevel || 'beginner',
     learningObjectives: lesson.learningObjectives || [],
     learningPath: {
@@ -1569,17 +2080,27 @@ async function generateStoryboard({ userId, materialId, concept }) {
     generatedAt: nowIso(),
   };
   storyboard.grounding = groundedEnrichment.buildGroundingMetadata(storyboard, { understanding, enrichmentPolicy });
+  storyboard.grounding.educationalContext = {
+    curatedMatched: !!curatedTopicId,
+    curatedTopicId,
+    contextChars: educationalContextPrompt.length,
+    uploadedChunkCount: uploadedChunks.length,
+    systemChunkCount: videoContext && videoContext.trace && videoContext.trace.systemChunkCount || 0,
+  };
   const scriptQuality = scoreVideoScript(scriptFromStoryboard(storyboard), {
     concept: generationTopic,
-    chunks: rag.uploaded && rag.uploaded.chunks || [],
+    chunks: uploadedChunks,
     lowGrounding: groundingTier === 'weak',
+    domainInfo,
+    domain: domainInfo.domain,
     threshold: (env.STRICT_QUALITY_GATES || env.VIDEO_RENDER_STRICT) ? 0.88 : env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
   });
   const boardQuality = storyboardQuality(storyboard);
   const quality = {
     storyboard: boardQuality,
     script: scriptQuality,
-    lesson: lesson.quality || lessons.scoreLesson(lesson),
+    lesson: lesson.quality || lessons.scoreLesson(lesson, { domainInfo, topic: generationTopic, chunks: uploadedChunks, sourceOutline: understanding.sourceOutline || sourceOutline }),
+    drift: lessonDrift,
     materialUnderstanding: understanding,
     topicDetection: understanding,
     grounding: storyboard.grounding,
@@ -1587,10 +2108,20 @@ async function generateStoryboard({ userId, materialId, concept }) {
     resolved_topic: understanding.topic || understanding.normalizedTopic || null,
     normalized_topic: understanding.normalizedTopic || null,
     detected_domain: understanding.domain || null,
+    domain: domainInfo,
     topic_confidence: understanding.confidence || null,
     topic_source: understanding.source || null,
     candidates: understanding.alternatives || [],
     materialDiagnostics: diagnostics,
+    educationalContext: {
+      curatedMatched: !!curatedTopicId,
+      curatedTopicId,
+      contextChars: educationalContextPrompt.length,
+      uploadedChunkCount: uploadedChunks.length,
+      systemChunkCount: videoContext && videoContext.trace && videoContext.trace.systemChunkCount || 0,
+      sourceScope: rag.sourceScope,
+      sourceLabel: rag.sourceLabel,
+    },
   };
   const status = understanding.readyForGeneration && boardQuality.passed
     ? (env.STORYBOARD_REVIEW_REQUIRED || env.NOESIS_DEMO_MODE ? 'draft' : 'approved')
@@ -1801,6 +2332,34 @@ function classObjectNodes(topic = '') {
 
 function visualPatchForScene(scene, topic, targetType) {
   const canonicalType = targetType || inferVisualTypeFromTopic(topic) || 'process_flow';
+  if (canonicalType === 'no_visual') {
+    const visualData = {
+      type: 'no_visual',
+      nodes: [],
+      edges: [],
+      operations: ['teach from narration', 'cite uploaded source evidence'],
+      caption: 'No diagram is required for this source-led scene.',
+    };
+    return {
+      visualTemplate: 'no_visual',
+      visualType: 'no_visual',
+      visualData,
+      visualElements: visualData,
+      visualPurpose: `Keep this scene text-led so it can explain ${topic} without a forced diagram.`,
+      visualRationale: 'A diagram would be generic here, so the scene uses source-grounded narration and learner-facing text.',
+      viewerTakeaway: `The viewer should understand the source detail without being distracted by a weak visual.`,
+      visualGrounding: {
+        sceneIntent: scene.teachingGoal || scene.learningPoint || scene.narration || '',
+        selectedVisualReason: 'Converted to no visual because the previous visual was weak or generic.',
+        requiredVisualEvidence: ['source narration', 'learner takeaway'],
+      },
+      onScreenText: [
+        scene.sceneTitle || scene.title || topic,
+        'Source-backed explanation',
+      ],
+      motionInstructions: ['Focus on narration', 'Reveal the source-backed takeaway'],
+    };
+  }
   const nodes = canonicalType === 'class_object'
     ? classObjectNodes(topic)
     : topicSpecificVisualNodes(scene, topic, canonicalType);
@@ -1895,7 +2454,11 @@ function fixStoryboardIssue(userId, storyboardId, payload = {}) {
     scenes: (board.storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, board.storyboard.topic)),
   };
   const topic = storyboard.topic || board.topic || '';
-  const targetType = targetVisualTypeFromPayload(payload, topic);
+  let targetType = targetVisualTypeFromPayload(payload, topic);
+  const understanding = materialUnderstandingFor(storyboard) || {};
+  if (isGeneralStoryboardDomain(understanding.domain) && (!payload.targetVisualType && !payload.visualType && !payload.targetType)) {
+    targetType = 'concept_cards';
+  }
   const scene = chooseSceneForVisual(storyboard, targetType, payload.sceneId || payload.scene_id || '');
   if (!scene) throw new HttpError(422, 'storyboard_has_no_scenes', 'Generate storyboard scenes before applying an automatic fix.');
   const updated = updateScene(userId, storyboardId, scene.id, visualPatchForScene(scene, topic, targetType));
@@ -1925,7 +2488,10 @@ function fixScene(userId, storyboardId, sceneId, fixType, opts = {}) {
       if (match) targetType = match[1];
     }
     if (!targetType || targetType === 'concept_map' || targetType === 'missing') {
-      targetType = inferVisualTypeFromTopic(topic) || 'process_flow';
+      const understanding = materialUnderstandingFor(board.storyboard) || {};
+      targetType = isGeneralStoryboardDomain(understanding.domain)
+        ? 'concept_cards'
+        : (inferVisualTypeFromTopic(topic) || 'process_flow');
     }
     const nodes = topicSpecificVisualNodes(scene, topic, targetType);
     const edges = topicSpecificEdges(nodes);

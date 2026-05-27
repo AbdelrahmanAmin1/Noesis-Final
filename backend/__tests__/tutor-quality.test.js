@@ -30,6 +30,31 @@ describe('tutor step quality', () => {
     expect(JSON.stringify(plan)).not.toContain('...');
   });
 
+  it('builds a source-led non-CS guided plan without CS fallback topics', () => {
+    const tutor = require('../services/tutor.service');
+    const plan = tutor.buildPlan('Photosynthesis', 0, {
+      understanding: {
+        keyConcepts: ['Photosynthesis', 'Chloroplasts', 'Glucose', 'Carbon Dioxide', 'Oxygen'],
+        representativeExcerpts: [
+          'Photosynthesis converts light energy, carbon dioxide, and water into glucose inside chloroplasts.',
+          'Chlorophyll captures sunlight, and oxygen is released as a product of the process.',
+        ],
+        sourceEvidence: [
+          { chunkId: 1, quote: 'Photosynthesis converts light energy, carbon dioxide, and water into glucose inside chloroplasts.' },
+        ],
+      },
+    });
+    const text = JSON.stringify(plan).toLowerCase();
+
+    expect(plan.steps).toHaveLength(5);
+    expect(text).toContain('photosynthesis');
+    expect(text).toContain('chloroplast');
+    expect(text).toContain('glucose');
+    expect(text).toContain('carbon dioxide');
+    expect(text).not.toMatch(/search algorithm|stack|queue|object-oriented|data structure|java/);
+    expect(plan.steps.every(step => !step.code)).toBe(true);
+  });
+
   it('returns concrete code for encapsulation examples', () => {
     const tutor = require('../services/tutor.service');
     const current = tutor.buildPlan('Encapsulation').steps[0];
@@ -105,6 +130,13 @@ describe('tutor step quality', () => {
     const tutor = require('../services/tutor.service');
     const noCode = 'Encapsulation means wrapping data and methods together. Think of it like a vending machine where you only interact through the buttons, not by reaching inside. The key idea is controlled access. A common mistake is making fields public. Try thinking about how a bank account restricts direct balance changes.';
     expect(tutor._internals.tutorReplyIsUseful(noCode, { action: 'continue', topic: 'Encapsulation', mode: 'example' })).toBe(false);
+  });
+
+  it('accepts example mode scenario replies for non-CS topics', () => {
+    const tutor = require('../services/tutor.service');
+    const scenario = 'Here is a concrete scenario from the source material: a plant leaf receives sunlight, chlorophyll captures that energy, carbon dioxide enters the leaf, and glucose is produced for the plant. The example shows how the source concepts fit together. A common mistake is saying plants get all their food from soil instead of explaining glucose production.';
+
+    expect(tutor._internals.tutorReplyIsUseful(scenario, { action: 'give_example', topic: 'Photosynthesis', mode: 'example' })).toBe(true);
   });
 
   it('rejects raw structured JSON as display feedback', () => {

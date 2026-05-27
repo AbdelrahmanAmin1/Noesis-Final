@@ -75,8 +75,8 @@ const Splash = ({ onDone }) => {
 
       {/* Wordmark */}
       <div style={{
-        fontFamily: 'var(--font-display)', fontSize: 64, fontWeight: 300,
-        letterSpacing: '-0.025em', color: '#fff', marginTop: 34,
+        fontFamily: 'var(--font-display)', fontSize: 'calc(64px * var(--app-font-scale))', fontWeight: 300,
+        letterSpacing: '-0.025em', color: '#fff', marginTop: 'calc(34px * var(--app-density-scale))',
         overflow: 'hidden', display: 'flex',
       }}>
         {'Noēsis'.split('').map((ch, i) => (
@@ -91,8 +91,8 @@ const Splash = ({ onDone }) => {
 
       {/* Tagline */}
       <div style={{
-        fontSize: 13, letterSpacing: '0.22em', textTransform: 'uppercase',
-        color: 'rgba(199, 201, 220, 0.6)', marginTop: 22,
+        fontSize: 'calc(13px * var(--app-font-scale))', letterSpacing: '0.22em', textTransform: 'uppercase',
+        color: 'rgba(199, 201, 220, 0.6)', marginTop: 'calc(22px * var(--app-density-scale))',
         opacity: phase >= 3 ? 1 : 0,
         transform: phase >= 3 ? 'translateY(0)' : 'translateY(8px)',
         transition: 'all 700ms cubic-bezier(.2,.8,.2,1)',
@@ -102,7 +102,7 @@ const Splash = ({ onDone }) => {
 
       {/* Skip hint */}
       <div style={{
-        position: 'absolute', bottom: 32, fontSize: 11, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em',
+        position: 'absolute', bottom: 32, fontSize: 'calc(11px * var(--app-font-scale))', color: 'rgba(255,255,255,0.3)', letterSpacing: '0.08em',
         opacity: phase >= 3 ? 1 : 0, transition: 'opacity 400ms',
       }}>
         Tap to enter

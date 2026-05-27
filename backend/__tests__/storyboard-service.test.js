@@ -1,6 +1,6 @@
 'use strict';
 
-const { storyboardQuality, scriptFromStoryboard, _internals } = require('../services/storyboard.service');
+const { storyboardQuality, scriptFromStoryboard, classifyWarnings, _internals } = require('../services/storyboard.service');
 const visualRegistry = require('../utils/visual-registry');
 
 describe('storyboard.service', () => {
@@ -134,7 +134,7 @@ describe('storyboard.service', () => {
         groundedScene('scene-2', 'oop_class_diagram', 'Class API'),
         groundedScene('scene-3', 'code_walkthrough', 'Method Access'),
         groundedScene('scene-4', 'comparison_contrast', 'Bad vs Correct Access'),
-        groundedScene('scene-5', 'summary_path', 'Controlled API'),
+        groundedScene('scene-5', 'summary_path', 'Checkpoint Question'),
       ])
     );
 
@@ -146,6 +146,199 @@ describe('storyboard.service', () => {
     expect(quality.visual.coverage.present).toEqual(expect.arrayContaining(['encapsulation_boundary', 'class_object', 'code_walkthrough']));
     expect(quality.visual.scenes.every(scene => scene.passed)).toBe(true);
     expect(quality.warnings).toEqual([]);
+  });
+
+  it('passes a grounded non-CS storyboard without CS/code requirements', () => {
+    const evidence = [
+      { chunkId: 10, quote: 'Photosynthesis converts light energy, carbon dioxide, and water into glucose inside chloroplasts.' },
+      { chunkId: 11, quote: 'Chlorophyll captures sunlight, and oxygen is released as a product of the process.' },
+    ];
+    const baseScene = (id, type, title, visualType, nodes, narration) => ({
+      id,
+      type,
+      sceneTitle: title,
+      title,
+      learningPoint: `${title} explains a concrete source-backed part of photosynthesis from the uploaded material.`,
+      visualPurpose: `Use a ${visualType.replace(/_/g, ' ')} visual to connect ${title} to light energy, chloroplasts, glucose, and oxygen.`,
+      visualRationale: `${visualType.replace(/_/g, ' ')} is relevant because the viewer needs concrete source-backed biology labels and relationships.`,
+      viewerTakeaway: `After seeing the visual, the viewer can apply ${title} to a plant-cell scenario.`,
+      visualGrounding: {
+        topic: 'Photosynthesis',
+        sceneIntent: `show ${title} as a biology relationship`,
+        requiredVisualEvidence: ['Photosynthesis', 'Chloroplasts', 'Glucose', 'Oxygen'],
+        selectedVisualReason: `${visualType.replace(/_/g, ' ')} was selected to teach photosynthesis from source-backed terms.`,
+        sourceBacked: true,
+      },
+      narration,
+      onScreenText: nodes.slice(0, 3),
+      visualType,
+      visualTemplate: visualType,
+      visualElements: {
+        type: visualType,
+        nodes,
+        edges: nodes.slice(1).map(node => [nodes[0], node]),
+        operations: ['identify source concept', 'connect process step', 'check the relationship'],
+        caption: `${title} uses uploaded source terms.`,
+      },
+      sourceEvidence: evidence,
+      enrichment: { used: false, type: 'none', content: '' },
+      motionInstructions: ['Reveal the source-backed biology labels', 'Connect the scenario to the checkpoint'],
+      durationSeconds: 20,
+    });
+    const board = {
+      topic: 'Photosynthesis',
+      materialUnderstanding: {
+        domain: 'science',
+        topic: 'Photosynthesis',
+        normalizedTopic: 'Photosynthesis',
+        confidence: 0.82,
+        keyConcepts: ['Photosynthesis', 'Light Energy', 'Chloroplasts', 'Glucose', 'Oxygen'],
+        sourceEvidence: evidence,
+      },
+      grounding: grounding(),
+      scenes: [
+        baseScene('scene-1', 'mindmap', 'Why Photosynthesis Matters', 'concept_map', ['Photosynthesis', 'Light Energy', 'Glucose', 'Oxygen'], 'Photosynthesis matters because plants use light energy to make glucose and release oxygen. This opening scene anchors the framework in the uploaded biology terms.'),
+        baseScene('scene-2', 'definition', 'Source Definition', 'process_flow', ['Light Energy', 'Chloroplasts', 'Carbon Dioxide', 'Glucose', 'Oxygen'], 'The source definition turns photosynthesis into a process: chloroplasts use light energy, carbon dioxide, and water to produce glucose while oxygen is released.'),
+        baseScene('scene-3', 'deep_explanation', 'Leaf Scenario Example', 'process_flow', ['Leaf', 'Sunlight', 'Chlorophyll', 'Glucose', 'Oxygen'], 'Example scenario: a leaf receives sunlight, chlorophyll captures the energy, and the plant produces glucose. The viewer should see how the source terms fit into one process.'),
+        baseScene('scene-4', 'common_mistakes', 'Food From Soil Mistake', 'comparison_contrast', ['Mistake', 'Soil food only', 'Glucose production', 'Chloroplasts'], 'The common mistake is saying plants get all food from soil. The corrected view explains glucose production through light energy and chloroplasts.'),
+        baseScene('scene-5', 'checkpoint', 'Mini Checkpoint and Recap', 'summary_path', ['Photosynthesis checkpoint', 'Chloroplasts capture light', 'Glucose production', 'Oxygen release'], 'Checkpoint question: which cell structure captures light energy for photosynthesis? The recap names chloroplasts and connects them to glucose production and oxygen release.'),
+      ],
+    };
+
+    const quality = storyboardQuality(board);
+
+    expect(quality.passed).toBe(true);
+    expect(quality.warnings).toEqual([]);
+    expect(JSON.stringify(board).toLowerCase()).not.toMatch(/search algorithm|stack|queue|object-oriented|java/);
+  });
+
+  it('passes source-led anatomy storyboard scenes with cards, tables, and no forced diagram', () => {
+    const evidence = [
+      { chunkId: 20, sourcePage: 2, quote: 'The skeletal system supports the body, stores minerals, produces red blood cells, protects organs, and enables movement.' },
+      { chunkId: 21, sourcePage: 3, quote: 'The axial skeleton includes the skull, vertebral column, ribs, and sternum.' },
+      { chunkId: 22, sourcePage: 4, quote: 'The appendicular skeleton includes limb bones and girdles.' },
+    ];
+    const scene = (id, type, title, visualType, nodes, narration) => ({
+      id,
+      type,
+      sceneTitle: title,
+      title,
+      learningPoint: `${title} explains source-backed skeletal system content from the uploaded anatomy material.`,
+      visualPurpose: visualType === 'no_visual'
+        ? `Use source-led narration for ${title} without forcing a diagram.`
+        : `Use ${visualType.replace(/_/g, ' ')} to make ${title} concrete from the uploaded anatomy source.`,
+      visualRationale: `${visualType.replace(/_/g, ' ')} is selected because this scene is clearer as source terms, cards, or tables rather than a generic map.`,
+      viewerTakeaway: `The learner can explain ${title} using source evidence.`,
+      visualGrounding: {
+        topic: 'The Skeletal System',
+        sceneIntent: `teach ${title} from source evidence`,
+        requiredVisualEvidence: nodes.length ? nodes : ['source narration', 'learner takeaway'],
+        selectedVisualReason: 'The visual choice follows the uploaded source structure.',
+        sourceBacked: true,
+      },
+      narration,
+      onScreenText: nodes.slice(0, 3).length ? nodes.slice(0, 3) : [title, 'Source evidence'],
+      visualType,
+      visualTemplate: visualType,
+      visualElements: {
+        type: visualType,
+        nodes,
+        edges: [],
+        operations: nodes.map(node => `${node}: source detail`),
+        caption: `${title} uses uploaded source terms.`,
+      },
+      sourceEvidence: evidence,
+      enrichment: { used: false, type: 'none', content: '' },
+      motionInstructions: ['Reveal source terms', 'Connect detail to review'],
+      durationSeconds: 20,
+    });
+    const board = {
+      topic: 'The Skeletal System',
+      materialUnderstanding: {
+        domain: 'science',
+        topic: 'The Skeletal System',
+        normalizedTopic: 'The Skeletal System',
+        confidence: 0.86,
+        keyConcepts: ['Skeletal System', 'Axial Skeleton', 'Appendicular Skeleton', 'Bone Shapes'],
+        sourceEvidence: evidence,
+      },
+      grounding: grounding(),
+      scenes: [
+        scene('scene-1', 'hook', 'Why The Skeleton Matters', 'no_visual', [], 'The skeletal system is not just a set of bone names. The source says it supports the body, protects organs, stores minerals, produces red blood cells, and enables movement, so the opening scene stays source-led.'),
+        scene('scene-2', 'definition', 'Core Functions', 'concept_cards', ['Support', 'Protection', 'Mineral storage', 'Blood cell production'], 'The source lists major skeletal functions: support, protection, mineral storage, red blood cell production, and movement. These cards turn the uploaded terms into a concrete study path.'),
+        scene('scene-3', 'deep_explanation', 'Axial And Appendicular', 'classification_table', ['Axial skeleton', 'Appendicular skeleton', 'Skull and vertebral column', 'Limb bones and girdles'], 'A source-based example compares axial skeleton parts with appendicular skeleton parts. The classification table keeps skull, vertebral column, limb bones, and girdles in the right source categories.'),
+        scene('scene-4', 'common_mistakes', 'Classification Mistake', 'comparison_table', ['Mistake: memorize bone names only', 'Correction: connect each bone group to its function'], 'The common misunderstanding is memorizing labels without the supporting function. The correction is to explain how each group supports, protects, stores minerals, or enables movement.'),
+        scene('scene-5', 'checkpoint', 'Review Question And Recap', 'concept_cards', ['Which skeleton includes the skull?', 'Axial skeleton', 'Functions recap'], 'Checkpoint question: which skeleton includes the skull and vertebral column? The recap connects the answer to the source classification and the functions of the skeletal system.'),
+      ],
+    };
+
+    const quality = storyboardQuality(board);
+
+    expect(quality.passed).toBe(true);
+    expect(quality.warnings).toEqual([]);
+    expect(quality.visual.coverage.required).toEqual([]);
+    expect(JSON.stringify(board).toLowerCase()).not.toMatch(/hash function|bucket|collision|queue|stack|java/);
+  });
+
+  it('blocks unrelated hashing drift in non-CS storyboards', () => {
+    const evidence = [{ chunkId: 1, quote: 'The skeletal system supports the body and protects organs.' }];
+    const safeScene = (id, type, title, visualType, nodes, narration) => ({
+      id,
+      type,
+      sceneTitle: title,
+      title,
+      learningPoint: `${title} explains source-backed skeletal content.`,
+      visualPurpose: `Use ${visualType.replace(/_/g, ' ')} to make ${title} concrete.`,
+      visualRationale: 'The visual is source-backed and uses uploaded material terms.',
+      viewerTakeaway: `The learner can explain ${title} from source evidence.`,
+      visualGrounding: { sceneIntent: `teach ${title}`, selectedVisualReason: 'source-backed visual', requiredVisualEvidence: nodes, sourceBacked: true },
+      narration,
+      onScreenText: nodes.slice(0, 3),
+      visualType,
+      visualTemplate: visualType,
+      visualElements: { type: visualType, nodes, operations: nodes.map(node => `${node}: source detail`) },
+      sourceEvidence: evidence,
+    });
+    const board = {
+      topic: 'The Skeletal System',
+      materialUnderstanding: {
+        domain: 'science',
+        topic: 'The Skeletal System',
+        normalizedTopic: 'The Skeletal System',
+        confidence: 0.8,
+        keyConcepts: ['Skeletal System', 'Bones', 'Protection'],
+        sourceEvidence: evidence,
+      },
+      grounding: grounding(),
+      scenes: [
+        {
+          id: 'scene-1',
+          type: 'definition',
+          sceneTitle: 'Skeletal Overview',
+          title: 'Skeletal Overview',
+          learningPoint: 'Explain the skeletal system from source evidence.',
+          visualPurpose: 'Use cards to teach source terms.',
+          visualRationale: 'Cards are source-backed.',
+          viewerTakeaway: 'Bones protect organs.',
+          visualGrounding: { sceneIntent: 'source', selectedVisualReason: 'source', requiredVisualEvidence: ['bones'], sourceBacked: true },
+          narration: 'The skeletal system protects organs, but this scene incorrectly says a hash function maps a key to a bucket and collision handling resolves indexes.',
+          onScreenText: ['Bones protect organs'],
+          visualType: 'concept_cards',
+          visualTemplate: 'concept_cards',
+          visualElements: { type: 'concept_cards', nodes: ['Bones', 'Protection'], operations: ['source detail'] },
+          sourceEvidence: evidence,
+        },
+        safeScene('scene-2', 'definition', 'Core Functions', 'concept_cards', ['Support', 'Protection'], 'The source says bones support and protect the body with concrete evidence.'),
+        safeScene('scene-3', 'deep_explanation', 'Source Example', 'classification_table', ['Bones', 'Organs'], 'A source-based example connects bones to organ protection and body support.'),
+        safeScene('scene-4', 'common_mistakes', 'Common Mistake', 'comparison_table', ['Mistake', 'Correction'], 'The common mistake is memorizing labels without explaining support and protection.'),
+        safeScene('scene-5', 'checkpoint', 'Checkpoint Recap', 'concept_cards', ['Question', 'Answer'], 'Checkpoint: explain one skeletal function from the uploaded material and recap the source evidence.'),
+      ],
+    };
+
+    const quality = storyboardQuality(board);
+
+    expect(quality.warnings).toContain('domain:unrelated_cs_injection');
+    expect(classifyWarnings(quality.warnings).critical).toContain('domain:unrelated_cs_injection');
   });
 
   it('selects canonical visual types from topic and scene intent', () => {
@@ -176,6 +369,14 @@ describe('storyboard.service', () => {
       narration: 'Preview the concrete targets for the lesson.',
       visual: { type: 'summary' },
     }, 'Classes and Objects')).toBe('learning_objectives');
+
+    expect(_internals.visualTemplateFor({
+      domain: 'science',
+      type: 'objectives',
+      title: 'Learning goals',
+      narration: 'Preview skeletal system functions and classifications from the source.',
+      visual: { type: 'summary' },
+    }, 'The Skeletal System')).toBe('concept_cards');
   });
 
   it('keeps canonical scene visual type and payload type aligned', () => {
@@ -493,6 +694,66 @@ describe('storyboard.service', () => {
     expect(quality.passed).toBe(false);
     expect(quality.warnings).toContain('domain:oop_missing_class_object_visual');
     expect(quality.warnings).toContain('domain:missing_code_scene');
+    expect(classifyWarnings(quality.warnings).critical).toContain('domain:missing_code_scene');
+  });
+
+  it('warns when supported CS storyboards omit a common mistake or checkpoint scene', () => {
+    const quality = storyboardQuality(
+      storyboard([
+        groundedScene('scene-1', 'encapsulation_boundary', 'Private Fields'),
+        groundedScene('scene-2', 'class_object', 'Class API'),
+        groundedScene('scene-3', 'code_walkthrough', 'Method Access'),
+        groundedScene('scene-4', 'process_flow', 'Controlled Access Flow'),
+        groundedScene('scene-5', 'summary_path', 'Controlled API'),
+      ])
+    );
+
+    expect(quality.warnings).toContain('domain:missing_common_mistake_scene');
+    expect(quality.warnings).toContain('domain:missing_checkpoint_scene');
+    expect(classifyWarnings(quality.warnings).critical).not.toContain('domain:missing_common_mistake_scene');
+    expect(classifyWarnings(quality.warnings).critical).not.toContain('domain:missing_checkpoint_scene');
+  });
+
+  it('warns when a curated topic matched but the concrete curated example is missing', () => {
+    const quality = storyboardQuality(
+      storyboard([
+        groundedScene('scene-1', 'encapsulation_boundary', 'Private Fields'),
+        groundedScene('scene-2', 'class_object', 'Class API'),
+        groundedScene('scene-3', 'code_walkthrough', 'Method Access'),
+        groundedScene('scene-4', 'comparison_contrast', 'Bad vs Correct Access'),
+        groundedScene('scene-5', 'summary_path', 'Checkpoint Question'),
+      ], {
+        grounding: grounding({
+          educationalContext: {
+            curatedMatched: true,
+            curatedTopicId: 'oop_encapsulation',
+          },
+        }),
+      })
+    );
+
+    expect(quality.warnings).toContain('curated:missing_required_example');
+  });
+
+  it('warns when all visual nodes are generic placeholders', () => {
+    const genericScene = groundedScene('scene-1', 'class_object', 'Generic Parts');
+    genericScene.visualElements = {
+      type: 'class_object',
+      nodes: ['Definition', 'Rule', 'Example', 'Boundary'],
+      edges: [['Definition', 'Rule']],
+      operations: [],
+    };
+    const quality = storyboardQuality(
+      storyboard([
+        genericScene,
+        { ...genericScene, id: 'scene-2' },
+        { ...genericScene, id: 'scene-3', code: { language: 'java', content: 'class A {}' }, codeSnippet: 'class A {}' },
+        { ...genericScene, id: 'scene-4', title: 'Common mistake' },
+        { ...genericScene, id: 'scene-5', title: 'Checkpoint question' },
+      ])
+    );
+
+    expect(quality.warnings).toContain('domain:generic_visual_nodes_only');
   });
 
   it('requires Data Structure storyboards to include operation/state visuals', () => {
