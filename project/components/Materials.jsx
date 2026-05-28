@@ -231,7 +231,7 @@ const MaterialDetail = ({ onNav }) => {
       const scopePayload = currentScopePayload();
       if (kind === 'notes') await window.NoesisAPI.notes.generate({ material_id: id, ...scopePayload });
       let flashcardResult = null;
-      if (kind === 'flashcards') flashcardResult = await window.NoesisAPI.flashcards.generate({ material_id: id, count: 6, regenerate: !!options.regenerate, ...scopePayload });
+      if (kind === 'flashcards') flashcardResult = await window.NoesisAPI.flashcards.generate({ material_id: id, count: 8, regenerate: !!options.regenerate, ...scopePayload });
       if (kind === 'quiz') {
         const r = await window.NoesisAPI.quizzes.generate({ material_id: id, count: 6, difficulty: 'medium', ...scopePayload });
         sessionStorage.setItem('noesis.quizId', String(r.quiz_id));
@@ -390,7 +390,7 @@ const MaterialDetail = ({ onNav }) => {
               <Icon.Cards size={13} style={{ color: 'var(--accent)' }}/>
               <div style={{ flex: 1, textAlign: 'left' }}>
                 <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)' }}>{activeAction === 'flashcards' ? 'Generating flashcards...' : 'Flashcards'}</div>
-                <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>Create 6 cards from {sourceScopeLabel.toLowerCase()}</div>
+                <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>Create 6-8 cards from {sourceScopeLabel.toLowerCase()}</div>
               </div>
             </button>
             <button style={mds.gen} disabled={busy} onClick={async () => { const ok = await generate('quiz'); if (ok) onNav('quiz'); }}>

@@ -305,6 +305,11 @@ function slideVisualData(slide, bullets) {
     details: slide.visual_node_details || visual.node_details || {},
     operations: cleanList(slide.operations && slide.operations.length ? slide.operations : visual.operations, []),
     caption: slide.caption || visual.caption || '',
+    imagePath: slide.image_path || slide.imagePath || visual.imagePath || visual.image_path || '',
+    imageUrl: slide.image_url || slide.imageUrl || visual.imageUrl || visual.image_url || '',
+    sourceVisualId: slide.source_visual_id || slide.sourceVisualId || visual.sourceVisualId || visual.source_visual_id || null,
+    sourcePage: slide.source_page || slide.sourcePage || visual.sourcePage || visual.source_page || null,
+    slideNumber: slide.slide_number || slide.slideNumber || visual.slideNumber || visual.slide_number || null,
   };
 }
 
@@ -441,10 +446,19 @@ function drawTableVisual(ctx, visual, region) {
 function drawSourceReference(ctx, slide, visual, region) {
   const r = inset(region, 36);
   const title = visual.caption || slide.title || 'Source reference';
-  drawBox(ctx, title, { x: r.x, y: r.y, w: r.w, h: 82 }, '#e0f2fe', BLUE, { align: 'center', startPx: 22 });
+  drawBox(ctx, title, { x: r.x, y: r.y, w: r.w, h: 64 }, '#e0f2fe', BLUE, { align: 'center', startPx: 21 });
+  if (visual.image) {
+    const imgArea = { x: r.x + 34, y: r.y + 88, w: r.w - 68, h: r.h - 116 };
+    fillRoundRect(ctx, imgArea.x, imgArea.y, imgArea.w, imgArea.h, 10, '#f8fafc', '#cbd5e1', 1.5);
+    const scale = Math.min(imgArea.w / visual.image.width, imgArea.h / visual.image.height);
+    const w = visual.image.width * scale;
+    const h = visual.image.height * scale;
+    ctx.drawImage(visual.image, imgArea.x + (imgArea.w - w) / 2, imgArea.y + (imgArea.h - h) / 2, w, h);
+    return;
+  }
   const nodes = (visual.nodes.length ? visual.nodes : slide.bullets || []).slice(0, 4);
   nodes.forEach((node, i) => {
-    drawBox(ctx, node, { x: r.x + 34, y: r.y + 118 + i * 58, w: r.w - 68, h: 46 }, i % 2 ? '#f0fdf4' : '#fef3c7', '#94a3b8', { maxLines: 1 });
+    drawBox(ctx, node, { x: r.x + 34, y: r.y + 104 + i * 58, w: r.w - 68, h: 46 }, i % 2 ? '#f0fdf4' : '#fef3c7', '#94a3b8', { maxLines: 1 });
   });
 }
 
@@ -1082,13 +1096,16 @@ function drawAnimationOverlay(ctx, slide, layout, visual, progress = 1) {
 async function renderWithCanvas(slide, outPath, options = {}) {
   const c = loadCanvas();
   if (!c) return false;
-  const { createCanvas } = c;
+  const { createCanvas, loadImage } = c;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext('2d');
   const visualType = inferVisualType(slide);
   const layout = computeLayout(slide, W, H);
   const bullets = cleanList(slide.bullets, ['Tutor focus']).slice(0, 2);
   const visual = slideVisualData({ ...slide, visual_type: visualType }, bullets);
+  if (visual.imagePath && fs.existsSync(visual.imagePath) && typeof loadImage === 'function') {
+    try { visual.image = await loadImage(visual.imagePath); } catch (_) {}
+  }
 
   ctx.fillStyle = '#f8fafc';
   ctx.fillRect(0, 0, W, H);

@@ -14,6 +14,8 @@ function ensureDirs() {
   fs.mkdirSync(path.join(env.UPLOAD_DIR, 'audio'), { recursive: true });
   fs.mkdirSync(path.join(env.UPLOAD_DIR, 'slides'), { recursive: true });
   fs.mkdirSync(path.join(env.UPLOAD_DIR, 'videos'), { recursive: true });
+  fs.mkdirSync(path.join(env.UPLOAD_DIR, 'ocr'), { recursive: true });
+  fs.mkdirSync(path.join(env.UPLOAD_DIR, 'source-visuals'), { recursive: true });
 }
 
 function getDb() {
@@ -51,6 +53,11 @@ function migrate() {
   ensureColumn(db, 'chunks', 'section_title', "TEXT DEFAULT ''");
   ensureColumn(db, 'chunks', 'has_code', 'INTEGER NOT NULL DEFAULT 0');
   ensureColumn(db, 'chunks', 'keywords_json', "TEXT DEFAULT '[]'");
+  ensureColumn(db, 'chunks', 'source_kind', "TEXT DEFAULT 'text'");
+  ensureColumn(db, 'chunks', 'source_visual_id', 'INTEGER');
+  ensureColumn(db, 'materials', 'extraction_diagnostics_json', "TEXT DEFAULT '{}'");
+  ensureColumn(db, 'materials', 'ocr_status', "TEXT DEFAULT 'not_evaluated'");
+  ensureColumn(db, 'materials', 'ocr_provider', 'TEXT');
   ensureColumn(db, 'notes', 'lesson_json', 'TEXT');
   ensureColumn(db, 'notes', 'source_map_json', 'TEXT');
   ensureColumn(db, 'videos', 'lesson_json', 'TEXT');
@@ -173,6 +180,8 @@ function migrate() {
   db.exec(noteAudioSql);
   const gamificationSocialSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '004_gamification_social.sql'), 'utf8');
   db.exec(gamificationSocialSql);
+  const ocrSourceVisualsSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '005_ocr_source_visuals.sql'), 'utf8');
+  db.exec(ocrSourceVisualsSql);
   return db;
 }
 

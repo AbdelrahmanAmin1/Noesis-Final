@@ -6,6 +6,7 @@ const { upload } = require('../middleware/upload');
 const { uploadLimiter } = require('../middleware/rateLimit');
 const matSvc = require('../services/material.service');
 const jobs = require('../services/jobs.service');
+const sourceVisualCandidates = require('../services/source-visual-candidates.service');
 
 const router = express.Router();
 
@@ -21,6 +22,25 @@ router.post('/', requireAuth, uploadLimiter, upload.single('file'), async (req, 
     const job = jobs.create('material_ingest', { userId: req.user.id, materialId: m.id });
     setImmediate(() => matSvc.processMaterial(m.id, job.id));
     res.status(202).json({ material_id: m.id, title: m.title, job_id: job.id });
+  } catch (e) { next(e); }
+});
+
+router.get('/:id/source-visuals', requireAuth, (req, res, next) => {
+  try {
+    const materialId = parseInt(req.params.id, 10);
+    const candidates = sourceVisualCandidates.listForMaterial(req.user.id, materialId);
+    if (!candidates) return res.status(404).json({ error: 'material_not_found' });
+    res.json({ source_visuals: candidates });
+  } catch (e) { next(e); }
+});
+
+router.get('/:id/source-visuals/:candidateId/image', requireAuth, (req, res, next) => {
+  try {
+    const materialId = parseInt(req.params.id, 10);
+    const candidateId = parseInt(req.params.candidateId, 10);
+    const candidate = sourceVisualCandidates.imagePathForCandidate(req.user.id, materialId, candidateId);
+    if (!candidate) return res.status(404).json({ error: 'source_visual_image_not_found' });
+    res.sendFile(candidate.imagePath);
   } catch (e) { next(e); }
 });
 

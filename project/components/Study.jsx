@@ -183,7 +183,7 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
     if (!materialId) return;
     setBusy(true); setStatus('Generating flashcards...');
     try {
-      const r = await window.NoesisAPI.flashcards.generate({ material_id: materialId, count: 6 });
+      const r = await window.NoesisAPI.flashcards.generate({ material_id: materialId, count: 8 });
       if (r.reused) setStatus('Using existing flashcards for this material.');
       else if (r.fallback) setStatus(r.message || 'Created fallback flashcards from source material.');
       else setStatus(`Created ${r.created} cards.`);
@@ -364,7 +364,7 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
             <div style={{ display: 'flex', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(14px * var(--app-density-scale))', alignItems: 'center' }}>
               {mode === 'edit' && <button className="btn btn-accent" disabled={busy || !title.trim()} onClick={save}>{status === 'Saving...' ? 'Saving...' : 'Save'}</button>}
               <button className="btn btn-ghost" disabled={busy} onClick={remove} style={{ color: 'var(--err)' }}>{status === 'Deleting...' ? 'Deleting...' : 'Delete'}</button>
-              {materialId && <button className="btn btn-ghost" disabled={busy} onClick={generateCards} style={{ marginLeft: 'auto' }}><Icon.Cards size={12}/> {status === 'Generating flashcards...' ? 'Generating flashcards...' : 'Generate 6 cards'}</button>}
+              {materialId && <button className="btn btn-ghost" disabled={busy} onClick={generateCards} style={{ marginLeft: 'auto' }}><Icon.Cards size={12}/> {status === 'Generating flashcards...' ? 'Generating flashcards...' : 'Generate 6-8 cards'}</button>}
             </div>
             {status && <div style={{ marginTop: 'calc(12px * var(--app-density-scale))', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{status}</div>}
           </>

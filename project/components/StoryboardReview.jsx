@@ -336,6 +336,28 @@ const StoryboardReview = ({ onNav }) => {
     }
   };
 
+  const doRepairWarnings = async () => {
+    setBusy('ai-repair');
+    try {
+      const d = await window.NoesisAPI.videos.repairStoryboard(id, {
+        scope: 'weak_scenes',
+        warningCodes: warnings,
+      });
+      setStoryboard(d.storyboard);
+      setQualityResult(d.quality || null);
+      const repair = d.repair || {};
+      const repaired = safeArray(repair.repairedSceneIds);
+      const skipped = safeArray(repair.skippedSceneIds);
+      setStatus(repaired.length
+        ? `AI repaired ${repaired.length} scene${repaired.length === 1 ? '' : 's'}. ${skipped.length ? `${skipped.length} scene${skipped.length === 1 ? '' : 's'} still need review.` : 'Review the updated warnings before approval.'}`
+        : 'AI repair did not apply changes. The storyboard is unchanged.');
+    } catch (e) {
+      setStatus('AI repair failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy('');
+    }
+  };
+
   const render = async () => {
     setBusy('render');
     setStatus('Rendering approved storyboard...');
@@ -401,6 +423,7 @@ const StoryboardReview = ({ onNav }) => {
         right={<>
           <button className="btn btn-ghost" disabled={!!busy} onClick={() => onNav && onNav('material')}><Icon.ArrowLeft size={12}/> Material</button>
           <button className="btn btn-ghost" disabled={!!busy} onClick={recheck}><RotateIcon size={12}/> {busy === 'recheck' ? 'Checking...' : 'Re-check'}</button>
+          <button className="btn btn-accent" disabled={!!busy || !warnings.length} onClick={doRepairWarnings} title={warnings.length ? 'Use AI to repair weak storyboard scenes' : 'No storyboard warnings to repair'}><Icon.Sparkle size={12}/> {busy === 'ai-repair' ? 'Repairing...' : 'AI repair warnings'}</button>
           <button className="btn btn-ghost" disabled={!!busy || hasCriticalBlockers} onClick={() => approve(false)} title={hasCriticalBlockers ? 'Fix critical blockers before approval' : 'Approve storyboard'}><Icon.Check size={12}/> {busy === 'approve' ? 'Approving...' : 'Approve'}</button>
           <button className="btn btn-accent" disabled={!!busy || !canRenderStoryboard} onClick={render} title={hasCriticalBlockers ? 'Fix critical blockers before rendering' : 'Render approved storyboard'}><Icon.Play size={12}/> {busy === 'render' ? 'Rendering...' : 'Render MP4'}</button>
         </>}

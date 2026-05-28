@@ -131,26 +131,26 @@ describe('free-form tutor chat routes', () => {
 
   it('normalizes raw JSON tutor replies into readable markdown', async () => {
     mockGeneration(JSON.stringify({
-      explanation: 'A linked-list node stores data plus a next reference [Source 1].',
-      question: 'What does the next reference point to?',
-      hint: 'Look for the link to the following node.',
-      example: 'HEAD -> [10|next] -> [20|next] -> null',
-      code: { language: 'java', content: 'class Node<T> { T data; Node<T> next; }' },
+      explanation: 'Polymorphism lets a superclass reference call behavior chosen by the runtime object [Source 1].',
+      question: 'Who decides which overridden method runs?',
+      hint: 'Look at the actual object created at runtime.',
+      example: 'Shape s = new Circle(); s.draw(); calls Circle.draw().',
+      code: { language: 'java', content: 'Shape s = new Circle();\ns.draw();' },
     }));
 
     const res = await request(app)
       .post('/api/tutor/chat')
       .set('Authorization', `Bearer ${token}`)
-      .send({ material_id: materialId, message: 'Explain nodes in a linked list.' });
+      .send({ material_id: materialId, message: 'Explain polymorphism.' });
 
     expect(res.status).toBe(200);
     expect(res.body.reply).toMatch(/### Answer/);
-    expect(res.body.reply).toMatch(/### Code/);
+    expect(res.body.reply).toMatch(/### Example/);
     expect(res.body.reply).not.toMatch(/^\s*[\{\[]/);
     expect(res.body.response.structured).toBe(true);
 
     const stored = db.prepare('SELECT content, trace_json FROM tutor_chat_messages WHERE id=?').get(res.body.message_id);
-    expect(stored.content).toMatch(/linked-list node/i);
+    expect(stored.content).toMatch(/runtime object/i);
     expect(stored.content).not.toMatch(/"explanation"\s*:/);
     expect(JSON.parse(stored.trace_json).response.structured).toBe(true);
   });
@@ -158,17 +158,17 @@ describe('free-form tutor chat routes', () => {
   it('normalizes fenced JSON tutor replies', async () => {
     mockGeneration([
       '```json',
-      '{"title":"Hash table check","explanation":"A load factor near 0.9 causes many probes.","question":"Why resize before the table gets full?"}',
+      '{"title":"Polymorphism check","explanation":"Dynamic dispatch chooses the overridden method from the runtime object.","question":"Why does the runtime object matter?"}',
       '```',
     ].join('\n'));
 
     const res = await request(app)
       .post('/api/tutor/chat')
       .set('Authorization', `Bearer ${token}`)
-      .send({ material_id: materialId, message: 'Quiz me on load factor.' });
+      .send({ material_id: materialId, message: 'Quiz me on dynamic dispatch.' });
 
     expect(res.status).toBe(200);
-    expect(res.body.reply).toMatch(/Hash table check/);
+    expect(res.body.reply).toMatch(/Polymorphism check/);
     expect(res.body.reply).toMatch(/### Check yourself/);
     expect(res.body.reply).not.toMatch(/```json/);
   });

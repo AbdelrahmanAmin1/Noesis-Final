@@ -1,66 +1,82 @@
 'use strict';
 
 const rateLimit = require('express-rate-limit');
+const env = require('../config/env');
 
-const globalLimiter = rateLimit({
+function limiter(options) {
+  return rateLimit({
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: () => !env.RATE_LIMITS_ENABLED,
+    ...options,
+  });
+}
+
+const globalLimiter = limiter({
   windowMs: 15 * 60 * 1000,
-  max: 300,
-  standardHeaders: true,
-  legacyHeaders: false,
+  max: env.GLOBAL_RATE_LIMIT_PER_15_MIN,
+  message: {
+    error: 'rate_limited_global',
+    message: 'Too many requests in a short time. Please wait a moment and try again.',
+  },
 });
 
-const aiLimiter = rateLimit({
+const aiLimiter = limiter({
   windowMs: 60 * 1000,
-  max: 10,
-  standardHeaders: true,
-  legacyHeaders: false,
+  max: env.AI_RATE_LIMIT_PER_MIN,
+  skipFailedRequests: env.NOESIS_DEMO_MODE,
   message: {
     error: 'rate_limited_ai',
     message: 'Too many AI requests in a short time. Please wait a moment and try again.',
   },
 });
 
-const tutorTurnLimiter = rateLimit({
+const tutorTurnLimiter = limiter({
   windowMs: 60 * 1000,
-  max: Math.max(20, parseInt(process.env.TUTOR_TURN_RATE_LIMIT_PER_MIN || '90', 10) || 90),
-  standardHeaders: true,
-  legacyHeaders: false,
+  max: env.TUTOR_TURN_RATE_LIMIT_PER_MIN,
+  skipFailedRequests: env.NOESIS_DEMO_MODE,
   message: {
     error: 'rate_limited_tutor_turn',
     message: 'The tutor is catching up. Please wait a few seconds and try again.',
   },
 });
 
-const videoLimiter = rateLimit({
+const videoLimiter = limiter({
   windowMs: 60 * 1000,
-  max: 3,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'rate_limited_video' },
+  max: env.VIDEO_RATE_LIMIT_PER_MIN,
+  skipFailedRequests: env.NOESIS_DEMO_MODE,
+  message: {
+    error: 'rate_limited_video',
+    message: 'Video and storyboard generation is cooling down. Please wait a few seconds and try again.',
+  },
 });
 
-const authLimiter = rateLimit({
+const authLimiter = limiter({
   windowMs: 15 * 60 * 1000,
-  max: 30,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'rate_limited_auth' },
+  max: env.AUTH_RATE_LIMIT_PER_15_MIN,
+  message: {
+    error: 'rate_limited_auth',
+    message: 'Too many sign-in attempts. Please wait a moment and try again.',
+  },
 });
 
-const uploadLimiter = rateLimit({
+const uploadLimiter = limiter({
   windowMs: 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'rate_limited_upload' },
+  max: env.UPLOAD_RATE_LIMIT_PER_MIN,
+  message: {
+    error: 'rate_limited_upload',
+    message: 'Too many uploads in a short time. Please wait a moment and try again.',
+  },
 });
 
-const ttsLimiter = rateLimit({
+const ttsLimiter = limiter({
   windowMs: 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'rate_limited_tts' },
+  max: env.TTS_RATE_LIMIT_PER_MIN,
+  skipFailedRequests: env.NOESIS_DEMO_MODE,
+  message: {
+    error: 'rate_limited_tts',
+    message: 'Audio generation is cooling down. Please wait a few seconds and try again.',
+  },
 });
 
 module.exports = { globalLimiter, aiLimiter, tutorTurnLimiter, videoLimiter, authLimiter, uploadLimiter, ttsLimiter };

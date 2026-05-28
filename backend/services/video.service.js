@@ -21,6 +21,8 @@ const renderer = require('./renderer.service');
 const jobs = require('./jobs.service');
 const { scoreVideoScript } = require('./video-quality.service');
 const storyboards = require('./storyboard.service');
+const sourceGroundingJudge = require('./source-grounding-judge.service');
+const sourceTopicPlans = require('./source-topic-plan.service');
 const { HttpError } = require('../middleware/error');
 const log = require('../utils/logger');
 const {
@@ -32,6 +34,65 @@ const {
 } = require('../utils/mediaBinaries');
 
 const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'hash_table', 'bigo_chart'];
+
+function normalizedTopicLabel(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9+#]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function dominantSourceTopic(chunks = [], sourceOutline = {}, materialTitle = '', currentTopic = '') {
+  const ranked = topicResolver.rankTopicsFromChunks(chunks || []);
+  const topic = String(ranked && ranked.topic || '').trim();
+  if (!topic || !topicResolver.exactKnownTopic(topic)) return null;
+  const candidates = Array.isArray(ranked.candidates) ? ranked.candidates : [];
+  const topScore = Number(candidates[0] && candidates[0].score || 0);
+  const nextScore = Number(candidates[1] && candidates[1].score || 0);
+  const confidence = Number(ranked.confidence || 0);
+  const topicKey = normalizedTopicLabel(topic);
+  const currentKey = normalizedTopicLabel(currentTopic);
+  const labels = normalizedTopicLabel([
+    materialTitle,
+    currentTopic,
+    sourceOutline && sourceOutline.mainTopic,
+    ...((sourceOutline && sourceOutline.keyConcepts) || []).slice(0, 12),
+    ...((sourceOutline && sourceOutline.majorTopics) || []).slice(0, 8).map(item => item && item.topic),
+  ].filter(Boolean).join(' '));
+  const alreadySpecific = currentKey && (currentKey === topicKey || currentKey.includes(topicKey));
+  const mentionedInLabels = topicKey && labels.includes(topicKey);
+  const dominantByScore = topScore >= 16 && topScore >= Math.max(1, nextScore) * 1.35;
+  const dominantByConfidence = confidence >= 0.72 && topScore >= 16;
+  if (alreadySpecific || mentionedInLabels || dominantByScore || dominantByConfidence) {
+    return {
+      topic,
+      confidence,
+      alternatives: candidates,
+      source: 'dominant_source_topic',
+    };
+  }
+  return null;
+}
+
+function sourceRepairedLesson(topic, materialTitle, groundingTier, uploadedChunks = [], opts = {}) {
+  const lesson = lessons.generalMaterialLesson(
+    topic,
+    materialTitle || topic,
+    groundingTier,
+    uploadedChunks.map(c => c.id).filter(Boolean),
+    uploadedChunks,
+    {
+      domainInfo: opts.domainInfo,
+      sourceOutline: opts.sourceOutline,
+      topic,
+      topicMode: 'source_repair',
+      sourceTopicPlan: opts.sourceTopicPlan,
+    }
+  );
+  lesson.topic = topic;
+  lesson.topicMode = 'source_repair';
+  lesson.sourceRepair = true;
+  lesson.sourceMaterial = lesson.sourceMaterial || {};
+  lesson.sourceMaterial.title = materialTitle || topic;
+  return lesson;
+}
 const SLIDE_TYPES = ['title', 'objectives', 'concept', 'analogy', 'diagram', 'code', 'step_by_step', 'mistakes', 'recap', 'quiz'];
 
 const ScriptSchema = z.object({
@@ -1635,16 +1696,36 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
         alternatives: sourceInfo.alternatives || [],
         understanding: sourceInfo,
       };
-    const resolvedConcept = conceptInfo.topic;
+    let resolvedConcept = conceptInfo.topic;
     if (!resolvedConcept) {
       throw new Error(`video_topic_resolution_failed: choose a more specific topic. Candidates: ${(conceptInfo.alternatives || []).map(c => c.topic).join(', ') || 'none'}`);
+    }
+    const hasExplicitConcept = !!validConceptHint(concept, materialRow);
+    const preSourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+      materialId,
+      materialTitle: materialRow.title,
+      sourceScope,
+      chapterId,
+      chunkId,
+      explicitTopic: hasExplicitConcept ? concept : '',
+      requestedTopic: resolvedConcept,
+      domainInfo,
+      sourceOutline: sourceInfo.sourceOutline || null,
+      maxBalancedChunks: 48,
+    });
+    if (!hasExplicitConcept && preSourceTopicPlan.hasMultipleTopics) {
+      resolvedConcept = preSourceTopicPlan.primaryTopic || resolvedConcept;
+      conceptInfo.topic = resolvedConcept;
+      conceptInfo.source = 'source_topic_plan';
+      conceptInfo.confidence = Math.max(Number(conceptInfo.confidence || 0), 0.65);
+      conceptInfo.alternatives = (preSourceTopicPlan.topicBundle || []).map(item => ({ topic: item.topic, score: 0.5, evidence: [item.evidence].filter(Boolean) }));
     }
     setStatus('processing', { resolved_concept: resolvedConcept });
     jobs.update(jobId, { progress: 10, stage: `Retrieving source content for ${resolvedConcept}...` });
 
-    const focusTerms = materialUnderstanding.focusTermsForTopic(resolvedConcept, sourceInfo.sourceOutline || null);
-    const avoidTerms = materialUnderstanding.competingTermsForTopic(resolvedConcept, sourceInfo.sourceOutline || null);
-    const rag = await retrieveLessonContext(materialId, resolvedConcept, {
+    let focusTerms = materialUnderstanding.focusTermsForTopic(resolvedConcept, sourceInfo.sourceOutline || null);
+    let avoidTerms = materialUnderstanding.competingTermsForTopic(resolvedConcept, sourceInfo.sourceOutline || null);
+    let rag = await retrieveLessonContext(materialId, resolvedConcept, {
       feature: 'video',
       k: 10,
       minScore: 0.08,
@@ -1657,18 +1738,169 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
       avoidTerms,
       includeSystem: shouldUseCs,
     });
-    const chunks = rag.chunks || [];
-    const uploadedRag = rag.uploaded || rag;
-    const uploadedChunks = uploadedRag.chunks || [];
-    const lowGrounding = (uploadedRag.chunks || []).length < 2 || uploadedRag.maxScore < 0.16 || uploadedRag.meanScore < 0.10;
-    const groundingTier = computeGroundingTier(uploadedRag);
-    const sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
+    let chunks = rag.chunks || [];
+    let uploadedRag = rag.uploaded || rag;
+    let uploadedChunks = uploadedRag.chunks || [];
+    let lowGrounding = (uploadedRag.chunks || []).length < 2 || uploadedRag.maxScore < 0.16 || uploadedRag.meanScore < 0.10;
+    let groundingTier = computeGroundingTier(uploadedRag);
+    let sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
       explicitQuery: resolvedConcept,
       hint: resolvedConcept,
       title: materialRow.title,
       materialTitle: materialRow.title,
       domainInfo,
     });
+    let sourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+      materialId,
+      materialTitle: materialRow.title,
+      sourceScope,
+      chapterId,
+      chunkId,
+      explicitTopic: validConceptHint(concept, materialRow) ? concept : '',
+      requestedTopic: resolvedConcept,
+      domainInfo,
+      chunks: uploadedChunks,
+      sourceOutline,
+      maxBalancedChunks: 48,
+    });
+    const topicMode = sourceTopicPlan.topicMode;
+    if (!hasExplicitConcept && preSourceTopicPlan.hasMultipleTopics) {
+      sourceTopicPlan = preSourceTopicPlan;
+      resolvedConcept = sourceTopicPlan.primaryTopic || resolvedConcept;
+      setStatus('processing', { resolved_concept: resolvedConcept });
+      uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
+      uploadedRag = { ...(uploadedRag || {}), chunks: uploadedChunks };
+      chunks = [
+        ...uploadedChunks.map(chunk => ({ ...chunk, corpus: 'uploaded' })),
+        ...((rag.system && rag.system.chunks) || []).map(chunk => ({ ...chunk, corpus: 'system' })),
+      ];
+      lowGrounding = uploadedChunks.length < 2 || uploadedRag.maxScore < 0.16 || uploadedRag.meanScore < 0.10;
+      groundingTier = computeGroundingTier(uploadedRag);
+      sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
+      focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, resolvedConcept);
+      avoidTerms = [];
+    } else if (!hasExplicitConcept && sourceTopicPlan.hasMultipleTopics) {
+      resolvedConcept = sourceTopicPlan.primaryTopic || resolvedConcept;
+      setStatus('processing', { resolved_concept: resolvedConcept });
+      uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
+      sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
+      focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, resolvedConcept);
+      avoidTerms = [];
+    } else if (!validConceptHint(concept, materialRow)) {
+      const dominant = dominantSourceTopic(uploadedChunks, sourceOutline, materialRow.title, resolvedConcept);
+      if (dominant && dominant.topic && dominant.topic !== resolvedConcept) {
+        resolvedConcept = dominant.topic;
+        conceptInfo.topic = resolvedConcept;
+        conceptInfo.source = dominant.source;
+        conceptInfo.confidence = Math.max(Number(conceptInfo.confidence || 0), dominant.confidence || 0);
+        conceptInfo.alternatives = dominant.alternatives || conceptInfo.alternatives || [];
+        setStatus('processing', { resolved_concept: resolvedConcept });
+        focusTerms = materialUnderstanding.focusTermsForTopic(resolvedConcept, sourceOutline || sourceInfo.sourceOutline || null);
+        avoidTerms = materialUnderstanding.competingTermsForTopic(resolvedConcept, sourceOutline || sourceInfo.sourceOutline || null);
+        sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
+          explicitQuery: resolvedConcept,
+          hint: resolvedConcept,
+          title: materialRow.title,
+          materialTitle: materialRow.title,
+          domainInfo,
+        });
+        sourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+          materialId,
+          materialTitle: materialRow.title,
+          sourceScope,
+          chapterId,
+          chunkId,
+          explicitTopic: '',
+          requestedTopic: resolvedConcept,
+          domainInfo,
+          chunks: uploadedChunks,
+          sourceOutline,
+          maxBalancedChunks: 48,
+        });
+      }
+    }
+    let verifierPre = sourceGroundingJudge.judge({
+      feature: 'video',
+      stage: 'pre_generation',
+      materialId,
+      resolvedTopic: resolvedConcept,
+      requestedTopic: concept,
+      domainInfo,
+      sourceOutline,
+      materialUnderstanding: conceptInfo.understanding || sourceInfo,
+      chunks: uploadedChunks,
+      sourceTopicPlan,
+      topicMode,
+      attempt: 0,
+    });
+    if (verifierPre.decision === sourceGroundingJudge.DECISIONS.RETRY && verifierPre.correctedTopic) {
+      resolvedConcept = verifierPre.correctedTopic;
+      setStatus('processing', { resolved_concept: resolvedConcept });
+      focusTerms = materialUnderstanding.focusTermsForTopic(resolvedConcept, sourceOutline || sourceInfo.sourceOutline || null);
+      avoidTerms = materialUnderstanding.competingTermsForTopic(resolvedConcept, sourceOutline || sourceInfo.sourceOutline || null);
+      rag = await retrieveLessonContext(materialId, resolvedConcept, {
+        feature: 'video',
+        k: 10,
+        minScore: 0.08,
+        maxMerged: 14,
+        sourceScope,
+        chapterId,
+        chunkId,
+        focusTopic: resolvedConcept,
+        focusTerms,
+        avoidTerms,
+        includeSystem: shouldUseCs,
+      });
+      chunks = rag.chunks || [];
+      uploadedRag = rag.uploaded || rag;
+      uploadedChunks = uploadedRag.chunks || [];
+      lowGrounding = (uploadedRag.chunks || []).length < 2 || uploadedRag.maxScore < 0.16 || uploadedRag.meanScore < 0.10;
+      groundingTier = computeGroundingTier(uploadedRag);
+      sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
+        explicitQuery: resolvedConcept,
+        hint: resolvedConcept,
+        title: materialRow.title,
+        materialTitle: materialRow.title,
+        domainInfo,
+      });
+      sourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+        materialId,
+        materialTitle: materialRow.title,
+        sourceScope,
+        chapterId,
+        chunkId,
+        explicitTopic: validConceptHint(concept, materialRow) ? concept : '',
+        requestedTopic: resolvedConcept,
+        domainInfo,
+        chunks: uploadedChunks,
+        sourceOutline,
+        maxBalancedChunks: 48,
+      });
+      if (!validConceptHint(concept, materialRow) && sourceTopicPlan.hasMultipleTopics) {
+        uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
+        sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
+        resolvedConcept = sourceTopicPlan.primaryTopic || resolvedConcept;
+        focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, resolvedConcept);
+        avoidTerms = [];
+      }
+      verifierPre = sourceGroundingJudge.judge({
+        feature: 'video',
+        stage: 'pre_generation',
+        materialId,
+        resolvedTopic: resolvedConcept,
+        requestedTopic: concept,
+        domainInfo,
+        sourceOutline,
+        materialUnderstanding: conceptInfo.understanding || sourceInfo,
+        chunks: uploadedChunks,
+        sourceTopicPlan,
+        topicMode,
+        attempt: 1,
+      });
+    }
+    if (verifierPre.decision === sourceGroundingJudge.DECISIONS.BLOCK) {
+      throw new Error(`generation_verifier_blocked: ${(verifierPre.reasonCodes || []).join(', ') || 'topic mismatch'}`);
+    }
     const videoContext = (env.KNOWLEDGE_CONTEXT_ENABLED && env.KNOWLEDGE_USE_FOR_VIDEO)
       ? educationalContext.buildEducationalContext({
         userId,
@@ -1682,9 +1914,10 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
         audienceLevel: 'beginner',
       })
       : null;
-    const educationalContextPrompt = videoContext
-      ? educationalContext.formatVideoEducationalContextForPrompt(videoContext)
-      : '';
+    const educationalContextPrompt = [
+      videoContext ? educationalContext.formatVideoEducationalContextForPrompt(videoContext) : '',
+      sourceTopicPlans.formatSourceTopicPlanForPrompt(sourceTopicPlan),
+    ].filter(Boolean).join('\n\n');
     const curatedTopicId = videoContext && videoContext.curatedKnowledge && videoContext.curatedKnowledge.id || null;
     log.info('video_rag', {
       videoId,
@@ -1711,6 +1944,8 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
       sourceOutline,
       focusTerms,
       avoidTerms,
+      sourceTopicPlan,
+      topicMode,
     });
     let drift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
       focusTopic: resolvedConcept,
@@ -1719,20 +1954,11 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
       competingTerms: avoidTerms,
     });
     if (drift.drifted) {
-      lesson = shouldUseCs
-        ? lessons.fallbackLesson(resolvedConcept, {
-          materialTitle: materialRow.title || resolvedConcept,
-          chunks: uploadedChunks,
-          groundingTier,
-          domainInfo,
-          domain: domainInfo.domain,
-          sourceOutline,
-        })
-        : lessons.generalMaterialLesson(resolvedConcept, materialRow.title || resolvedConcept, groundingTier, uploadedChunks.map(c => c.id).filter(Boolean), uploadedChunks, {
-          domainInfo,
-          sourceOutline,
-          topic: resolvedConcept,
-        });
+      lesson = sourceRepairedLesson(resolvedConcept, materialRow.title || resolvedConcept, groundingTier, uploadedChunks, {
+        domainInfo,
+        sourceOutline,
+        sourceTopicPlan,
+      });
       drift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
         focusTopic: resolvedConcept,
         sourceOutline,
@@ -1740,8 +1966,8 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
         competingTerms: avoidTerms,
       });
     }
-    const script = normalizeScript(lessons.lessonToVideoScript(lesson), resolvedConcept, uploadedChunks, lowGrounding);
-    const quality = scoreVideoScript(script, {
+    let script = normalizeScript(lessons.lessonToVideoScript(lesson), resolvedConcept, uploadedChunks, lowGrounding);
+    let quality = scoreVideoScript(script, {
       concept: resolvedConcept,
       chunks: uploadedChunks,
       lowGrounding,
@@ -1750,7 +1976,108 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
       threshold: env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
     });
     if (!quality.passed) {
-      throw new Error(`video_script_quality_failed: ${(quality.reasons || []).slice(0, 3).join('; ')}`);
+      const repairedLesson = sourceRepairedLesson(resolvedConcept, materialRow.title || resolvedConcept, groundingTier, uploadedChunks, {
+        domainInfo,
+        sourceOutline,
+        sourceTopicPlan,
+      });
+      const repairedScript = normalizeScript(lessons.lessonToVideoScript(repairedLesson), resolvedConcept, uploadedChunks, lowGrounding);
+      const repairedQuality = scoreVideoScript(repairedScript, {
+        concept: resolvedConcept,
+        chunks: uploadedChunks,
+        lowGrounding,
+        domainInfo,
+        domain: domainInfo.domain,
+        threshold: env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
+      });
+      if (repairedQuality.passed || env.SOURCE_REPAIR_SAVE_SAFE_FALLBACK) {
+        lesson = repairedLesson;
+        script = repairedScript;
+        quality = repairedQuality;
+      } else {
+        throw new Error(`video_script_quality_failed: ${(quality.reasons || []).slice(0, 3).join('; ')}`);
+      }
+    }
+    let verifierPost = sourceGroundingJudge.judge({
+      feature: 'video',
+      stage: 'post_generation',
+      materialId,
+      resolvedTopic: resolvedConcept,
+      requestedTopic: concept,
+      domainInfo,
+      sourceOutline,
+      materialUnderstanding: conceptInfo.understanding || sourceInfo,
+      chunks: uploadedChunks,
+      sourceTopicPlan,
+      topicMode,
+      outputText: JSON.stringify(script),
+      outputJson: script,
+      attempt: drift.drifted ? 1 : 0,
+    });
+    if (verifierPost.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+      const repairedLesson = sourceRepairedLesson(resolvedConcept, materialRow.title || resolvedConcept, groundingTier, uploadedChunks, {
+        domainInfo,
+        sourceOutline,
+        sourceTopicPlan,
+      });
+      const repairedScript = normalizeScript(lessons.lessonToVideoScript(repairedLesson), resolvedConcept, uploadedChunks, lowGrounding);
+      const repairedQuality = scoreVideoScript(repairedScript, {
+        concept: resolvedConcept,
+        chunks: uploadedChunks,
+        lowGrounding,
+        domainInfo,
+        domain: domainInfo.domain,
+        threshold: env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
+      });
+      const repairedVerifier = sourceGroundingJudge.judge({
+        feature: 'video',
+        stage: 'post_generation_repair',
+        materialId,
+        resolvedTopic: resolvedConcept,
+        requestedTopic: concept,
+        domainInfo,
+        sourceOutline,
+        materialUnderstanding: conceptInfo.understanding || sourceInfo,
+        chunks: uploadedChunks,
+        sourceTopicPlan,
+        topicMode,
+        outputText: JSON.stringify(repairedScript),
+        outputJson: repairedScript,
+        attempt: 1,
+      });
+      const repairedVerifierSafe = repairedVerifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT ||
+        (env.SOURCE_REPAIR_SAVE_SAFE_FALLBACK && sourceGroundingJudge.sourceRepairSafe(repairedVerifier));
+      if ((repairedQuality.passed || env.SOURCE_REPAIR_SAVE_SAFE_FALLBACK) && repairedVerifierSafe) {
+        lesson = repairedLesson;
+        script = repairedScript;
+        quality = repairedQuality;
+        verifierPost = repairedVerifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT
+          ? repairedVerifier
+          : {
+            ...repairedVerifier,
+            decision: sourceGroundingJudge.DECISIONS.ACCEPT,
+            reasonCodes: ['source_repair_video_safe_fallback'],
+            repairedFrom: repairedVerifier,
+          };
+      }
+    }
+    if (verifierPost.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+      if (
+        env.SOURCE_REPAIR_SAVE_SAFE_FALLBACK &&
+        lesson &&
+        lesson.sourceRepair &&
+        (sourceGroundingJudge.safeSourceFallbackAllowed(verifierPost) || sourceGroundingJudge.sourceRepairSafe(verifierPost))
+      ) {
+        verifierPost = {
+          ...verifierPost,
+          decision: sourceGroundingJudge.DECISIONS.ACCEPT,
+          reasonCodes: ['source_repair_video_safe_fallback'],
+          repairedFrom: verifierPost,
+        };
+      }
+    }
+    if (verifierPost.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+      throw new Error(`generation_verifier_blocked: ${(verifierPost.reasonCodes || []).join(', ') || 'ungrounded video output'}`);
     }
     setStatus('processing', {
       script_md: JSON.stringify(script),
@@ -1766,6 +2093,17 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
         source_title: conceptInfo.sourceTitle || materialRow.title || null,
         candidates: conceptInfo.alternatives || [],
         domain: domainInfo,
+        sourceTopicPlan: {
+          topicMode: sourceTopicPlan.topicMode,
+          primaryTopic: sourceTopicPlan.primaryTopic,
+          topicBundle: sourceTopicPlan.topicBundle,
+          allowedTopics: sourceTopicPlan.allowedTopics,
+        },
+        repair_path: lesson && lesson.sourceRepair ? 'deterministic_source_repair' : 'ai_initial',
+        verifier: {
+          pre: verifierPre,
+          post: verifierPost,
+        },
         educationalContext: {
           curatedMatched: !!curatedTopicId,
           curatedTopicId,

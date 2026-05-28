@@ -10,6 +10,13 @@ const CS_SIGNALS = [
   'algorithm', 'data structure', 'linked list', 'binary search tree', 'hash table',
   'big o', 'big-o', 'time complexity', 'space complexity', 'push', 'pop', 'lifo',
   'enqueue', 'dequeue', 'fifo', 'node', 'pointer', 'recursion', 'array',
+  'tree', 'trees', 'bst', 'heap', 'graph',
+];
+
+const DATA_STRUCTURE_SIGNALS = [
+  'data structure', 'array', 'linked list', 'stack', 'queue', 'binary search tree',
+  'bst', 'tree', 'trees', 'hash table', 'hash map', 'heap', 'graph', 'node',
+  'root', 'leaf', 'subtree', 'traversal', 'bucket', 'collision',
 ];
 
 const BUSINESS_SIGNALS = [
@@ -145,7 +152,7 @@ function detectMaterialDomain(userId, materialId, opts = {}) {
   ].filter(Boolean).join(' ');
   const result = classifyText(text);
   const subdomain = result.domain === 'cs'
-    ? (containsPhrase(text, 'data structure') || containsPhrase(text, 'stack') || containsPhrase(text, 'queue') ? 'data_structures' : 'oop_or_programming')
+    ? (DATA_STRUCTURE_SIGNALS.some(signal => containsPhrase(text, signal)) ? 'data_structures' : 'oop_or_programming')
     : (result.domain === 'unknown' || result.domain === 'general' ? null : result.domain);
   return {
     domain: result.domain,
@@ -178,5 +185,6 @@ module.exports = {
     HUMANITIES_SIGNALS,
     SOCIAL_SCIENCE_SIGNALS,
     CS_SIGNALS,
+    DATA_STRUCTURE_SIGNALS,
   },
 };

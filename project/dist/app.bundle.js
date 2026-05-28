@@ -38,7 +38,10 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
     let data = null;
     try { data = await res.json(); } catch (_) {}
     if (!res.ok) {
-      const msg = (data && (data.message || data.error)) || ('http_' + res.status);
+      const fallbackMsg = res.status === 429
+        ? 'Too many requests in a short time. Please wait a moment and try again.'
+        : 'http_' + res.status;
+      const msg = (data && (data.message || data.error)) || fallbackMsg;
       const err = new Error(msg);
       err.status = res.status;
       err.data = data;
@@ -163,6 +166,7 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
       regenerateScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/regenerate-scene', b),
       fixScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix-scene', b),
       fixStoryboardIssue: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix', b),
+      repairStoryboard: (id, b) => req('POST', '/videos/storyboard/' + id + '/repair', b),
       recheckStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/recheck'),
       approveStoryboard: (id, b) => req('POST', '/videos/storyboard/' + id + '/approve', b),
       renderStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/render'),
@@ -4722,7 +4726,7 @@ const MaterialDetail = ({
       let flashcardResult = null;
       if (kind === 'flashcards') flashcardResult = await window.NoesisAPI.flashcards.generate({
         material_id: id,
-        count: 6,
+        count: 8,
         regenerate: !!options.regenerate,
         ...scopePayload
       });
@@ -4997,7 +5001,7 @@ const MaterialDetail = ({
       fontSize: 'calc(11px * var(--app-font-scale))',
       color: 'var(--fg-3)'
     }
-  }, "Create 6 cards from ", sourceScopeLabel.toLowerCase()))), React.createElement("button", {
+  }, "Create 6-8 cards from ", sourceScopeLabel.toLowerCase()))), React.createElement("button", {
     style: mds.gen,
     disabled: busy,
     onClick: async () => {
@@ -11890,6 +11894,25 @@ const StoryboardReview = ({
       setBusy('');
     }
   };
+  const doRepairWarnings = async () => {
+    setBusy('ai-repair');
+    try {
+      const d = await window.NoesisAPI.videos.repairStoryboard(id, {
+        scope: 'weak_scenes',
+        warningCodes: warnings
+      });
+      setStoryboard(d.storyboard);
+      setQualityResult(d.quality || null);
+      const repair = d.repair || {};
+      const repaired = safeArray(repair.repairedSceneIds);
+      const skipped = safeArray(repair.skippedSceneIds);
+      setStatus(repaired.length ? `AI repaired ${repaired.length} scene${repaired.length === 1 ? '' : 's'}. ${skipped.length ? `${skipped.length} scene${skipped.length === 1 ? '' : 's'} still need review.` : 'Review the updated warnings before approval.'}` : 'AI repair did not apply changes. The storyboard is unchanged.');
+    } catch (e) {
+      setStatus('AI repair failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy('');
+    }
+  };
   const render = async () => {
     setBusy('render');
     setStatus('Rendering approved storyboard...');
@@ -11964,6 +11987,13 @@ const StoryboardReview = ({
     }, React.createElement(RotateIcon, {
       size: 12
     }), " ", busy === 'recheck' ? 'Checking...' : 'Re-check'), React.createElement("button", {
+      className: "btn btn-accent",
+      disabled: !!busy || !warnings.length,
+      onClick: doRepairWarnings,
+      title: warnings.length ? 'Use AI to repair weak storyboard scenes' : 'No storyboard warnings to repair'
+    }, React.createElement(Icon.Sparkle, {
+      size: 12
+    }), " ", busy === 'ai-repair' ? 'Repairing...' : 'AI repair warnings'), React.createElement("button", {
       className: "btn btn-ghost",
       disabled: !!busy || hasCriticalBlockers,
       onClick: () => approve(false),
@@ -14746,7 +14776,7 @@ const NotesEditor = ({
     try {
       const r = await window.NoesisAPI.flashcards.generate({
         material_id: materialId,
-        count: 6
+        count: 8
       });
       if (r.reused) setStatus('Using existing flashcards for this material.');else if (r.fallback) setStatus(r.message || 'Created fallback flashcards from source material.');else setStatus(`Created ${r.created} cards.`);
     } catch (e) {
@@ -15031,7 +15061,7 @@ const NotesEditor = ({
     }
   }, React.createElement(Icon.Cards, {
     size: 12
-  }), " ", status === 'Generating flashcards...' ? 'Generating flashcards...' : 'Generate 6 cards')), status && React.createElement("div", {
+  }), " ", status === 'Generating flashcards...' ? 'Generating flashcards...' : 'Generate 6-8 cards')), status && React.createElement("div", {
     style: {
       marginTop: 'calc(12px * var(--app-density-scale))',
       fontSize: 'calc(11px * var(--app-font-scale))',

@@ -178,6 +178,18 @@ describe('generation scope and general-subject domain gating', () => {
     expect(domainDetection.shouldUseCuratedCs(domain)).toBe(true);
   });
 
+  it('classifies tree and graph units as the data_structures CS subdomain', () => {
+    const materialId = seedMaterial(db, user.id, 'Trees and Graphs Data Structures', [
+      { title: 'Trees', text: 'A tree data structure has a root node, child nodes, leaves, subtree height, and traversal operations.' },
+      { title: 'Graphs', text: 'A graph data structure has vertices, edges, adjacency lists, and traversal paths.' },
+    ]);
+    const domain = domainDetection.detectMaterialDomain(user.id, materialId, { hint: 'tree graph data structure' });
+
+    expect(domain.domain).toBe('cs');
+    expect(domain.subdomain).toBe('data_structures');
+    expect(domainDetection.shouldUseCuratedCs(domain)).toBe(true);
+  });
+
   it('still allows curated CS context for supported OOP material', () => {
     const materialId = seedMaterial(db, user.id, 'OOP Encapsulation Lecture', [
       { title: 'Encapsulation', text: 'Encapsulation uses a class with private fields and public methods to protect object state.' },

@@ -2,6 +2,7 @@
 
 const understanding = require('../services/material-understanding.service');
 const resolver = require('../services/topic-resolver.service');
+const domainDetection = require('../services/domain-detection.service');
 
 describe('material-understanding.service', () => {
   function skeletalChunks() {
@@ -105,6 +106,32 @@ describe('material-understanding.service', () => {
     expect(result.normalizedTopic).toBe('Linked List');
     expect(result.keyConcepts).toEqual(expect.arrayContaining(['node', 'head', 'next pointer', 'traversal']));
     expect(result.sourceEvidence.length).toBeGreaterThanOrEqual(2);
+    expect(result.readyForGeneration).toBe(true);
+  });
+
+  it('detects Trees as a first-class Data Structures topic', () => {
+    const result = understanding.understandFromChunks([
+      {
+        id: 43,
+        idx: 0,
+        heading: 'Tree ADT',
+        text: 'A tree ADT organizes nodes with one root, parent child relationships, children, leaves, height, depth, and subtrees.',
+      },
+      {
+        id: 44,
+        idx: 1,
+        heading: 'Tree Traversals',
+        text: 'Binary tree traversal can be preorder, inorder, and postorder. A BST is an ordered example under the broader Trees unit.',
+      },
+    ], {
+      resolvedTopic: 'Trees',
+      resolverConfidence: 0.9,
+    });
+
+    expect(result.domain).toBe('Data Structures');
+    expect(result.normalizedTopic).toBe('Trees');
+    expect(result.keyConcepts).toEqual(expect.arrayContaining(['root', 'parent', 'child', 'children', 'height', 'depth']));
+    expect(result.keyConcepts.join(' ')).toMatch(/preorder|postorder|inorder|traversal/i);
     expect(result.readyForGeneration).toBe(true);
   });
 
@@ -248,6 +275,16 @@ describe('material-understanding.service', () => {
     expect(result.topic).toMatch(/skeletal system/i);
     expect(result.topic).not.toMatch(/^Document$/i);
     expect(result.source).toBe('source_heading');
+  });
+
+  it('keeps core data-structure terms visible to the domain detector', () => {
+    const result = domainDetection.classifyText('Linked list, tree, binary search tree, BST, hash table, heap, graph, and array are data structures.');
+    const dataStructureHits = domainDetection._internals.DATA_STRUCTURE_SIGNALS.filter(signal =>
+      domainDetection._internals.containsPhrase('Linked list, tree, binary search tree, BST, hash table, heap, graph, and array are data structures.', signal)
+    );
+
+    expect(result.domain).toBe('cs');
+    expect(dataStructureHits).toEqual(expect.arrayContaining(['linked list', 'tree', 'binary search tree', 'bst', 'hash table', 'heap', 'graph', 'array']));
   });
 
   it('detects focused topic drift across multi-topic source outlines', () => {

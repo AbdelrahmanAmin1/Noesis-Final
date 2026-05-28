@@ -1,9 +1,10 @@
 'use strict';
 
-require('dotenv').config();
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
+require('dotenv').config({ path: path.join(ROOT, '.env') });
+require('dotenv').config();
 
 function boolEnv(name, fallback) {
   const raw = process.env[name];
@@ -17,6 +18,8 @@ function numberEnv(name, fallback, min = null, max = null) {
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min == null ? n : min, Math.min(max == null ? n : max, n));
 }
+
+const DEMO_MODE = boolEnv('NOESIS_DEMO_MODE', true);
 
 const env = {
   NODE_ENV: process.env.NODE_ENV || 'development',
@@ -32,6 +35,23 @@ const env = {
   DB_PATH: path.resolve(ROOT, process.env.DB_PATH || 'data/noesis.sqlite'),
   MAX_UPLOAD_MB: parseInt(process.env.MAX_UPLOAD_MB || '25', 10),
 
+  RATE_LIMITS_ENABLED: boolEnv('RATE_LIMITS_ENABLED', true),
+  GLOBAL_RATE_LIMIT_PER_15_MIN: numberEnv('GLOBAL_RATE_LIMIT_PER_15_MIN', DEMO_MODE ? 1000 : 300, 1, 100000),
+  AI_RATE_LIMIT_PER_MIN: numberEnv('AI_RATE_LIMIT_PER_MIN', DEMO_MODE ? 120 : 10, 1, 10000),
+  VIDEO_RATE_LIMIT_PER_MIN: numberEnv('VIDEO_RATE_LIMIT_PER_MIN', DEMO_MODE ? 60 : 3, 1, 10000),
+  AUTH_RATE_LIMIT_PER_15_MIN: numberEnv('AUTH_RATE_LIMIT_PER_15_MIN', 30, 1, 10000),
+  UPLOAD_RATE_LIMIT_PER_MIN: numberEnv('UPLOAD_RATE_LIMIT_PER_MIN', DEMO_MODE ? 30 : 5, 1, 10000),
+  TTS_RATE_LIMIT_PER_MIN: numberEnv('TTS_RATE_LIMIT_PER_MIN', DEMO_MODE ? 60 : 20, 1, 10000),
+  TUTOR_TURN_RATE_LIMIT_PER_MIN: numberEnv('TUTOR_TURN_RATE_LIMIT_PER_MIN', DEMO_MODE ? 120 : 90, 20, 10000),
+
+  OCR_ENABLED: boolEnv('OCR_ENABLED', false),
+  OCR_PROVIDER: (process.env.OCR_PROVIDER || 'ocrmypdf').toLowerCase(),
+  OCR_MIN_TEXT_CHARS_PER_PAGE: numberEnv('OCR_MIN_TEXT_CHARS_PER_PAGE', 250, 0, 5000),
+  OCR_TIMEOUT_MS: numberEnv('OCR_TIMEOUT_MS', 180000, 1000, 1800000),
+  OCR_MAX_PAGES: numberEnv('OCR_MAX_PAGES', 40, 1, 1000),
+  OCR_TESSERACT_LANG: process.env.OCR_TESSERACT_LANG || 'eng',
+  SOURCE_VISUALS_MAX_PER_MATERIAL: numberEnv('SOURCE_VISUALS_MAX_PER_MATERIAL', 8, 0, 50),
+
   AI_PROVIDER: process.env.AI_PROVIDER || 'ollama',
   EMBEDDING_PROVIDER: (process.env.EMBEDDING_PROVIDER || 'ollama').toLowerCase(),
   NOTES_PROVIDER: (process.env.NOTES_PROVIDER || process.env.AI_PROVIDER || 'ollama').toLowerCase(),
@@ -44,7 +64,9 @@ const env = {
   TUTOR_FALLBACK_PROVIDER: (process.env.TUTOR_FALLBACK_PROVIDER || 'ollama').toLowerCase(),
   FLASHCARD_PROVIDER: (process.env.FLASHCARD_PROVIDER || 'groq').toLowerCase(),
   FLASHCARD_FALLBACK_PROVIDER: (process.env.FLASHCARD_FALLBACK_PROVIDER || 'ollama').toLowerCase(),
-  FLASHCARD_MAX_CARDS: numberEnv('FLASHCARD_MAX_CARDS', 6, 1, 10),
+  FLASHCARD_MIN_CARDS: numberEnv('FLASHCARD_MIN_CARDS', 6, 1, 10),
+  FLASHCARD_MAX_CARDS: numberEnv('FLASHCARD_MAX_CARDS', 8, 1, 10),
+  FLASHCARD_DEFAULT_CARDS: numberEnv('FLASHCARD_DEFAULT_CARDS', 8, 1, 10),
   FLASHCARD_TOP_K_CHUNKS: numberEnv('FLASHCARD_TOP_K_CHUNKS', 3, 1, 10),
   FLASHCARD_MAX_CONTEXT_CHARS: numberEnv('FLASHCARD_MAX_CONTEXT_CHARS', 4000, 1000, 8000),
   FLASHCARD_TIMEOUT_MS: numberEnv('FLASHCARD_TIMEOUT_MS', 60000, 1000, 180000),
@@ -58,6 +80,11 @@ const env = {
   KNOWLEDGE_USE_FOR_TUTOR: boolEnv('KNOWLEDGE_USE_FOR_TUTOR', true),
   KNOWLEDGE_USE_FOR_NOTES: boolEnv('KNOWLEDGE_USE_FOR_NOTES', true),
   KNOWLEDGE_USE_FOR_VIDEO: boolEnv('KNOWLEDGE_USE_FOR_VIDEO', true),
+  SOURCE_GROUNDING_JUDGE_ENABLED: boolEnv('SOURCE_GROUNDING_JUDGE_ENABLED', true),
+  SOURCE_GROUNDING_JUDGE_MODE: (process.env.SOURCE_GROUNDING_JUDGE_MODE || 'deterministic').toLowerCase(),
+  SOURCE_GROUNDING_JUDGE_RETRY_LIMIT: numberEnv('SOURCE_GROUNDING_JUDGE_RETRY_LIMIT', 1, 0, 3),
+  SOURCE_GROUNDING_JUDGE_BLOCK_ON_TOPIC_DRIFT: boolEnv('SOURCE_GROUNDING_JUDGE_BLOCK_ON_TOPIC_DRIFT', true),
+  SOURCE_REPAIR_SAVE_SAFE_FALLBACK: boolEnv('SOURCE_REPAIR_SAVE_SAFE_FALLBACK', true),
 
   OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
   OLLAMA_GEN_MODEL: process.env.OLLAMA_GEN_MODEL || 'llama3.2:3b',
@@ -72,7 +99,7 @@ const env = {
   GROQ_VIDEO_MAX_CHUNK_CHARS: parseInt(process.env.GROQ_VIDEO_MAX_CHUNK_CHARS || '1200', 10),
   GROQ_VIDEO_MAX_INPUT_CHARS: parseInt(process.env.GROQ_VIDEO_MAX_INPUT_CHARS || '16000', 10),
   GROQ_NOTES_MAX_OUTPUT_TOKENS: parseInt(process.env.GROQ_NOTES_MAX_OUTPUT_TOKENS || '2000', 10),
-  NOESIS_DEMO_MODE: boolEnv('NOESIS_DEMO_MODE', true),
+  NOESIS_DEMO_MODE: DEMO_MODE,
   VIDEO_RENDERER: (process.env.VIDEO_RENDERER || 'canvas').toLowerCase(),
   VIDEO_RENDERER_EXPLICIT: !!process.env.VIDEO_RENDERER,
   REMOTION_BROWSER_EXECUTABLE: process.env.REMOTION_BROWSER_EXECUTABLE || '',

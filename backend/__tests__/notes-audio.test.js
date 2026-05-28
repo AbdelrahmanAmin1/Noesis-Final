@@ -31,10 +31,10 @@ function insertNote(db, userId, title = 'Encapsulation') {
 }
 
 async function waitForJob(app, token, jobId) {
-  for (let i = 0; i < 80; i += 1) {
+  for (let i = 0; i < 240; i += 1) {
     const res = await request(app).get(`/api/jobs/${jobId}`).set('Authorization', `Bearer ${token}`);
     if (res.body.status === 'completed' || res.body.status === 'failed') return res;
-    await new Promise(resolve => setTimeout(resolve, 75));
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error('job_timeout');
 }

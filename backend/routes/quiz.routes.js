@@ -13,6 +13,8 @@ const { retrieveLessonContext, groundingTier: computeGroundingTier } = require('
 const educationalContext = require('../services/educational-context.service');
 const domainDetection = require('../services/domain-detection.service');
 const materialUnderstanding = require('../services/material-understanding.service');
+const sourceGroundingJudge = require('../services/source-grounding-judge.service');
+const sourceTopicPlans = require('../services/source-topic-plan.service');
 const { recordConceptOutcome } = require('../services/mastery.service');
 const log = require('../utils/logger');
 const gamification = require('../services/gamification.service');
@@ -178,6 +180,10 @@ function inferTopic(text) {
   return words.length ? words.join(' ') : 'this concept';
 }
 
+function quizVerifierText(data) {
+  return sourceGroundingJudge.practiceQuizText((data && data.questions) || []);
+}
+
 router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
   try {
     const { material_id, count, difficulty } = req.body || {};
@@ -189,8 +195,9 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     const m = db.prepare('SELECT id, title FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
     const scopeInfo = validateScope(db, req.user.id, material_id, scope);
-    let topicQuery = stripInternalRefs((req.body && req.body.topic) || scopeInfo.title || m.title);
-    const sourceUnderstanding = materialUnderstanding.understandGeneralFromDb(req.user.id, material_id, {
+    const requestedTopic = stripInternalRefs((req.body && req.body.topic) || scopeInfo.title || m.title);
+    let topicQuery = requestedTopic;
+    let sourceUnderstanding = materialUnderstanding.understandGeneralFromDb(req.user.id, material_id, {
       explicitQuery: topicQuery,
       scopeTitle: scopeInfo.title,
       title: m.title,
@@ -199,9 +206,82 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       chunkId: scope.chunkId,
     });
     topicQuery = stripInternalRefs(sourceUnderstanding.topic || topicQuery || m.title);
-    const domainInfo = domainDetection.detectMaterialDomain(req.user.id, material_id, { hint: topicQuery });
-    const focusTerms = materialUnderstanding.focusTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
-    const avoidTerms = materialUnderstanding.competingTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
+    let domainInfo = domainDetection.detectMaterialDomain(req.user.id, material_id, { hint: topicQuery });
+    let sourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+      materialId: material_id,
+      materialTitle: m.title,
+      sourceScope: scope.sourceScope,
+      chapterId: scope.chapterId,
+      chunkId: scope.chunkId,
+      explicitTopic: (req.body && req.body.topic) || '',
+      requestedTopic: topicQuery,
+      domainInfo,
+      sourceOutline: sourceUnderstanding.sourceOutline || null,
+      maxBalancedChunks: 48,
+    });
+    const topicMode = sourceTopicPlan.topicMode;
+    if (topicMode === 'material_wide' && sourceTopicPlan.primaryTopic) {
+      topicQuery = sourceTopicPlan.primaryTopic;
+      sourceUnderstanding = { ...sourceUnderstanding, topic: topicQuery, normalizedTopic: topicQuery, sourceOutline: sourceTopicPlan.sourceOutline, sourceTopicPlan };
+    }
+    let preVerifier = sourceGroundingJudge.judge({
+      feature: 'quiz',
+      stage: 'pre_generation',
+      materialId: material_id,
+      resolvedTopic: topicQuery,
+      requestedTopic,
+      domainInfo,
+      sourceOutline: sourceUnderstanding.sourceOutline || null,
+      materialUnderstanding: sourceUnderstanding,
+      sourceTopicPlan,
+      topicMode,
+      attempt: 0,
+    });
+    if (preVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY && preVerifier.correctedTopic) {
+      topicQuery = stripInternalRefs(preVerifier.correctedTopic);
+      sourceUnderstanding = materialUnderstanding.understandGeneralFromDb(req.user.id, material_id, {
+        explicitQuery: topicQuery,
+        scopeTitle: scopeInfo.title,
+        title: m.title,
+        sourceScope: scope.sourceScope,
+        chapterId: scope.chapterId,
+        chunkId: scope.chunkId,
+      });
+      topicQuery = stripInternalRefs(sourceUnderstanding.topic || topicQuery || m.title);
+      domainInfo = domainDetection.detectMaterialDomain(req.user.id, material_id, { hint: topicQuery });
+      sourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+        materialId: material_id,
+        materialTitle: m.title,
+        sourceScope: scope.sourceScope,
+        chapterId: scope.chapterId,
+        chunkId: scope.chunkId,
+        explicitTopic: (req.body && req.body.topic) || '',
+        requestedTopic: topicQuery,
+        domainInfo,
+        sourceOutline: sourceUnderstanding.sourceOutline || null,
+        maxBalancedChunks: 48,
+      });
+      preVerifier = sourceGroundingJudge.judge({
+        feature: 'quiz',
+        stage: 'pre_generation_retry',
+        materialId: material_id,
+        resolvedTopic: topicQuery,
+        requestedTopic,
+        domainInfo,
+        sourceOutline: sourceUnderstanding.sourceOutline || null,
+        materialUnderstanding: sourceUnderstanding,
+        sourceTopicPlan,
+        topicMode,
+        attempt: 1,
+      });
+    }
+    const verifierFallbackOnly = preVerifier.decision === sourceGroundingJudge.DECISIONS.BLOCK;
+    const focusTerms = topicMode === 'material_wide'
+      ? sourceTopicPlans.focusTerms(sourceTopicPlan, topicQuery)
+      : materialUnderstanding.focusTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
+    const avoidTerms = topicMode === 'material_wide'
+      ? []
+      : materialUnderstanding.competingTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
     const ragResult = await retrieveLessonContext(material_id, topicQuery, {
       feature: 'quiz',
       k: 8,
@@ -215,7 +295,11 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       avoidTerms,
       includeSystem: domainDetection.shouldUseCuratedCs(domainInfo),
     });
-    const uploadedChunks = (ragResult.uploaded && ragResult.uploaded.chunks) || [];
+    let uploadedChunks = (ragResult.uploaded && ragResult.uploaded.chunks) || [];
+    if (topicMode === 'material_wide' && sourceTopicPlan.balancedChunks.length) {
+      uploadedChunks = sourceTopicPlan.balancedChunks.slice(0, 12);
+      ragResult.uploaded = { ...(ragResult.uploaded || {}), chunks: uploadedChunks };
+    }
     const context = educationalContext.buildEducationalContext({
       userId: req.user.id,
       materialId: material_id,
@@ -227,20 +311,95 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       domainInfo,
       audienceLevel: 'beginner',
     });
-    const educationalContextPrompt = educationalContext.formatPracticeEducationalContextForPrompt(context, { feature: 'quiz' });
+    const educationalContextPrompt = [
+      educationalContext.formatPracticeEducationalContextForPrompt(context, { feature: 'quiz' }),
+      sourceGroundingJudge.topicLockPrompt(topicQuery, preVerifier),
+      sourceTopicPlans.formatSourceTopicPlanForPrompt(sourceTopicPlan),
+    ].filter(Boolean).join('\n\n');
     const tier = computeGroundingTier(ragResult.uploaded || ragResult);
-    let data;
-    try {
+    const generateQuizData = async (extraInstruction = '') => {
       const raw = await ai.generate(prompts.QUIZ_MCQ(uploadedChunks, n, diff, {
-        educationalContext: educationalContextPrompt,
+        educationalContext: [educationalContextPrompt, extraInstruction].filter(Boolean).join('\n\n'),
         groundingTier: tier,
       }), { format: 'json', temperature: 0.4 });
-      data = await parseJsonSafe(raw, QuizSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0 }));
-    } catch (e) {
-      log.warn('quiz_generation_fallback', e.message || e);
+      return parseJsonSafe(raw, QuizSchema, async (txt) => ai.generate(prompts.REPAIR_JSON(txt), { temperature: 0 }));
+    };
+    let data;
+    let generatedByAi = false;
+    if (verifierFallbackOnly) {
+      log.warn('quiz_verifier_fallback', {
+        materialId: material_id,
+        stage: 'pre_generation',
+        reasonCodes: preVerifier.reasonCodes,
+      });
       data = fallbackQuizFromChunks(uploadedChunks, n, diff);
+    } else {
+      try {
+        data = await generateQuizData();
+        generatedByAi = true;
+      } catch (e) {
+        log.warn('quiz_generation_fallback', e.message || e);
+        data = fallbackQuizFromChunks(uploadedChunks, n, diff);
+      }
     }
     data = ensureQuizCount(data, uploadedChunks, n, diff);
+    let postVerifier = sourceGroundingJudge.judge({
+      feature: 'quiz',
+      stage: 'post_generation',
+      materialId: material_id,
+      resolvedTopic: topicQuery,
+      requestedTopic,
+      domainInfo,
+      sourceOutline: sourceUnderstanding.sourceOutline || null,
+      materialUnderstanding: sourceUnderstanding,
+      chunks: uploadedChunks,
+      sourceTopicPlan,
+      topicMode,
+      outputText: quizVerifierText(data),
+      outputJson: data,
+      attempt: 0,
+    });
+    if (generatedByAi && postVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY) {
+      log.warn('quiz_verifier_retry', {
+        materialId: material_id,
+        reasonCodes: postVerifier.reasonCodes,
+        correctedTopic: postVerifier.correctedTopic,
+      });
+      try {
+        const retryData = await generateQuizData([
+          postVerifier.retryGuidance,
+          sourceGroundingJudge.topicLockPrompt(postVerifier.correctedTopic || topicQuery, postVerifier, { strict: true }),
+        ].filter(Boolean).join('\n\n'));
+        data = ensureQuizCount(retryData, uploadedChunks, n, diff);
+        postVerifier = sourceGroundingJudge.judge({
+          feature: 'quiz',
+          stage: 'post_generation_retry',
+          materialId: material_id,
+          resolvedTopic: postVerifier.correctedTopic || topicQuery,
+          requestedTopic,
+          domainInfo,
+          sourceOutline: sourceUnderstanding.sourceOutline || null,
+          materialUnderstanding: sourceUnderstanding,
+          chunks: uploadedChunks,
+          sourceTopicPlan,
+          topicMode,
+          outputText: quizVerifierText(data),
+          outputJson: data,
+          attempt: 1,
+        });
+      } catch (e) {
+        log.warn('quiz_generation_fallback', e.message || e);
+        postVerifier = { decision: sourceGroundingJudge.DECISIONS.BLOCK, reasonCodes: ['retry_generation_failed'] };
+      }
+    }
+    if (postVerifier.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+      log.warn('quiz_verifier_fallback', {
+        materialId: material_id,
+        stage: postVerifier.decision === sourceGroundingJudge.DECISIONS.BLOCK ? 'post_generation_block' : 'post_generation',
+        reasonCodes: postVerifier.reasonCodes,
+      });
+      data = ensureQuizCount(fallbackQuizFromChunks(uploadedChunks, n, diff), uploadedChunks, n, diff);
+    }
 
     const qIns = db.prepare(`INSERT INTO quizzes (user_id, material_id, title, difficulty, created_at) VALUES (?,?,?,?,?)`);
     const qqIns = db.prepare(`INSERT INTO quiz_questions (quiz_id, idx, question, options_json, correct_idx, explanation, concept) VALUES (?,?,?,?,?,?,?)`);

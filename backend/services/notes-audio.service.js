@@ -154,6 +154,26 @@ function completedAudioFor(db, userId, noteId, style, voice, speed, hash) {
   `).get(userId, noteId, style, voice, speed, hash);
 }
 
+function writableAudioDir(preferredDir) {
+  const candidates = [
+    preferredDir,
+    path.join(env.UPLOAD_DIR, 'audio'),
+    path.join(env.ROOT_DIR, 'uploads'),
+  ];
+  for (const dir of candidates) {
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+      const probe = path.join(dir, `.noesis-write-${process.pid}-${Date.now()}.tmp`);
+      fs.writeFileSync(probe, 'ok');
+      fs.unlinkSync(probe);
+      return dir;
+    } catch (err) {
+      log.warn('notes_audio_dir_unwritable', { dir, code: err && err.code, message: err && err.message });
+    }
+  }
+  throw new Error('notes_audio_output_dir_unwritable');
+}
+
 async function generateNoteAudio(userId, noteId, opts = {}, jobId = null) {
   const db = getDb();
   const style = normalizeStyle(opts.style);
@@ -171,8 +191,7 @@ async function generateNoteAudio(userId, noteId, opts = {}, jobId = null) {
     `).run(nowIso(), userId, noteId, style, voice, speed, hash);
   }
 
-  const audioDir = path.join(env.UPLOAD_DIR, 'audio', 'notes');
-  fs.mkdirSync(audioDir, { recursive: true });
+  const audioDir = writableAudioDir(path.join(env.UPLOAD_DIR, 'audio', 'notes'));
   const audioPath = path.join(audioDir, `note-${noteId}-${style}-${hash}.wav`);
   const now = nowIso();
   const insert = db.prepare(`

@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { extractText } = require('../services/extract.service');
+const { extractText, extractStructured } = require('../services/extract.service');
 
 function makePptx(filePath) {
   const zip = new AdmZip();
@@ -58,6 +58,21 @@ describe('extract.service video grounding fixtures', () => {
       expect(text).toMatch(/Title: Encapsulation in Java/);
       expect(text).toMatch(/Private fields protect object state/);
       expect(text).toMatch(/Speaker note: Use a Counter example/);
+    } finally {
+      try { fs.unlinkSync(filePath); } catch (_) {}
+    }
+  });
+
+  it('keeps image uploads as visual sources instead of reading binary as text', async () => {
+    const filePath = path.join(os.tmpdir(), `noesis-image-${Date.now()}.png`);
+    fs.writeFileSync(filePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]));
+    try {
+      const text = await extractText(filePath, 'image/png');
+      const structured = await extractStructured(filePath, 'image/png');
+      expect(text).toBe('');
+      expect(structured.type).toBe('image');
+      expect(structured.visualSources).toHaveLength(1);
+      expect(structured.pages[0].sourceKind).toBe('image');
     } finally {
       try { fs.unlinkSync(filePath); } catch (_) {}
     }

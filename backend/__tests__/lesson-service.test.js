@@ -336,6 +336,100 @@ describe('lesson.service', () => {
     expect(sectionTypes).not.toContain('diagram');
   });
 
+  it('scores entire-material CS survey notes by source coverage instead of requiring code', () => {
+    const chunks = [
+      { id: 301, idx: 0, chapter_title: 'Arrays', heading: 'Arrays', text: 'Arrays store elements in contiguous indexed positions and support random access by index.' },
+      { id: 302, idx: 1, chapter_title: 'Stacks', heading: 'Stacks', text: 'Stacks use LIFO order with push, pop, and peek operations at the top.' },
+      { id: 303, idx: 2, chapter_title: 'Queues', heading: 'Queues', text: 'Queues use FIFO order with enqueue at the rear and dequeue at the front.' },
+    ];
+    const sourceOutline = require('../services/material-understanding.service').buildSourceOutline(chunks, { title: 'Data Structures Survey' });
+    const lesson = lessons.generalMaterialLesson('Data Structures Survey', 'Data Structures Survey', 'strong', [301, 302, 303], chunks, {
+      domainInfo: { domain: 'cs', subdomain: 'data_structures' },
+      sourceOutline,
+      topicMode: 'material_wide',
+    });
+    const quality = lessons.scoreLesson(lesson, {
+      domainInfo: { domain: 'cs', subdomain: 'data_structures' },
+      chunks,
+      sourceOutline,
+      topicMode: 'material_wide',
+    });
+
+    expect(quality.requiresCode).toBe(false);
+    expect(quality.passed).toBe(true);
+    expect(JSON.stringify(lesson).toLowerCase()).toMatch(/arrays|stacks|queues|random access|lifo|fifo/);
+  });
+
+  it('accepts source-repaired notes from noisy extracted data-structure headings', () => {
+    const chunks = [
+      {
+        id: 401,
+        idx: 0,
+        chapter_title: 'Introduction',
+        heading: 'A Data Structureis Organizes Information So That It',
+        text: 'A data structure organizes information so that it is efficient to access and process. An array is static. A vector is dynamic. In this chapter we study lists, queues, and stacks.',
+        keywords_json: JSON.stringify(['data structure', 'array', 'vector', 'lists', 'queues', 'stacks']),
+      },
+      {
+        id: 402,
+        idx: 1,
+        chapter_title: 'Self-Referential Classes: Definition',
+        heading: 'Self-Referential Classes: Definition',
+        text: 'A self-referential class contains an instance variable that refers to another object of the same class type. That instance variable is called a link. A null reference means the link does not refer to another object.',
+        keywords_json: JSON.stringify(['self-referential class', 'link', 'null reference']),
+      },
+      {
+        id: 403,
+        idx: 2,
+        chapter_title: 'p.next = q;',
+        heading: 'p.next = q;',
+        text: 'p.next = q stores the address of node q in the link field of node p, thereby connecting node p to node q and forming a linked list with two nodes.',
+        keywords_json: JSON.stringify(['node.next', 'link field', 'linked list']),
+      },
+      {
+        id: 404,
+        idx: 3,
+        chapter_title: 'Linked Lists: Definition',
+        heading: 'Linked Lists: Definition',
+        text: 'A linked list is a linear collection of nodes. It is based on a self-referential object that refers to an object of the same class. Each node contains data and a reference to the next node.',
+        keywords_json: JSON.stringify(['linked list', 'linear collection', 'node', 'next reference']),
+      },
+      {
+        id: 405,
+        idx: 4,
+        chapter_title: 'List Implementation',
+        heading: 'List Implementation',
+        text: 'A list implementation stores a head reference. insertAtFront and insertAtBack add nodes. removeFromFirst and removeFromLast remove nodes. Insertion into a linked list is fast because only references change.',
+        keywords_json: JSON.stringify(['head reference', 'insertAtFront', 'removeFromFirst', 'list implementation']),
+      },
+    ];
+    const sourceOutline = require('../services/material-understanding.service').buildSourceOutline(chunks, {
+      title: 'Chapter 6- Data Structures Linked Lists - NoGenerics',
+      domainInfo: { domain: 'cs', subdomain: 'data_structures' },
+    });
+    const lesson = lessons.generalMaterialLesson('Linked List', 'Chapter 6- Data Structures Linked Lists - NoGenerics', 'strong', [401, 402, 403, 404, 405], chunks, {
+      domainInfo: { domain: 'cs', subdomain: 'data_structures' },
+      sourceOutline,
+      topicMode: 'material_wide',
+    });
+    lesson.sourceRepair = true;
+    lesson.topicMode = 'material_wide';
+    const quality = lessons.scoreLesson(lesson, {
+      domainInfo: { domain: 'cs', subdomain: 'data_structures' },
+      chunks,
+      sourceOutline,
+      topicMode: 'source_repair',
+      sourceRepair: true,
+    });
+    const text = JSON.stringify(lesson).toLowerCase();
+
+    expect(quality.passed).toBe(true);
+    expect(quality.genericFailure).toBe(false);
+    expect(quality.repeatedGeneralHeadingFailure).toBe(false);
+    expect(text).toMatch(/linked list|self-referential|head reference|insertatfront|next reference/);
+    expect(text).not.toMatch(/root node|binary search tree/);
+  });
+
   it('converts a lesson into a video script that passes stricter inheritance scoring', () => {
     const lesson = lessons.fallbackLesson('Inheritance');
     const script = lessons.lessonToVideoScript(lesson);
@@ -357,6 +451,28 @@ describe('lesson.service', () => {
     expect(text).toContain('next');
     expect(text).toContain('o(1)');
     expect(text).toContain('o(n)');
+  });
+
+  it('builds Trees fallback notes with tree concepts instead of linked-list language', () => {
+    const lesson = lessons.fallbackLesson('Trees');
+    const text = JSON.stringify(lesson).toLowerCase();
+
+    expect(lesson.topic).toBe('Trees');
+    expect(text).toMatch(/root|parent|child|children|leaf|height|depth|traversal|tree adt|implementation/);
+    expect(text).toMatch(/preorder|postorder|inorder|binary tree/);
+    expect(text).not.toMatch(/linked list|head pointer|node\.next|next pointer/);
+  });
+
+  it('converts Trees fallback notes into a tree video script', () => {
+    const lesson = lessons.fallbackLesson('Trees');
+    const script = lessons.lessonToVideoScript(lesson);
+    const text = JSON.stringify(script).toLowerCase();
+    const quality = scoreVideoScript(script, { concept: 'Trees', chunks: [], threshold: 0.75 });
+
+    expect(quality.passed).toBe(true);
+    expect(script.slides.some(slide => ['tree', 'tree_visual'].includes(slide.visual_type || slide.visual?.type))).toBe(true);
+    expect(text).toMatch(/root|leaf|traversal|subtree|o\(log n\)|o\(n\)/);
+    expect(text).not.toMatch(/linked_list_operation|head pointer|node\.next/);
   });
 
   it('passes educational context into the generated notes prompt', async () => {

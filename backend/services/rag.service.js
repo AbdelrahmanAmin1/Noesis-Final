@@ -227,14 +227,16 @@ async function retrieveWithMeta(materialId, query, kOrOpts = 6, minScore = 0.05)
   if (materialId === 'system') {
     rows = db.prepare(`SELECT c.id, c.idx, c.text, c.embedding, c.chapter_id,
                               c.source_page, c.chapter_title, c.heading,
-                              c.slide_number, c.slide_title, c.section_title, c.has_code, c.keywords_json
+                              c.slide_number, c.slide_title, c.section_title, c.has_code, c.keywords_json,
+                              c.source_kind, c.source_visual_id
                        FROM chunks c JOIN materials m ON m.id = c.material_id
                        WHERE m.user_id = 0`).all();
   } else {
     const where = scopeWhereClause(scope);
     rows = db.prepare(`SELECT id, idx, text, embedding, chapter_id,
                               source_page, chapter_title, heading,
-                              slide_number, slide_title, section_title, has_code, keywords_json
+                              slide_number, slide_title, section_title, has_code, keywords_json,
+                              source_kind, source_visual_id
                        FROM chunks WHERE material_id=?${where.sql}`).all(materialId, ...where.params);
   }
   if (rows.length === 0) return { chunks: [], maxScore: 0, meanScore: 0, sourceScope: scope.sourceScope, sourceLabel: sourceScopeLabel(scope) };

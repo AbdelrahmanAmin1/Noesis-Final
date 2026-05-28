@@ -4,8 +4,11 @@ const fs = require('fs');
 const path = require('path');
 const { z } = require('zod');
 const { getDb } = require('../config/db');
+const env = require('../config/env');
 const { HttpError } = require('../middleware/error');
-const { extractText, detectChapters } = require('./extract.service');
+const { extractStructured, detectChapters } = require('./extract.service');
+const extractionQuality = require('./extraction-quality.service');
+const ocr = require('./ocr.service');
 const { chunkByChapter } = require('./chunk.service');
 const { embedAndStore } = require('./rag.service');
 const ai = require('./ai.service');
@@ -15,6 +18,7 @@ const prompts = require('../utils/prompts');
 const { parseJsonSafe } = require('../utils/jsonSafe');
 const topicResolver = require('./topic-resolver.service');
 const gamification = require('./gamification.service');
+const sourceVisualCandidates = require('./source-visual-candidates.service');
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -27,12 +31,13 @@ function fileTypeFromExt(ext) {
   if (e === '.pdf') return 'pdf';
   if (e === '.pptx' || e === '.ppt') return 'slides';
   if (e === '.docx' || e === '.doc') return 'doc';
+  if (['.png', '.jpg', '.jpeg', '.webp'].includes(e)) return 'image';
   return 'note';
 }
 
 function listForUser(userId) {
   const db = getDb();
-  const rows = db.prepare(`SELECT id, title, type, status, progress, created_at,
+  const rows = db.prepare(`SELECT id, title, type, status, progress, created_at, ocr_status, ocr_provider,
                      (SELECT COUNT(*) FROM chapters c WHERE c.material_id = m.id) AS chapters
                      FROM materials m WHERE user_id=? ORDER BY created_at DESC`).all(userId);
   return rows.map(row => ({ ...row, display_title: displayTitleForMaterial(db, row) }));
@@ -81,11 +86,11 @@ function getChunks(userId, materialId, chapterId) {
   const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
   if (!m) throw new HttpError(404, 'material_not_found');
   if (chapterId) {
-    return db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json
+    return db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
                        FROM chunks WHERE material_id=? AND chapter_id=? ORDER BY idx`)
       .all(materialId, chapterId);
   }
-  return db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json
+  return db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
                      FROM chunks WHERE material_id=? ORDER BY idx`).all(materialId);
 }
 
@@ -95,6 +100,8 @@ function deleteMaterial(userId, id) {
   if (!m) throw new HttpError(404, 'material_not_found');
   db.prepare('DELETE FROM materials WHERE id=?').run(id);
   try { if (m.file_path && fs.existsSync(m.file_path)) fs.unlinkSync(m.file_path); } catch (_) {}
+  try { fs.rmSync(path.join(env.UPLOAD_DIR, 'source-visuals', String(id)), { recursive: true, force: true }); } catch (_) {}
+  try { fs.rmSync(path.join(env.UPLOAD_DIR, 'ocr', String(id)), { recursive: true, force: true }); } catch (_) {}
   return { ok: true };
 }
 
@@ -137,6 +144,37 @@ async function extractAndStoreConcepts(userId, chunks) {
   return names;
 }
 
+function saveExtractionDiagnostics(db, materialId, status, provider, diagnostics = {}) {
+  db.prepare(`UPDATE materials
+              SET extraction_diagnostics_json=?, ocr_status=?, ocr_provider=?
+              WHERE id=?`).run(
+    JSON.stringify(diagnostics || {}),
+    status || 'not_evaluated',
+    provider || null,
+    materialId
+  );
+}
+
+function visualIdForChunk(chunk, candidates = []) {
+  const match = candidates.find((candidate) => {
+    if (chunk.slide_number != null && candidate.slideNumber != null) return Number(chunk.slide_number) === Number(candidate.slideNumber);
+    if (chunk.source_page != null && (candidate.sourcePage != null || candidate.pageNumber != null)) {
+      return Number(chunk.source_page) === Number(candidate.sourcePage ?? candidate.pageNumber);
+    }
+    return false;
+  });
+  return match ? match.id : null;
+}
+
+function sourceKindForChunk(chunk, pages = []) {
+  const page = pages.find((p) => {
+    if (chunk.slide_number != null && p.slideNumber != null) return Number(chunk.slide_number) === Number(p.slideNumber);
+    if (chunk.source_page != null && p.pageNumber != null) return Number(chunk.source_page) === Number(p.pageNumber);
+    return false;
+  });
+  return page && page.sourceKind ? page.sourceKind : 'text';
+}
+
 async function processMaterial(materialId, jobId) {
   const db = getDb();
   const setStatus = (s, p) => db.prepare('UPDATE materials SET status=?, progress=? WHERE id=?').run(s, p, materialId);
@@ -146,10 +184,74 @@ async function processMaterial(materialId, jobId) {
     setStatus('processing', 10);
     if (jobId) jobs.update(jobId, { status: 'running', progress: 10 });
 
-    const text = await extractText(m.file_path, m.mime);
+    const structured = await extractStructured(m.file_path, m.mime);
+    const quality = extractionQuality.analyzeExtraction(structured, {
+      minTextCharsPerPage: env.OCR_MIN_TEXT_CHARS_PER_PAGE,
+    });
+    let ocrStatus = quality.needsOcr ? 'ocr_needed' : 'ocr_skipped_not_needed';
+    let ocrResult = null;
+    let ocrError = null;
+    let mergedExtraction = structured;
+    saveExtractionDiagnostics(db, materialId, ocrStatus, env.OCR_PROVIDER, { quality, ocr: { enabled: env.OCR_ENABLED, status: ocrStatus } });
+
+    if (quality.needsOcr && !env.OCR_ENABLED) {
+      ocrStatus = 'ocr_skipped_disabled';
+      saveExtractionDiagnostics(db, materialId, ocrStatus, env.OCR_PROVIDER, { quality, ocr: { enabled: false, status: ocrStatus } });
+      if (jobId) jobs.update(jobId, { progress: 18, stage: ocrStatus });
+    } else if (quality.needsOcr && env.OCR_ENABLED) {
+      ocrStatus = 'ocr_running';
+      saveExtractionDiagnostics(db, materialId, ocrStatus, env.OCR_PROVIDER, { quality, ocr: { enabled: true, status: ocrStatus } });
+      if (jobId) jobs.update(jobId, { progress: 18, stage: ocrStatus });
+      try {
+        ocrResult = await ocr.runOcr({
+          filePath: m.file_path,
+          mime: m.mime,
+          structured,
+          quality,
+          materialId,
+          provider: env.OCR_PROVIDER,
+        });
+        mergedExtraction = extractionQuality.mergeStructuredWithOcr(structured, ocrResult);
+        ocrStatus = 'ocr_completed';
+        saveExtractionDiagnostics(db, materialId, ocrStatus, ocrResult.provider || env.OCR_PROVIDER, {
+          quality,
+          ocr: {
+            enabled: true,
+            status: ocrStatus,
+            provider: ocrResult.provider || env.OCR_PROVIDER,
+            pages: (ocrResult.pages || []).length,
+          },
+        });
+      } catch (err) {
+        ocrError = err;
+        ocrStatus = 'ocr_failed_using_normal_extraction';
+        mergedExtraction = extractionQuality.mergeStructuredWithOcr(structured, null);
+        saveExtractionDiagnostics(db, materialId, ocrStatus, env.OCR_PROVIDER, {
+          quality,
+          ocr: {
+            enabled: true,
+            status: ocrStatus,
+            provider: env.OCR_PROVIDER,
+            error: String(err.message || err),
+            missing: err.missing || undefined,
+          },
+        });
+        log.warn('ocr_failed_using_normal_extraction', { materialId, error: err.message || err });
+        if (jobId) jobs.update(jobId, { progress: 20, stage: ocrStatus, ocr_error: String(err.message || err) });
+      }
+    } else {
+      mergedExtraction = extractionQuality.mergeStructuredWithOcr(structured, null);
+      if (jobId) jobs.update(jobId, { progress: 18, stage: ocrStatus });
+    }
+
+    const text = mergedExtraction.text || structured.text || '';
     if (!text || text.trim().length < 20) throw new Error('no_extractable_text');
     setStatus('processing', 30);
     if (jobId) jobs.update(jobId, { progress: 30 });
+
+    const visualCandidates = sourceVisualCandidates.persistForMaterial(materialId, mergedExtraction, {
+      max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
+    });
 
     const chapters = detectChapters(text);
     const insChapter = db.prepare('INSERT INTO chapters (material_id, idx, title, char_start, char_end) VALUES (?,?,?,?,?)');
@@ -164,11 +266,13 @@ async function processMaterial(materialId, jobId) {
     const chunks = chunkByChapter(text, chapters);
     if (chunks.length === 0) throw new Error('no_chunks_created');
     const insChunk = db.prepare(`INSERT INTO chunks
-      (material_id, chapter_id, idx, text, token_count, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      (material_id, chapter_id, idx, text, token_count, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
     const inserted = [];
     db.transaction(() => {
       for (const c of chunks) {
+        const sourceKind = sourceKindForChunk(c, mergedExtraction.pages || []);
+        const sourceVisualId = visualIdForChunk(c, visualCandidates);
         const r = insChunk.run(
           materialId,
           chapterIds[c.chapter_idx] || null,
@@ -182,11 +286,33 @@ async function processMaterial(materialId, jobId) {
           c.slide_title || '',
           c.section_title || c.heading || '',
           c.has_code ? 1 : 0,
-          c.keywords_json || JSON.stringify(c.keywords || [])
+          c.keywords_json || JSON.stringify(c.keywords || []),
+          sourceKind,
+          sourceVisualId
         );
-        inserted.push({ id: r.lastInsertRowid, text: c.text, chapter_title: c.chapter_title || '', heading: c.heading || '' });
+        inserted.push({
+          id: r.lastInsertRowid,
+          text: c.text,
+          chapter_title: c.chapter_title || '',
+          heading: c.heading || '',
+          source_page: c.source_page || null,
+          slide_number: c.slide_number || null,
+          source_kind: sourceKind,
+          source_visual_id: sourceVisualId,
+        });
       }
     })();
+    saveExtractionDiagnostics(db, materialId, ocrStatus, (ocrResult && ocrResult.provider) || env.OCR_PROVIDER, {
+      quality,
+      ocr: {
+        enabled: env.OCR_ENABLED,
+        status: ocrStatus,
+        provider: (ocrResult && ocrResult.provider) || env.OCR_PROVIDER,
+        error: ocrError ? String(ocrError.message || ocrError) : null,
+      },
+      sourcePages: (mergedExtraction.pages || []).length,
+      sourceVisualCandidates: visualCandidates.length,
+    });
     setStatus('processing', 60);
     if (jobId) jobs.update(jobId, { progress: 60 });
 

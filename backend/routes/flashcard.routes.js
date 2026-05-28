@@ -14,6 +14,8 @@ const { retrieveLessonContext, groundingTier: computeGroundingTier } = require('
 const educationalContext = require('../services/educational-context.service');
 const domainDetection = require('../services/domain-detection.service');
 const materialUnderstanding = require('../services/material-understanding.service');
+const sourceGroundingJudge = require('../services/source-grounding-judge.service');
+const sourceTopicPlans = require('../services/source-topic-plan.service');
 const srs = require('../services/srs.service');
 const log = require('../utils/logger');
 const gamification = require('../services/gamification.service');
@@ -21,7 +23,7 @@ const gamification = require('../services/gamification.service');
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
 const PLACEHOLDER_RE = /\b(what is this topic|define the concept|true or false:?\s*this is important|example here|definition goes here|placeholder|todo|lorem ipsum)\b/i;
-const MAX_FLASHCARDS = 10;
+const HARD_MAX_FLASHCARDS = 10;
 
 function generationScope(body = {}) {
   const sourceScope = String(body.sourceScope || body.source_scope || 'material').toLowerCase();
@@ -106,9 +108,12 @@ function stripInternalRefs(value) {
 }
 
 function parseCardCount(value) {
-  const parsed = parseInt(value || env.FLASHCARD_MAX_CARDS || 6, 10);
-  const safe = Number.isInteger(parsed) ? parsed : (env.FLASHCARD_MAX_CARDS || 6);
-  return Math.min(MAX_FLASHCARDS, Math.max(1, safe));
+  const min = Math.max(1, Number(env.FLASHCARD_MIN_CARDS || 6));
+  const max = Math.min(HARD_MAX_FLASHCARDS, Math.max(min, Number(env.FLASHCARD_MAX_CARDS || 8)));
+  const fallback = Math.min(max, Math.max(min, Number(env.FLASHCARD_DEFAULT_CARDS || max)));
+  const parsed = parseInt(value || fallback, 10);
+  const safe = Number.isInteger(parsed) ? parsed : fallback;
+  return Math.min(max, Math.max(min, safe));
 }
 
 function truncateText(value, max = 700) {
@@ -221,21 +226,36 @@ function fallbackFlashcardsFromChunks(chunks, count, deckTitle) {
     }
     if (candidates.length >= count * 2) break;
   }
-  const cards = candidates.slice(0, count).map((item, idx) => {
+  if (!candidates.length && deckTitle) {
+    candidates.push({ sentence: `The uploaded material is about ${deckTitle}. Review the extracted source text for the most important definitions, relationships, and examples.`, chunkId: null });
+  }
+  const stems = [
+    topic => `What should you remember about ${topic}?`,
+    topic => `Which source detail explains ${topic}?`,
+    topic => `How would you summarize ${topic} from the uploaded material?`,
+    topic => `What is one exam-ready fact about ${topic}?`,
+  ];
+  const cards = [];
+  let idx = 0;
+  while (cards.length < count && candidates.length) {
+    const item = candidates[idx % candidates.length];
     const topic = inferTopic(item.sentence, deckTitle);
-    return {
-      question: `What should you remember about ${topic}?`,
+    const stem = stems[Math.floor(idx / candidates.length) % stems.length];
+    cards.push({
+      question: stem(topic),
       answer: item.sentence,
-      difficulty: idx < 2 ? 'easy' : 'medium',
+      difficulty: cards.length < 2 ? 'easy' : 'medium',
       topic,
       source_chunk_id: item.chunkId,
-    };
-  });
+    });
+    idx += 1;
+    if (idx > count * Math.max(4, candidates.length)) break;
+  }
   return { cards };
 }
 
 function existingFlashcards(db, userId, materialId, topic, count) {
-  const rows = db.prepare(`
+  const topicRows = db.prepare(`
     SELECT id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at
     FROM flashcards
     WHERE user_id=? AND material_id=?
@@ -243,7 +263,14 @@ function existingFlashcards(db, userId, materialId, topic, count) {
     ORDER BY created_at DESC
     LIMIT ?
   `).all(userId, materialId, topic || null, topic || '', topic || '', count);
-  return rows;
+  if (topicRows.length >= count) return topicRows;
+  return db.prepare(`
+    SELECT id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at
+    FROM flashcards
+    WHERE user_id=? AND material_id=?
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(userId, materialId, count);
 }
 
 function usableProvider(provider) {
@@ -332,6 +359,25 @@ function sanitizeCards(cards, chunks, count, deckTitle) {
   return cleaned;
 }
 
+function topUpFlashcards(cards, context, chunks, count, deckTitle) {
+  if ((cards || []).length >= count) return cards.slice(0, count);
+  const seen = new Set((cards || []).map(card => String(card.question || '').toLowerCase()));
+  const topped = [...(cards || [])];
+  const fallback = fallbackFlashcardsFromContext(context, chunks, count, deckTitle).cards;
+  for (const raw of sanitizeCards(fallback, chunks, count, deckTitle)) {
+    if (topped.length >= count) break;
+    const key = String(raw.question || '').toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    topped.push(raw);
+  }
+  return topped.slice(0, count);
+}
+
+function flashcardVerifierText(cards) {
+  return sourceGroundingJudge.practiceFlashcardText(cards || []);
+}
+
 router.get('/', requireAuth, (req, res, next) => {
   try {
     const db = getDb();
@@ -379,8 +425,9 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     if (!m) throw new HttpError(404, 'material_not_found');
     const scopeInfo = validateScope(db, req.user.id, material_id, scope);
 
-    let topicQuery = stripInternalRefs((req.body && req.body.topic) || scopeInfo.title || m.title);
-    const sourceUnderstanding = materialUnderstanding.understandGeneralFromDb(req.user.id, material_id, {
+    const requestedTopic = stripInternalRefs((req.body && req.body.topic) || scopeInfo.title || m.title);
+    let topicQuery = requestedTopic;
+    let sourceUnderstanding = materialUnderstanding.understandGeneralFromDb(req.user.id, material_id, {
       explicitQuery: topicQuery,
       scopeTitle: scopeInfo.title,
       title: m.title,
@@ -389,12 +436,85 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       chunkId: scope.chunkId,
     });
     topicQuery = stripInternalRefs(sourceUnderstanding.topic || topicQuery || m.title);
-    const domainInfo = domainDetection.detectMaterialDomain(req.user.id, material_id, { hint: topicQuery });
-    const focusTerms = materialUnderstanding.focusTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
-    const avoidTerms = materialUnderstanding.competingTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
+    let domainInfo = domainDetection.detectMaterialDomain(req.user.id, material_id, { hint: topicQuery });
+    let sourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+      materialId: material_id,
+      materialTitle: m.title,
+      sourceScope: scope.sourceScope,
+      chapterId: scope.chapterId,
+      chunkId: scope.chunkId,
+      explicitTopic: (req.body && req.body.topic) || '',
+      requestedTopic: topicQuery,
+      domainInfo,
+      sourceOutline: sourceUnderstanding.sourceOutline || null,
+      maxBalancedChunks: 48,
+    });
+    const topicMode = sourceTopicPlan.topicMode;
+    if (topicMode === 'material_wide' && sourceTopicPlan.primaryTopic) {
+      topicQuery = sourceTopicPlan.primaryTopic;
+      sourceUnderstanding = { ...sourceUnderstanding, topic: topicQuery, normalizedTopic: topicQuery, sourceOutline: sourceTopicPlan.sourceOutline, sourceTopicPlan };
+    }
+    let preVerifier = sourceGroundingJudge.judge({
+      feature: 'flashcards',
+      stage: 'pre_generation',
+      materialId: material_id,
+      resolvedTopic: topicQuery,
+      requestedTopic,
+      domainInfo,
+      sourceOutline: sourceUnderstanding.sourceOutline || null,
+      materialUnderstanding: sourceUnderstanding,
+      sourceTopicPlan,
+      topicMode,
+      attempt: 0,
+    });
+    if (preVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY && preVerifier.correctedTopic) {
+      topicQuery = stripInternalRefs(preVerifier.correctedTopic);
+      sourceUnderstanding = materialUnderstanding.understandGeneralFromDb(req.user.id, material_id, {
+        explicitQuery: topicQuery,
+        scopeTitle: scopeInfo.title,
+        title: m.title,
+        sourceScope: scope.sourceScope,
+        chapterId: scope.chapterId,
+        chunkId: scope.chunkId,
+      });
+      topicQuery = stripInternalRefs(sourceUnderstanding.topic || topicQuery || m.title);
+      domainInfo = domainDetection.detectMaterialDomain(req.user.id, material_id, { hint: topicQuery });
+      sourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+        materialId: material_id,
+        materialTitle: m.title,
+        sourceScope: scope.sourceScope,
+        chapterId: scope.chapterId,
+        chunkId: scope.chunkId,
+        explicitTopic: (req.body && req.body.topic) || '',
+        requestedTopic: topicQuery,
+        domainInfo,
+        sourceOutline: sourceUnderstanding.sourceOutline || null,
+        maxBalancedChunks: 48,
+      });
+      preVerifier = sourceGroundingJudge.judge({
+        feature: 'flashcards',
+        stage: 'pre_generation_retry',
+        materialId: material_id,
+        resolvedTopic: topicQuery,
+        requestedTopic,
+        domainInfo,
+        sourceOutline: sourceUnderstanding.sourceOutline || null,
+        materialUnderstanding: sourceUnderstanding,
+        sourceTopicPlan,
+        topicMode,
+        attempt: 1,
+      });
+    }
+    const verifierFallbackOnly = preVerifier.decision === sourceGroundingJudge.DECISIONS.BLOCK;
+    const focusTerms = topicMode === 'material_wide'
+      ? sourceTopicPlans.focusTerms(sourceTopicPlan, topicQuery)
+      : materialUnderstanding.focusTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
+    const avoidTerms = topicMode === 'material_wide'
+      ? []
+      : materialUnderstanding.competingTermsForTopic(topicQuery, sourceUnderstanding.sourceOutline || null);
     if (!regenerate && scope.sourceScope === 'material') {
       const existing = existingFlashcards(db, req.user.id, material_id, topicQuery, n);
-      if (existing.length) {
+      if (existing.length >= n) {
         return res.json({
           created: 0,
           ids: existing.map(card => card.id),
@@ -419,11 +539,15 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       avoidTerms,
       includeSystem: domainDetection.shouldUseCuratedCs(domainInfo),
     });
-    const uploadedChunks = compactChunks(
+    let uploadedChunks = compactChunks(
       (ragResult.uploaded && ragResult.uploaded.chunks) || [],
       env.FLASHCARD_TOP_K_CHUNKS,
       700
     );
+    if (topicMode === 'material_wide' && sourceTopicPlan.balancedChunks.length) {
+      uploadedChunks = compactChunks(sourceTopicPlan.balancedChunks, Math.max(env.FLASHCARD_TOP_K_CHUNKS, 8), 700);
+      ragResult.uploaded = { ...(ragResult.uploaded || {}), chunks: uploadedChunks };
+    }
     const context = educationalContext.buildEducationalContext({
       userId: req.user.id,
       materialId: material_id,
@@ -440,36 +564,127 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       maxChars: Math.min(2500, env.FLASHCARD_MAX_CONTEXT_CHARS),
     });
     const tier = computeGroundingTier(ragResult.uploaded || ragResult);
-    const prompt = prompts.FLASHCARDS(uploadedChunks, n, {
-      educationalContext: educationalContextPrompt,
+    const buildPrompt = (extraInstruction = '') => prompts.FLASHCARDS(uploadedChunks, n, {
+      educationalContext: [
+        educationalContextPrompt,
+        sourceGroundingJudge.topicLockPrompt(topicQuery, preVerifier),
+        sourceTopicPlans.formatSourceTopicPlanForPrompt(sourceTopicPlan),
+        extraInstruction,
+      ].filter(Boolean).join('\n\n'),
       groundingTier: tier,
     });
     let data;
     let fallback = false;
     let fallbackReason = null;
     let providerUsed = null;
-    try {
-      const generated = await generateFlashcardsJson(prompt, n);
-      providerUsed = generated.provider;
-      data = await parseJsonSafe(generated.raw, FlashSchema, async (txt) => withTimeout(ai.generate(prompts.REPAIR_JSON(txt), {
-        provider: generated.provider,
-        feature: 'flashcards',
-        temperature: 0,
-        num_predict: 500,
-      }), Math.min(env.FLASHCARD_TIMEOUT_MS, 20000), generated.provider));
-    } catch (e) {
-      log.warn('flashcard_json_fallback', e.message || e);
+    let generatedByAi = false;
+    if (verifierFallbackOnly) {
+      log.warn('flashcard_verifier_fallback', {
+        materialId: material_id,
+        stage: 'pre_generation',
+        reasonCodes: preVerifier.reasonCodes,
+      });
       fallback = true;
-      fallbackReason = ((e && e.code === 'flashcard_timeout') || (e && e.code === 'ai_timeout'))
-        ? 'ai_timeout'
-        : 'ai_failed';
+      fallbackReason = 'verifier_pre_generation';
       data = fallbackFlashcardsFromContext(context, uploadedChunks, n, m.title);
+    } else {
+      try {
+        const generated = await generateFlashcardsJson(buildPrompt(), n);
+        providerUsed = generated.provider;
+        data = await parseJsonSafe(generated.raw, FlashSchema, async (txt) => withTimeout(ai.generate(prompts.REPAIR_JSON(txt), {
+          provider: generated.provider,
+          feature: 'flashcards',
+          temperature: 0,
+          num_predict: 500,
+        }), Math.min(env.FLASHCARD_TIMEOUT_MS, 20000), generated.provider));
+        generatedByAi = true;
+      } catch (e) {
+        log.warn('flashcard_json_fallback', e.message || e);
+        fallback = true;
+        fallbackReason = ((e && e.code === 'flashcard_timeout') || (e && e.code === 'ai_timeout'))
+          ? 'ai_timeout'
+          : 'ai_failed';
+        data = fallbackFlashcardsFromContext(context, uploadedChunks, n, m.title);
+      }
     }
     let cards = sanitizeCards(data.cards, uploadedChunks, n, m.title);
-    if (!cards.length) {
+    if (cards.length < n) {
       fallback = true;
-      fallbackReason = fallbackReason || 'empty_ai_output';
-      cards = sanitizeCards(fallbackFlashcardsFromContext(context, uploadedChunks, n, m.title).cards, uploadedChunks, n, m.title);
+      fallbackReason = fallbackReason || (cards.length ? 'ai_output_topped_up' : 'empty_ai_output');
+      cards = topUpFlashcards(cards, context, uploadedChunks, n, m.title);
+    }
+    let postVerifier = sourceGroundingJudge.judge({
+      feature: 'flashcards',
+      stage: 'post_generation',
+      materialId: material_id,
+      resolvedTopic: topicQuery,
+      requestedTopic,
+      domainInfo,
+      sourceOutline: sourceUnderstanding.sourceOutline || null,
+      materialUnderstanding: sourceUnderstanding,
+      chunks: uploadedChunks,
+      sourceTopicPlan,
+      topicMode,
+      outputText: flashcardVerifierText(cards),
+      outputJson: { cards },
+      attempt: 0,
+    });
+    if (generatedByAi && postVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY) {
+      log.warn('flashcard_verifier_retry', {
+        materialId: material_id,
+        reasonCodes: postVerifier.reasonCodes,
+        correctedTopic: postVerifier.correctedTopic,
+      });
+      try {
+        const retryPrompt = buildPrompt([
+          postVerifier.retryGuidance,
+          sourceGroundingJudge.topicLockPrompt(postVerifier.correctedTopic || topicQuery, postVerifier, { strict: true }),
+        ].filter(Boolean).join('\n\n'));
+        const generated = await generateFlashcardsJson(retryPrompt, n);
+        providerUsed = generated.provider;
+        const retryData = await parseJsonSafe(generated.raw, FlashSchema, async (txt) => withTimeout(ai.generate(prompts.REPAIR_JSON(txt), {
+          provider: generated.provider,
+          feature: 'flashcards',
+          temperature: 0,
+          num_predict: 500,
+        }), Math.min(env.FLASHCARD_TIMEOUT_MS, 20000), generated.provider));
+        cards = topUpFlashcards(sanitizeCards(retryData.cards, uploadedChunks, n, m.title), context, uploadedChunks, n, m.title);
+        postVerifier = cards.length
+          ? sourceGroundingJudge.judge({
+            feature: 'flashcards',
+            stage: 'post_generation_retry',
+            materialId: material_id,
+            resolvedTopic: postVerifier.correctedTopic || topicQuery,
+            requestedTopic,
+            domainInfo,
+            sourceOutline: sourceUnderstanding.sourceOutline || null,
+            materialUnderstanding: sourceUnderstanding,
+            chunks: uploadedChunks,
+            sourceTopicPlan,
+            topicMode,
+            outputText: flashcardVerifierText(cards),
+            outputJson: { cards },
+            attempt: 1,
+          })
+          : { decision: sourceGroundingJudge.DECISIONS.BLOCK, reasonCodes: ['empty_retry_output'] };
+        if (postVerifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT) {
+          fallback = false;
+          fallbackReason = null;
+        }
+      } catch (e) {
+        log.warn('flashcard_json_fallback', e.message || e);
+        postVerifier = { decision: sourceGroundingJudge.DECISIONS.BLOCK, reasonCodes: ['retry_generation_failed'] };
+      }
+    }
+    if (postVerifier.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+      log.warn('flashcard_verifier_fallback', {
+        materialId: material_id,
+        stage: postVerifier.decision === sourceGroundingJudge.DECISIONS.BLOCK ? 'post_generation_block' : 'post_generation',
+        reasonCodes: postVerifier.reasonCodes,
+      });
+      fallback = true;
+      fallbackReason = 'verifier_failed';
+      cards = topUpFlashcards([], context, uploadedChunks, n, m.title);
     }
     if (!cards.length) throw new HttpError(502, 'flashcard_generation_empty', 'Could not create flashcards from the available source text.');
     const ins = db.prepare(`INSERT INTO flashcards (user_id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at)
@@ -487,9 +702,10 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       reused: false,
       fallback,
       fallback_reason: fallbackReason,
+      requested_count: n,
       provider: providerUsed,
       message: fallback
-        ? `Created ${ids.length} source-derived fallback flashcard${ids.length === 1 ? '' : 's'} because AI generation was unavailable.`
+        ? `Created ${ids.length} source-derived fallback flashcard${ids.length === 1 ? '' : 's'} from the uploaded material.`
         : `Generated ${ids.length} flashcard${ids.length === 1 ? '' : 's'}.`,
       source_scope: scope.sourceScope,
       source_label: ragResult.sourceLabel,

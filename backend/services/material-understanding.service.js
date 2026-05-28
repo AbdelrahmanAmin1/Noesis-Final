@@ -48,7 +48,7 @@ const DOMAIN_TOPICS = [
     topics: [
       {
         normalizedTopic: 'Linked List',
-        aliases: ['linked list', 'singly linked list', 'doubly linked list', 'nodes', 'next pointer'],
+        aliases: ['linked list', 'singly linked list', 'doubly linked list', 'head pointer', 'next pointer', 'node.next'],
         keyConcepts: ['node', 'head', 'next pointer', 'tail', 'traversal', 'insert', 'delete', 'null reference'],
       },
       {
@@ -67,8 +67,13 @@ const DOMAIN_TOPICS = [
         keyConcepts: ['hash function', 'bucket', 'key', 'value', 'collision', 'chaining', 'probing', 'load factor', 'rehashing'],
       },
       {
+        normalizedTopic: 'Trees',
+        aliases: ['tree', 'trees', 'tree adt', 'tree data structure', 'binary tree'],
+        keyConcepts: ['root', 'node', 'parent', 'child', 'children', 'leaf', 'height', 'depth', 'subtree', 'preorder', 'postorder', 'inorder traversal'],
+      },
+      {
         normalizedTopic: 'Binary Search Tree',
-        aliases: ['binary search tree', 'bst', 'tree', 'trees'],
+        aliases: ['binary search tree', 'bst'],
         keyConcepts: ['root', 'node', 'left subtree', 'right subtree', 'leaf', 'insert', 'search', 'in-order traversal'],
       },
       {
@@ -866,7 +871,11 @@ function termMatchesText(text, term) {
 function focusTermsForTopic(topic, sourceOutline = null, max = 12) {
   const base = significantTermsFromText(topic, 8);
   const outline = sourceOutline || {};
-  const topicWords = significantTermsFromText(topic, 8).map(normalizeTerm);
+  const topicDef = taxonomyForTopic(topic);
+  const taxonomyTerms = topicDef
+    ? [topicDef.normalizedTopic, ...(topicDef.aliases || []), ...(topicDef.keyConcepts || [])]
+    : [];
+  const topicWords = [...base, ...taxonomyTerms].map(normalizeTerm);
   const matching = (outline.majorTopics || []).filter(item => {
     const hay = normalizeTerm([item.topic, ...(item.terms || [])].join(' '));
     return topicWords.some(word => word && hay.includes(word)) || termMatchesText(item.topic, topic);
@@ -874,6 +883,7 @@ function focusTermsForTopic(topic, sourceOutline = null, max = 12) {
   const terms = [
     topic,
     ...base,
+    ...taxonomyTerms,
     ...matching.flatMap(item => [item.topic, ...(item.terms || [])]),
   ];
   const seen = new Set();
@@ -921,10 +931,10 @@ function countTermHits(text, terms = []) {
 function detectTopicDrift(text, opts = {}) {
   const focusTopic = opts.focusTopic || opts.topic || '';
   const sourceOutline = opts.sourceOutline || null;
-  const focusTerms = opts.focusTerms && opts.focusTerms.length
+  const focusTerms = Array.isArray(opts.focusTerms)
     ? opts.focusTerms
     : focusTermsForTopic(focusTopic, sourceOutline, 14);
-  const competingTerms = opts.competingTerms && opts.competingTerms.length
+  const competingTerms = Array.isArray(opts.competingTerms)
     ? opts.competingTerms
     : competingTermsForTopic(focusTopic, sourceOutline, 28);
   const focus = countTermHits(text, focusTerms);

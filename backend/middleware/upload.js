@@ -14,9 +14,13 @@ const MIME_BY_EXT = {
   '.ppt': new Set(['application/vnd.ms-powerpoint', 'application/octet-stream']),
   '.txt': new Set(['text/plain']),
   '.md': new Set(['text/markdown', 'text/plain', 'application/octet-stream']),
+  '.png': new Set(['image/png', 'application/octet-stream']),
+  '.jpg': new Set(['image/jpeg', 'application/octet-stream']),
+  '.jpeg': new Set(['image/jpeg', 'application/octet-stream']),
+  '.webp': new Set(['image/webp', 'application/octet-stream']),
 };
 const ALLOWED_MIME = new Set(Object.values(MIME_BY_EXT).flatMap(set => [...set]));
-const ALLOWED_EXT = new Set(['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.txt', '.md']);
+const ALLOWED_EXT = new Set(['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.txt', '.md', '.png', '.jpg', '.jpeg', '.webp']);
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

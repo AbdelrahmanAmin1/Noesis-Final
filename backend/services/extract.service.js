@@ -3,6 +3,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
+
 async function extractText(filePath, mimeOrExt) {
   const ext = (path.extname(filePath) || '').toLowerCase();
   const mime = (mimeOrExt || '').toLowerCase();
@@ -22,10 +24,106 @@ async function extractText(filePath, mimeOrExt) {
     const out = await mammoth.extractRawText({ path: filePath });
     return cleanText(out.value || '');
   }
+  if (isImageFile(ext, mime)) {
+    return '';
+  }
   return cleanText(fs.readFileSync(filePath, 'utf8'));
 }
 
+async function extractStructured(filePath, mimeOrExt, opts = {}) {
+  const ext = (path.extname(filePath) || '').toLowerCase();
+  const mime = (mimeOrExt || '').toLowerCase();
+  if (ext === '.pdf' || mime === 'application/pdf') return extractPdfStructure(filePath, opts);
+  if (ext === '.pptx' || mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+    return extractPptxStructure(filePath);
+  }
+  if (ext === '.ppt' || mime === 'application/vnd.ms-powerpoint') {
+    throw new Error('ppt_legacy_unsupported: PowerPoint .ppt files are binary and cannot be indexed reliably. Please save the deck as .pptx and upload it again.');
+  }
+  if (isImageFile(ext, mime)) {
+    return {
+      type: 'image',
+      text: '',
+      pageCount: 1,
+      pages: [{ pageNumber: 1, slideNumber: null, heading: '', text: '', sourceKind: 'image' }],
+      visualSources: [{ pageNumber: 1, slideNumber: null, filePath, mime, name: path.basename(filePath) }],
+      diagnostics: { imageUpload: true },
+    };
+  }
+  const text = await extractText(filePath, mimeOrExt);
+  return {
+    type: ext === '.docx' || ext === '.doc' || mime.includes('officedocument') || mime.includes('msword') ? 'doc' : 'text',
+    text,
+    pageCount: 1,
+    pages: [{ pageNumber: 1, slideNumber: null, heading: '', text, sourceKind: 'text' }],
+    visualSources: [],
+    diagnostics: {},
+  };
+}
+
+async function extractPdfStructure(filePath, opts = {}) {
+  const pdfParse = require('pdf-parse');
+  const pages = [];
+  let pageNumber = 0;
+  const data = await pdfParse(fs.readFileSync(filePath), {
+    pagerender: async (pageData) => {
+      pageNumber += 1;
+      const content = await pageData.getTextContent();
+      const text = textFromPdfItems(content.items || []);
+      pages.push({
+        pageNumber,
+        slideNumber: null,
+        heading: headingFromText(text),
+        text: cleanText(text),
+        sourceKind: opts.fromOcrPdf ? 'ocr' : 'text',
+      });
+      return text;
+    },
+  });
+  if (!pages.length && data.text) {
+    pages.push({ pageNumber: 1, slideNumber: null, heading: headingFromText(data.text), text: cleanText(data.text), sourceKind: opts.fromOcrPdf ? 'ocr' : 'text' });
+  }
+  return {
+    type: 'pdf',
+    text: cleanText(pages.map(p => `Page ${p.pageNumber}\n${p.text}`).filter(Boolean).join('\n\n') || data.text || ''),
+    pageCount: data.numpages || pages.length || 1,
+    pages,
+    visualSources: [],
+    diagnostics: {
+      pdfPages: data.numpages || pages.length || 1,
+      fromOcrPdf: !!opts.fromOcrPdf,
+    },
+  };
+}
+
+function textFromPdfItems(items = []) {
+  const lines = [];
+  let current = [];
+  let lastY = null;
+  for (const item of items) {
+    const str = item && item.str ? String(item.str) : '';
+    if (!str.trim()) continue;
+    const y = item && item.transform ? Math.round(Number(item.transform[5] || 0)) : null;
+    if (lastY != null && y != null && Math.abs(y - lastY) > 2 && current.length) {
+      lines.push(current.join(' ').replace(/\s+/g, ' ').trim());
+      current = [];
+    }
+    current.push(str);
+    if (y != null) lastY = y;
+  }
+  if (current.length) lines.push(current.join(' ').replace(/\s+/g, ' ').trim());
+  return lines.join('\n');
+}
+
 function extractPptxText(filePath) {
+  const structured = extractPptxStructure(filePath);
+  if (!structured.text) {
+    throw new Error('pptx_no_extractable_text');
+  }
+  return structured.text;
+}
+
+function extractPptxStructure(filePath) {
   const AdmZip = require('adm-zip');
   const zip = new AdmZip(filePath);
   const entries = zip.getEntries();
@@ -41,6 +139,8 @@ function extractPptxText(filePath) {
   }
 
   const parts = [];
+  const pages = [];
+  const visualSources = [];
   for (const slideName of slideNames) {
     const n = slideNumber(slideName);
     const slideXml = byName.get(slideName).getData().toString('utf8');
@@ -54,12 +154,28 @@ function extractPptxText(filePath) {
     if (lines.length) {
       parts.push(`Slide ${n}\n${lines.join('\n')}`);
     }
+    const text = cleanText(lines.join('\n'));
+    pages.push({
+      pageNumber: null,
+      slideNumber: n,
+      heading: headingFromSlideLines(lines),
+      text,
+      sourceKind: 'text',
+    });
+    visualSources.push(...extractSlideImageSources(zip, byName, slideName, slideXml, n));
   }
 
-  if (!parts.length) {
-    throw new Error('pptx_no_extractable_text');
-  }
-  return parts.join('\n\n');
+  return {
+    type: 'slides',
+    text: cleanText(parts.join('\n\n')),
+    pageCount: slideNames.length,
+    pages,
+    visualSources,
+    diagnostics: {
+      slideCount: slideNames.length,
+      embeddedImages: visualSources.length,
+    },
+  };
 }
 
 function slideNumber(name) {
@@ -132,6 +248,59 @@ function textRunsInBlock(xml) {
   return runs.join('').replace(/\s+/g, ' ').trim();
 }
 
+function extractSlideImageSources(zip, byName, slideName, slideXml, n) {
+  const relsName = `ppt/slides/_rels/slide${n}.xml.rels`;
+  const relsEntry = byName.get(relsName);
+  if (!relsEntry) return [];
+  const embeddedIds = new Set();
+  const embedRe = /\br:embed=(["'])([^"']+)\1/gi;
+  let embedMatch;
+  while ((embedMatch = embedRe.exec(slideXml))) embeddedIds.add(embedMatch[2]);
+
+  const relsXml = relsEntry.getData().toString('utf8');
+  const out = [];
+  const relRe = /<Relationship\b([^>]+?)\/?>/gi;
+  let relMatch;
+  while ((relMatch = relRe.exec(relsXml))) {
+    const attrs = parseXmlAttrs(relMatch[1]);
+    if (!attrs.Id || !attrs.Target || !/\/image$/i.test(attrs.Type || '')) continue;
+    if (embeddedIds.size && !embeddedIds.has(attrs.Id)) continue;
+    const entryName = path.posix.normalize(path.posix.join(path.posix.dirname(slideName), attrs.Target));
+    const entry = byName.get(entryName);
+    if (!entry) continue;
+    out.push({
+      pageNumber: null,
+      slideNumber: n,
+      name: path.posix.basename(entryName),
+      entryName,
+      mime: mimeFromName(entryName),
+      buffer: entry.getData(),
+    });
+  }
+  return out;
+}
+
+function parseXmlAttrs(value) {
+  const attrs = {};
+  const re = /([A-Za-z_:][\w:.-]*)=(["'])(.*?)\2/g;
+  let m;
+  while ((m = re.exec(value || ''))) attrs[m[1]] = decodeXml(m[3]);
+  return attrs;
+}
+
+function mimeFromName(name) {
+  const ext = path.extname(String(name || '')).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.gif') return 'image/gif';
+  return 'application/octet-stream';
+}
+
+function isImageFile(ext, mime) {
+  return IMAGE_EXTS.has(ext) || String(mime || '').startsWith('image/');
+}
+
 function xmlTextRuns(xml) {
   return extractParagraphText(xml);
 }
@@ -162,6 +331,19 @@ function cleanText(s) {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function headingFromSlideLines(lines) {
+  for (const line of lines || []) {
+    const text = String(line || '').replace(/^Title:\s*/i, '').replace(/^Speaker note:\s*/i, '').trim();
+    if (text && !isWeakHeading(text) && text.length <= 120) return text;
+  }
+  return '';
+}
+
+function headingFromText(text) {
+  const lines = String(text || '').split(/\n+/).map(l => l.trim()).filter(Boolean);
+  return headingFromSlideLines(lines);
 }
 
 const WEAK_HEADING_RE = /^(?:top|home|welcome|contents?|table of contents|index|appendix|acknowledgements?|references?|bibliography|copyright|license|quiz answer keys?|answer keys?|answers?|untitled|document|material|file)$/i;
@@ -225,4 +407,24 @@ function detectChapters(text) {
   return headings;
 }
 
-module.exports = { extractText, detectChapters, _internals: { extractPptxText, xmlTextRuns, extractSlideXmlText, extractTableText, looksLikeContentHeading, isWeakHeading } };
+module.exports = {
+  extractText,
+  extractStructured,
+  detectChapters,
+  _internals: {
+    extractPdfStructure,
+    extractPptxStructure,
+    extractPptxText,
+    extractSlideImageSources,
+    headingFromSlideLines,
+    isImageFile,
+    mimeFromName,
+    parseXmlAttrs,
+    textFromPdfItems,
+    xmlTextRuns,
+    extractSlideXmlText,
+    extractTableText,
+    looksLikeContentHeading,
+    isWeakHeading,
+  },
+};

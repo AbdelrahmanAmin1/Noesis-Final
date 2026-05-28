@@ -32,7 +32,10 @@
     let data = null;
     try { data = await res.json(); } catch (_) {}
     if (!res.ok) {
-      const msg = (data && (data.message || data.error)) || ('http_' + res.status);
+      const fallbackMsg = res.status === 429
+        ? 'Too many requests in a short time. Please wait a moment and try again.'
+        : 'http_' + res.status;
+      const msg = (data && (data.message || data.error)) || fallbackMsg;
       const err = new Error(msg);
       err.status = res.status;
       err.data = data;
@@ -157,6 +160,7 @@
       regenerateScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/regenerate-scene', b),
       fixScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix-scene', b),
       fixStoryboardIssue: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix', b),
+      repairStoryboard: (id, b) => req('POST', '/videos/storyboard/' + id + '/repair', b),
       recheckStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/recheck'),
       approveStoryboard: (id, b) => req('POST', '/videos/storyboard/' + id + '/approve', b),
       renderStoryboard: (id) => req('POST', '/videos/storyboard/' + id + '/render'),

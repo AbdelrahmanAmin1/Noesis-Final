@@ -8,6 +8,7 @@ const { videoLimiter } = require('../middleware/rateLimit');
 const { HttpError } = require('../middleware/error');
 const videoSvc = require('../services/video.service');
 const storyboardSvc = require('../services/storyboard.service');
+const storyboardRepairSvc = require('../services/storyboard-repair.service');
 const { getDb } = require('../config/db');
 const env = require('../config/env');
 
@@ -132,6 +133,14 @@ router.post('/storyboard/:id/fix-scene', requireAuth, (req, res, next) => {
 router.post('/storyboard/:id/fix', requireAuth, (req, res, next) => {
   try {
     const out = storyboardSvc.fixStoryboardIssue(req.user.id, parseInt(req.params.id, 10), req.body || {});
+    if (!out) throw new HttpError(404, 'storyboard_not_found');
+    res.json(out);
+  } catch (e) { next(e); }
+});
+
+router.post('/storyboard/:id/repair', requireAuth, async (req, res, next) => {
+  try {
+    const out = await storyboardRepairSvc.repairStoryboard(req.user.id, parseInt(req.params.id, 10), req.body || {});
     if (!out) throw new HttpError(404, 'storyboard_not_found');
     res.json(out);
   } catch (e) { next(e); }

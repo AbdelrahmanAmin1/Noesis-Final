@@ -21,7 +21,7 @@ function fileHash(filePath) {
 }
 
 describe('demo-quality video regression set', () => {
-  const cases = ['Inheritance', 'Polymorphism', 'Linked List', 'Hash Table', 'Stack', 'Queue', 'Binary Search Tree', 'Big-O', 'Encapsulation', 'Abstraction'];
+  const cases = ['Inheritance', 'Polymorphism', 'Linked List', 'Trees', 'Hash Table', 'Stack', 'Queue', 'Binary Search Tree', 'Big-O', 'Encapsulation', 'Abstraction'];
 
   it.each(cases)('%s lesson creates a callout-free, topic-specific storyboard', (topic) => {
     const lesson = lessons.fallbackLesson(topic);

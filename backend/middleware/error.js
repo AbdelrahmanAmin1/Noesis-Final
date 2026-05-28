@@ -19,7 +19,7 @@ function errorHandler(err, req, res, _next) {
   if (err instanceof HttpError) {
     return res.status(err.status).json({ error: err.code, message: err.message, details: err.details });
   }
-  if (err && err.status >= 500 && err.status < 600 && err.code && String(err.code).startsWith('ai_')) {
+  if (err && err.status >= 400 && err.code && String(err.code).startsWith('ai_')) {
     return res.status(err.status).json({
       error: err.code,
       message: err.message,

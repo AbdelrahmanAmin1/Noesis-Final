@@ -2,6 +2,7 @@
 
 const { spawn } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const env = require('../config/env');
 const log = require('../utils/logger');
@@ -167,8 +168,12 @@ function synthSay(text, outPath) {
 
 function synthSapi(text, outPath, opts = {}) {
   return new Promise((resolve, reject) => {
-    const textPath = outPath.replace(/\.[^.]+$/i, '') + '.txt';
-    const scriptPath = outPath.replace(/\.[^.]+$/i, '') + '.ps1';
+    const tempBase = path.join(
+      os.tmpdir(),
+      `noesis-tts-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    );
+    const textPath = `${tempBase}.txt`;
+    const scriptPath = `${tempBase}.ps1`;
 
     const sentences = normalizeSentences(text);
     const pauseMs = clampMs(opts.pauseMs, env.TTS_PAUSE_MS_SENTENCE || 250);
@@ -261,6 +266,9 @@ async function synthesize(text, outPath, opts = {}) {
   const engine = status.active_engine;
   let lastErr = null;
 
+  if (engine === 'silence') {
+    return synthSilence(safe, outPath);
+  }
   if (engine === 'piper' && status.piper_voice_found) {
     try { return await synthPiper(safe, outPath); } catch (e) { lastErr = e; log.warn('tts_piper_failed', e.message || e); }
   }

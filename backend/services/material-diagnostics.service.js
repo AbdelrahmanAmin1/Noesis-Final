@@ -20,6 +20,10 @@ function parseKeywords(value) {
   }
 }
 
+function parseJson(value, fallback) {
+  try { return JSON.parse(value || ''); } catch (_) { return fallback; }
+}
+
 function unique(values) {
   return [...new Set((values || []).filter(v => v !== null && v !== undefined && String(v).trim() !== ''))];
 }
@@ -102,6 +106,8 @@ function buildChunkReferences(chunks) {
     slideNumber: chunk.slide_number || null,
     slideTitle: chunk.slide_title || '',
     sourcePage: chunk.source_page || null,
+    sourceKind: chunk.source_kind || 'text',
+    sourceVisualId: chunk.source_visual_id || null,
     hasCode: !!chunk.has_code,
     tokenCount: Number(chunk.token_count || 0),
     charCount: String(chunk.text || '').length,
@@ -146,8 +152,10 @@ async function buildMaterialDiagnostics(materialId, opts = {}) {
 
   const chapters = db.prepare('SELECT id, idx, title, char_start, char_end FROM chapters WHERE material_id=? ORDER BY idx').all(materialId);
   const chunks = db.prepare(`SELECT id, idx, text, token_count, embedding,
-      source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json
+      source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
     FROM chunks WHERE material_id=? ORDER BY idx`).all(materialId);
+  const extractionDiagnostics = parseJson(material.extraction_diagnostics_json, {});
+  const sourceVisualCount = db.prepare('SELECT COUNT(*) AS count FROM source_visual_candidates WHERE material_id=?').get(materialId).count || 0;
 
   const recheck = opts.skipExtractRecheck ? { fileExists: !!material.file_path, charCount: null, error: null } : await recheckExtractedCharCount(material);
   const chunkTextCharCount = chunks.reduce((sum, chunk) => sum + String(chunk.text || '').length, 0);
@@ -163,6 +171,12 @@ async function buildMaterialDiagnostics(materialId, opts = {}) {
     fileExists: recheck.fileExists,
     materialStatus: material.status,
   });
+  if (extractionDiagnostics && extractionDiagnostics.quality && extractionDiagnostics.quality.needsOcr) {
+    classification.weaknessFlags = unique([...classification.weaknessFlags, 'ocr_needed']);
+  }
+  if (material.ocr_status === 'ocr_skipped_disabled') {
+    classification.weaknessFlags = unique([...classification.weaknessFlags, 'ocr_disabled']);
+  }
 
   const diagnostics = {
     materialId: material.id,
@@ -177,6 +191,10 @@ async function buildMaterialDiagnostics(materialId, opts = {}) {
     chunkTextCharCount,
     extractionRechecked: !opts.skipExtractRecheck,
     extractionError: recheck.error || null,
+    extractionDiagnostics,
+    ocrStatus: material.ocr_status || 'not_evaluated',
+    ocrProvider: material.ocr_provider || null,
+    sourceVisualCount,
     chapterCount: chapters.length,
     chunkCount: chunks.length,
     evidenceCount: chunks.length,
@@ -206,5 +224,6 @@ module.exports = {
     compactText,
     evidenceLabelForChunk,
     parseKeywords,
+    parseJson,
   },
 };

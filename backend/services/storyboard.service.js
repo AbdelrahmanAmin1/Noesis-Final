@@ -18,6 +18,9 @@ const renderer = require('./renderer.service');
 const visualRegistry = require('../utils/visual-registry');
 const codeWindow = require('../utils/code-window');
 const sourceVisualCandidates = require('./source-visual-candidates.service');
+const sourceGroundingJudge = require('./source-grounding-judge.service');
+const sourceTopicPlans = require('./source-topic-plan.service');
+const topicResolver = require('./topic-resolver.service');
 const { HttpError } = require('../middleware/error');
 
 function nowIso() { return new Date().toISOString(); }
@@ -30,6 +33,65 @@ const SUPPORTED_DOMAINS = new Set([
 const MIN_TOPIC_CONFIDENCE = 0.65;
 const MIN_SOURCE_EVIDENCE_CHUNKS = 2;
 const MIN_KEY_CONCEPTS = 3;
+
+function normalizedTopicLabel(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9+#]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function dominantSourceTopic(chunks = [], sourceOutline = {}, materialTitle = '', currentTopic = '') {
+  const ranked = topicResolver.rankTopicsFromChunks(chunks || []);
+  const topic = String(ranked && ranked.topic || '').trim();
+  if (!topic || !topicResolver.exactKnownTopic(topic)) return null;
+  const candidates = Array.isArray(ranked.candidates) ? ranked.candidates : [];
+  const topScore = Number(candidates[0] && candidates[0].score || 0);
+  const nextScore = Number(candidates[1] && candidates[1].score || 0);
+  const confidence = Number(ranked.confidence || 0);
+  const topicKey = normalizedTopicLabel(topic);
+  const currentKey = normalizedTopicLabel(currentTopic);
+  const labels = normalizedTopicLabel([
+    materialTitle,
+    currentTopic,
+    sourceOutline && sourceOutline.mainTopic,
+    ...((sourceOutline && sourceOutline.keyConcepts) || []).slice(0, 12),
+    ...((sourceOutline && sourceOutline.majorTopics) || []).slice(0, 8).map(item => item && item.topic),
+  ].filter(Boolean).join(' '));
+  const alreadySpecific = currentKey && (currentKey === topicKey || currentKey.includes(topicKey));
+  const mentionedInLabels = topicKey && labels.includes(topicKey);
+  const dominantByScore = topScore >= 16 && topScore >= Math.max(1, nextScore) * 1.35;
+  const dominantByConfidence = confidence >= 0.72 && topScore >= 16;
+  if (alreadySpecific || mentionedInLabels || dominantByScore || dominantByConfidence) {
+    return {
+      topic,
+      confidence,
+      alternatives: candidates,
+      source: 'dominant_source_topic',
+    };
+  }
+  return null;
+}
+
+function sourceRepairedLesson(topic, materialTitle, groundingTier, uploadedChunks = [], opts = {}) {
+  const lesson = lessons.generalMaterialLesson(
+    topic,
+    materialTitle || topic,
+    groundingTier,
+    uploadedChunks.map(c => c.id).filter(Boolean),
+    uploadedChunks,
+    {
+      domainInfo: opts.domainInfo,
+      sourceOutline: opts.sourceOutline,
+      topic,
+      sourceVisualCandidates: opts.sourceVisuals,
+      topicMode: 'source_repair',
+    }
+  );
+  lesson.topic = topic;
+  lesson.topicMode = 'source_repair';
+  lesson.sourceRepair = true;
+  lesson.sourceMaterial = lesson.sourceMaterial || {};
+  lesson.sourceMaterial.title = materialTitle || topic;
+  return lesson;
+}
 
 const CRITICAL_PATTERNS = [
   /^domain:missing_required_visual:/,
@@ -723,7 +785,8 @@ function repairSceneVisualPayload(scene, topic) {
   const type = sceneTypeOf(scene);
   const inferred = visualTypeFromIntent({ ...scene, visualType: '', visualTemplate: '' }, topic, '', data);
   let canonicalType = current.canonical;
-  if (canonicalType !== 'class_object' && (type === 'deep_explanation' || type === 'analogy') && inferred && inferred !== canonicalType) {
+  const preserveExplicitVisual = ['source_page_reference', 'source_slide_reference', 'no_visual'].includes(canonicalType);
+  if (!preserveExplicitVisual && canonicalType !== 'class_object' && (type === 'deep_explanation' || type === 'analogy') && inferred && inferred !== canonicalType) {
     canonicalType = inferred;
   }
 
@@ -951,6 +1014,11 @@ function visualElementsFor(scene, slide, topic) {
     details: visualData.details || {},
     operations: Array.isArray(visualData.operations) ? visualData.operations : [],
     caption: visualData.caption || slide.caption || '',
+    imagePath: visualData.imagePath || visualData.image_path || slide.image_path || null,
+    imageUrl: visualData.imageUrl || visualData.image_url || slide.image_url || null,
+    sourceVisualId: visualData.sourceVisualId || visualData.source_visual_id || slide.source_visual_id || null,
+    sourcePage: visualData.sourcePage || visualData.source_page || slide.source_page || null,
+    slideNumber: visualData.slideNumber || visualData.slide_number || slide.slide_number || null,
   };
 }
 
@@ -1698,6 +1766,11 @@ function toStoryboardScene(scene, index, topic, slide) {
       details: visual.node_details || slide.visual_node_details || {},
       operations: visual.operations || slide.operations || [],
       caption: visual.caption || slide.caption || '',
+      imagePath: visual.imagePath || visual.image_path || slide.image_path || null,
+      imageUrl: visual.imageUrl || visual.image_url || slide.image_url || null,
+      sourceVisualId: visual.sourceVisualId || visual.source_visual_id || slide.source_visual_id || null,
+      sourcePage: visual.sourcePage || visual.source_page || slide.source_page || null,
+      slideNumber: visual.slideNumber || visual.slide_number || slide.slide_number || null,
     },
     code: normalizedCode ? {
       language: normalizedCode.language || 'text',
@@ -1885,6 +1958,11 @@ function scriptFromStoryboard(storyboard) {
       visual_node_details: scene.visualElements && scene.visualElements.details || scene.visualData && scene.visualData.details || slide.visual_node_details || {},
       operations: scene.visualElements && scene.visualElements.operations || scene.visualData && scene.visualData.operations || slide.operations || [],
       caption: scene.visualElements && scene.visualElements.caption || scene.visualData && scene.visualData.caption || slide.caption || '',
+      image_path: scene.visualElements && scene.visualElements.imagePath || scene.visualData && (scene.visualData.imagePath || scene.visualData.image_path) || slide.image_path || '',
+      image_url: scene.visualElements && scene.visualElements.imageUrl || scene.visualData && (scene.visualData.imageUrl || scene.visualData.image_url) || slide.image_url || '',
+      source_visual_id: scene.visualElements && scene.visualElements.sourceVisualId || scene.visualData && (scene.visualData.sourceVisualId || scene.visualData.source_visual_id) || slide.source_visual_id || null,
+      source_page: scene.visualElements && scene.visualElements.sourcePage || scene.visualData && (scene.visualData.sourcePage || scene.visualData.source_page) || slide.source_page || null,
+      slide_number: scene.visualElements && scene.visualElements.slideNumber || scene.visualData && (scene.visualData.slideNumber || scene.visualData.slide_number) || slide.slide_number || null,
       example_code: scene.codeSnippet || scene.code && scene.code.content || slide.example_code || '',
       code_focus: scene.code ? (() => {
         const normalizedCode = codeWindow.normalizeCodeWindow({
@@ -1912,6 +1990,59 @@ function scriptFromStoryboard(storyboard) {
     learningObjectives: storyboard.learningObjectives || [],
     slides,
   };
+}
+
+function isConcreteSourceVisual(candidate) {
+  return !!(candidate && (candidate.id || candidate.imagePath || candidate.thumbnailPath || Number(candidate.importanceScore || 0) >= 0.6));
+}
+
+function sourceVisualPayload(candidate) {
+  if (!candidate) return {};
+  const sourcePage = candidate.sourcePage ?? candidate.pageNumber ?? null;
+  const slideNumber = candidate.slideNumber ?? null;
+  const label = slideNumber != null ? `Slide ${slideNumber}` : `Page ${sourcePage || 1}`;
+  const heading = candidate.heading || candidate.visualTypeGuess || 'source visual';
+  return {
+    type: slideNumber != null ? 'source_slide_reference' : 'source_page_reference',
+    nodes: [label, heading].filter(Boolean),
+    edges: [],
+    details: {},
+    operations: [],
+    caption: candidate.caption || `${label}: ${heading}`,
+    imagePath: candidate.imagePath || candidate.thumbnailPath || null,
+    imageUrl: candidate.imageUrl || null,
+    sourceVisualId: candidate.id || null,
+    sourcePage,
+    slideNumber,
+  };
+}
+
+function attachSourceVisualsToScenes(scenes = [], candidates = []) {
+  const concrete = (candidates || []).filter(isConcreteSourceVisual);
+  if (!concrete.length) return scenes;
+  const used = new Set();
+  const nextCandidate = () => concrete.find(c => !used.has(c.id || `${c.sourcePage}:${c.slideNumber}:${c.heading}`));
+  let attached = false;
+  const out = scenes.map((scene) => {
+    const template = String(scene.visualTemplate || scene.visualType || scene.visualElements && scene.visualElements.type || '').toLowerCase();
+    const explicitSourceRef = template === 'source_page_reference' || template === 'source_slide_reference' || template === 'source_reference';
+    const generalVisual = !attached && ['diagram', 'mindmap', 'flow', 'classification_table', 'comparison_table', 'concept_cards'].includes(template);
+    if (!explicitSourceRef && !generalVisual) return scene;
+    const candidate = nextCandidate();
+    if (!candidate) return scene;
+    used.add(candidate.id || `${candidate.sourcePage}:${candidate.slideNumber}:${candidate.heading}`);
+    attached = true;
+    const payload = sourceVisualPayload(candidate);
+    return {
+      ...scene,
+      visualTemplate: payload.type,
+      visualType: payload.type,
+      visualData: { ...(scene.visualData || {}), ...payload },
+      visualElements: { ...(scene.visualElements || {}), ...payload },
+      sourceVisualId: payload.sourceVisualId,
+    };
+  });
+  return out;
 }
 
 async function generateStoryboard({ userId, materialId, concept, sourceScope = 'material', chapterId = null, chunkId = null }) {
@@ -1947,9 +2078,31 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
   let generationTopic = understanding.topic || understanding.normalizedTopic || material.title || 'Uploaded material';
   let retrievalTopic = understanding.normalizedTopic || generationTopic;
   const preOutline = preliminaryUnderstanding.sourceOutline || null;
-  const focusTerms = materialUnderstanding.focusTermsForTopic(concept || retrievalTopic, preOutline);
-  const avoidTerms = materialUnderstanding.competingTermsForTopic(concept || retrievalTopic, preOutline);
-  const rag = await retrieveLessonContext(materialId, retrievalTopic, {
+  let focusTerms = materialUnderstanding.focusTermsForTopic(concept || retrievalTopic, preOutline);
+  let avoidTerms = materialUnderstanding.competingTermsForTopic(concept || retrievalTopic, preOutline);
+  const preSourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+    materialId,
+    materialTitle: material.title,
+    sourceScope,
+    chapterId,
+    chunkId,
+    explicitTopic: concept || '',
+    requestedTopic: generationTopic,
+    domainInfo,
+    sourceOutline: preOutline,
+    maxBalancedChunks: 48,
+  });
+  if (!concept && preSourceTopicPlan.hasMultipleTopics) {
+    generationTopic = preSourceTopicPlan.primaryTopic || generationTopic;
+    retrievalTopic = generationTopic;
+    focusTerms = sourceTopicPlans.focusTerms(preSourceTopicPlan, generationTopic);
+    avoidTerms = [];
+    understanding.topic = generationTopic;
+    understanding.normalizedTopic = generationTopic;
+    understanding.source = 'source_topic_plan';
+    understanding.alternatives = (preSourceTopicPlan.topicBundle || []).map(item => ({ topic: item.topic, score: 0.5, evidence: [item.evidence].filter(Boolean) }));
+  }
+  let rag = await retrieveLessonContext(materialId, retrievalTopic, {
     feature: 'video',
     k: 10,
     minScore: 0.08,
@@ -1962,22 +2115,198 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     avoidTerms,
     includeSystem: shouldUseCs,
   });
-  const uploadedChunks = rag.uploaded && Array.isArray(rag.uploaded.chunks) ? rag.uploaded.chunks : [];
-  const sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
+  let uploadedChunks = rag.uploaded && Array.isArray(rag.uploaded.chunks) ? rag.uploaded.chunks : [];
+  let sourceVisuals = sourceVisualCandidates.fromMaterialAndChunks(materialId, uploadedChunks, {
+    max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
+    includeChunkFallback: true,
+  });
+  let sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
     explicitQuery: concept || generationTopic,
     hint: concept || generationTopic,
     title: material.title,
     materialTitle: material.title,
     domainInfo,
   });
+  let sourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+    materialId,
+    materialTitle: material.title,
+    sourceScope,
+    chapterId,
+    chunkId,
+    explicitTopic: concept,
+    requestedTopic: generationTopic,
+    domainInfo,
+    chunks: uploadedChunks,
+    sourceOutline,
+    maxBalancedChunks: 48,
+  });
+  const topicMode = sourceTopicPlan.topicMode;
+  if (!concept && preSourceTopicPlan.hasMultipleTopics) {
+    sourceTopicPlan = preSourceTopicPlan;
+    generationTopic = sourceTopicPlan.primaryTopic || generationTopic;
+    retrievalTopic = generationTopic;
+    uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
+    sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
+    focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, generationTopic);
+    avoidTerms = [];
+    sourceVisuals = sourceVisualCandidates.fromMaterialAndChunks(materialId, uploadedChunks, {
+      max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
+      includeChunkFallback: true,
+    });
+    understanding.topic = generationTopic;
+    understanding.normalizedTopic = generationTopic;
+    understanding.source = 'source_topic_plan';
+    understanding.alternatives = (sourceTopicPlan.topicBundle || []).map(item => ({ topic: item.topic, score: 0.5, evidence: [item.evidence].filter(Boolean) }));
+  } else if (!concept && sourceTopicPlan.hasMultipleTopics) {
+    generationTopic = sourceTopicPlan.primaryTopic || generationTopic;
+    retrievalTopic = generationTopic;
+    uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
+    sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
+    focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, generationTopic);
+    avoidTerms = [];
+    understanding.topic = generationTopic;
+    understanding.normalizedTopic = generationTopic;
+    understanding.source = 'source_topic_plan';
+    understanding.alternatives = (sourceTopicPlan.topicBundle || []).map(item => ({ topic: item.topic, score: 0.5, evidence: [item.evidence].filter(Boolean) }));
+  } else if (!concept) {
+    const dominant = dominantSourceTopic(uploadedChunks, sourceOutline, material.title, generationTopic);
+    if (dominant && dominant.topic && dominant.topic !== generationTopic) {
+      generationTopic = dominant.topic;
+      retrievalTopic = dominant.topic;
+      focusTerms = materialUnderstanding.focusTermsForTopic(generationTopic, sourceOutline);
+      avoidTerms = materialUnderstanding.competingTermsForTopic(generationTopic, sourceOutline);
+      understanding.topic = generationTopic;
+      understanding.normalizedTopic = generationTopic;
+      understanding.confidence = Math.max(Number(understanding.confidence || 0), dominant.confidence || 0);
+      understanding.source = dominant.source;
+      understanding.alternatives = dominant.alternatives || understanding.alternatives || [];
+      sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
+        explicitQuery: generationTopic,
+        hint: generationTopic,
+        title: material.title,
+        materialTitle: material.title,
+        domainInfo,
+      });
+    }
+  }
   if (!shouldUseCs) {
     understanding = generalUnderstandingFromChunks({ understanding, domainInfo, chunks: uploadedChunks, material, concept });
-    understanding.sourceVisualCandidates = sourceVisualCandidates.fromChunks(uploadedChunks);
+    understanding.sourceVisualCandidates = sourceVisuals;
     generationTopic = understanding.topic || understanding.normalizedTopic || generationTopic;
     retrievalTopic = understanding.normalizedTopic || generationTopic;
   } else {
     understanding.sourceOutline = sourceOutline;
-    understanding.sourceVisualCandidates = sourceVisualCandidates.fromChunks(uploadedChunks);
+    understanding.sourceVisualCandidates = sourceVisuals;
+  }
+  understanding.sourceTopicPlan = {
+    topicMode: sourceTopicPlan.topicMode,
+    primaryTopic: sourceTopicPlan.primaryTopic,
+    topicBundle: sourceTopicPlan.topicBundle,
+    allowedTopics: sourceTopicPlan.allowedTopics,
+  };
+  let preVerifier = sourceGroundingJudge.judge({
+    feature: 'storyboard',
+    stage: 'pre_generation',
+    materialId,
+    resolvedTopic: generationTopic,
+    requestedTopic: concept,
+    domainInfo,
+    sourceOutline,
+    materialUnderstanding: understanding,
+    chunks: uploadedChunks,
+    sourceVisuals,
+    sourceTopicPlan,
+    topicMode,
+    attempt: 0,
+  });
+  if (preVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY && preVerifier.correctedTopic) {
+    generationTopic = preVerifier.correctedTopic;
+    retrievalTopic = generationTopic;
+    focusTerms = materialUnderstanding.focusTermsForTopic(concept || retrievalTopic, sourceOutline || preOutline);
+    avoidTerms = materialUnderstanding.competingTermsForTopic(concept || retrievalTopic, sourceOutline || preOutline);
+    rag = await retrieveLessonContext(materialId, retrievalTopic, {
+      feature: 'video',
+      k: 10,
+      minScore: 0.08,
+      maxMerged: 14,
+      sourceScope,
+      chapterId,
+      chunkId,
+      focusTopic: concept || retrievalTopic,
+      focusTerms,
+      avoidTerms,
+      includeSystem: shouldUseCs,
+    });
+    uploadedChunks = rag.uploaded && Array.isArray(rag.uploaded.chunks) ? rag.uploaded.chunks : [];
+    sourceVisuals = sourceVisualCandidates.fromMaterialAndChunks(materialId, uploadedChunks, {
+      max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
+      includeChunkFallback: true,
+    });
+    sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
+      explicitQuery: concept || generationTopic,
+      hint: generationTopic,
+      title: material.title,
+      materialTitle: material.title,
+      domainInfo,
+    });
+    sourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+      materialId,
+      materialTitle: material.title,
+      sourceScope,
+      chapterId,
+      chunkId,
+      explicitTopic: concept,
+      requestedTopic: generationTopic,
+      domainInfo,
+      chunks: uploadedChunks,
+      sourceOutline,
+      maxBalancedChunks: 48,
+    });
+    if (!concept && sourceTopicPlan.hasMultipleTopics) {
+      uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
+      sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
+      generationTopic = sourceTopicPlan.primaryTopic || generationTopic;
+      retrievalTopic = generationTopic;
+      focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, generationTopic);
+      avoidTerms = [];
+    }
+    understanding = shouldUseCs
+      ? materialUnderstanding.understandFromChunks(uploadedChunks, {
+        resolvedTopic: generationTopic,
+        resolverConfidence: Math.max(Number(preVerifier.scores && preVerifier.scores.sourceTopicConfidence || 0), Number(understanding.confidence || 0), 0.7),
+        source: 'source_grounding_judge',
+        alternatives: understanding.alternatives || [],
+      })
+      : generalUnderstandingFromChunks({ understanding, domainInfo, chunks: uploadedChunks, material, concept: generationTopic });
+    understanding.sourceOutline = sourceOutline;
+    understanding.sourceVisualCandidates = sourceVisuals;
+    understanding.sourceTopicPlan = {
+      topicMode: sourceTopicPlan.topicMode,
+      primaryTopic: sourceTopicPlan.primaryTopic,
+      topicBundle: sourceTopicPlan.topicBundle,
+      allowedTopics: sourceTopicPlan.allowedTopics,
+    };
+    preVerifier = sourceGroundingJudge.judge({
+      feature: 'storyboard',
+      stage: 'pre_generation',
+      materialId,
+      resolvedTopic: generationTopic,
+      requestedTopic: concept,
+      domainInfo,
+      sourceOutline,
+      materialUnderstanding: understanding,
+      chunks: uploadedChunks,
+      sourceVisuals,
+      sourceTopicPlan,
+      topicMode,
+      attempt: 1,
+    });
+  }
+  if (preVerifier.decision === sourceGroundingJudge.DECISIONS.BLOCK) {
+    throw new HttpError(422, 'generation_verifier_blocked', 'The selected video topic did not match the uploaded material closely enough to generate safely.', {
+      verifier: preVerifier,
+      materialUnderstanding: understanding,
+    });
   }
   const videoContext = (env.KNOWLEDGE_CONTEXT_ENABLED && env.KNOWLEDGE_USE_FOR_VIDEO)
     ? educationalContext.buildEducationalContext({
@@ -1992,9 +2321,10 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       audienceLevel: 'beginner',
     })
     : null;
-  const educationalContextPrompt = videoContext
-    ? educationalContext.formatVideoEducationalContextForPrompt(videoContext)
-    : '';
+  const educationalContextPrompt = [
+    videoContext ? educationalContext.formatVideoEducationalContextForPrompt(videoContext) : '',
+    sourceTopicPlans.formatSourceTopicPlanForPrompt(sourceTopicPlan),
+  ].filter(Boolean).join('\n\n');
   const curatedTopicId = videoContext && videoContext.curatedKnowledge && videoContext.curatedKnowledge.id || null;
   diagnostics = materialDiagnostics.attachRetrievalDiagnostics(diagnostics, rag.uploaded || rag);
   const groundingTier = computeGroundingTier(rag.uploaded || rag);
@@ -2019,6 +2349,9 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     sourceOutline: understanding.sourceOutline || sourceOutline,
     focusTerms,
     avoidTerms,
+    sourceVisualCandidates: sourceVisuals,
+    sourceTopicPlan,
+    topicMode,
   });
   let lessonDrift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
     focusTopic: concept || generationTopic,
@@ -2027,20 +2360,11 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     competingTerms: avoidTerms,
   });
   if (lessonDrift.drifted) {
-    lesson = shouldUseCs
-      ? lessons.fallbackLesson(generationTopic, {
-        materialTitle: material.title || generationTopic,
-        chunks: uploadedChunks,
-        groundingTier,
-        domainInfo,
-        domain: domainInfo.domain,
-        sourceOutline: understanding.sourceOutline || sourceOutline,
-      })
-      : lessons.generalMaterialLesson(generationTopic, material.title || generationTopic, groundingTier, uploadedChunks.map(c => c.id).filter(Boolean), uploadedChunks, {
-        domainInfo,
-        sourceOutline: understanding.sourceOutline || sourceOutline,
-        topic: generationTopic,
-      });
+    lesson = sourceRepairedLesson(generationTopic, material.title || generationTopic, groundingTier, uploadedChunks, {
+      domainInfo,
+      sourceOutline: understanding.sourceOutline || sourceOutline,
+      sourceVisuals,
+    });
     lessonDrift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
       focusTopic: concept || generationTopic,
       sourceOutline: understanding.sourceOutline || sourceOutline,
@@ -2048,12 +2372,126 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       competingTerms: avoidTerms,
     });
   }
+  let lessonVerifier = sourceGroundingJudge.judge({
+    feature: 'storyboard',
+    stage: 'post_generation_lesson',
+    materialId,
+    resolvedTopic: generationTopic,
+    requestedTopic: concept,
+    domainInfo,
+    sourceOutline: understanding.sourceOutline || sourceOutline,
+    materialUnderstanding: understanding,
+    chunks: uploadedChunks,
+    sourceVisuals,
+    sourceTopicPlan,
+    topicMode,
+    outputText: lessons.lessonToMarkdown(lesson),
+    outputJson: lesson,
+    attempt: 0,
+  });
+  if (lessonVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY) {
+    generationTopic = lessonVerifier.correctedTopic || generationTopic;
+    understanding.topic = generationTopic;
+    understanding.normalizedTopic = generationTopic;
+    focusTerms = materialUnderstanding.focusTermsForTopic(generationTopic, understanding.sourceOutline || sourceOutline);
+    avoidTerms = materialUnderstanding.competingTermsForTopic(generationTopic, understanding.sourceOutline || sourceOutline);
+    lesson = sourceRepairedLesson(generationTopic, material.title || generationTopic, groundingTier, uploadedChunks, {
+      domainInfo,
+      sourceOutline: understanding.sourceOutline || sourceOutline,
+      sourceVisuals,
+    });
+    lessonDrift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
+      focusTopic: generationTopic,
+      sourceOutline: understanding.sourceOutline || sourceOutline,
+      focusTerms,
+      competingTerms: avoidTerms,
+    });
+    lessonVerifier = sourceGroundingJudge.judge({
+      feature: 'storyboard',
+      stage: 'post_generation_lesson',
+      materialId,
+      resolvedTopic: generationTopic,
+      requestedTopic: concept,
+      domainInfo,
+      sourceOutline: understanding.sourceOutline || sourceOutline,
+      materialUnderstanding: understanding,
+      chunks: uploadedChunks,
+      sourceVisuals,
+      sourceTopicPlan,
+      topicMode,
+      outputText: lessons.lessonToMarkdown(lesson),
+      outputJson: lesson,
+      attempt: 1,
+    });
+  }
+  if (lessonVerifier.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+    const repaired = sourceRepairedLesson(generationTopic, material.title || generationTopic, groundingTier, uploadedChunks, {
+      domainInfo,
+      sourceOutline: understanding.sourceOutline || sourceOutline,
+      sourceVisuals,
+    });
+    const repairedDrift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(repaired), {
+      focusTopic: generationTopic,
+      sourceOutline: understanding.sourceOutline || sourceOutline,
+      focusTerms,
+      competingTerms: avoidTerms,
+    });
+    const repairedVerifier = sourceGroundingJudge.judge({
+      feature: 'storyboard',
+      stage: 'post_generation_lesson_repair',
+      materialId,
+      resolvedTopic: generationTopic,
+      requestedTopic: concept,
+      domainInfo,
+      sourceOutline: understanding.sourceOutline || sourceOutline,
+      materialUnderstanding: understanding,
+      chunks: uploadedChunks,
+      sourceVisuals,
+      sourceTopicPlan,
+      topicMode,
+      outputText: lessons.lessonToMarkdown(repaired),
+      outputJson: repaired,
+      attempt: 1,
+    });
+    const repairedVerifierSafe = repairedVerifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT ||
+      (env.SOURCE_REPAIR_SAVE_SAFE_FALLBACK && sourceGroundingJudge.sourceRepairSafe(repairedVerifier));
+    if ((env.SOURCE_REPAIR_SAVE_SAFE_FALLBACK || !repairedDrift.drifted) && repairedVerifierSafe) {
+      lesson = repaired;
+      lessonDrift = repairedDrift;
+      lessonVerifier = repairedVerifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT
+        ? repairedVerifier
+        : {
+          ...repairedVerifier,
+          decision: sourceGroundingJudge.DECISIONS.ACCEPT,
+          reasonCodes: ['source_repair_lesson_safe_fallback'],
+          repairedFrom: repairedVerifier,
+        };
+    }
+  }
+  if (lessonVerifier.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+    if (env.SOURCE_REPAIR_SAVE_SAFE_FALLBACK && lesson && lesson.sourceRepair && sourceGroundingJudge.sourceRepairSafe(lessonVerifier)) {
+      lessonVerifier = {
+        ...lessonVerifier,
+        decision: sourceGroundingJudge.DECISIONS.ACCEPT,
+        reasonCodes: ['source_repair_lesson_safe_fallback'],
+        repairedFrom: lessonVerifier,
+      };
+    } else {
+      throw new HttpError(502, 'generation_verifier_blocked', 'The generated storyboard lesson drifted away from the uploaded material, so I did not save it.', {
+      verifier: lessonVerifier,
+      materialUnderstanding: understanding,
+      drift: lessonDrift,
+      });
+    }
+  }
   const video = lessons.lessonToVideoScript(lesson);
   const scenes = lessons.lessonToVideoScenes(lesson);
   const storyboardScenes = groundedEnrichment.annotateScenes(
     (video.slides || []).map((slide, index) => toStoryboardScene(scenes[index] || slide, index, generationTopic, slide)),
     { understanding, enrichmentPolicy }
-  ).map(scene => withFreshSceneQuality({
+  );
+  const storyboardScenesWithVisuals = attachSourceVisualsToScenes(storyboardScenes, sourceVisuals);
+  const finalStoryboardScenes = storyboardScenesWithVisuals.map(scene => withFreshSceneQuality({
     ...scene,
     domain: understanding.domain || domainInfo.domain || '',
     materialDomain: domainInfo.domain || '',
@@ -2074,7 +2512,7 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       prerequisites: lesson.prerequisites || [],
       nextTopics: nextTopicsFor(generationTopic),
     },
-    scenes: storyboardScenes,
+    scenes: finalStoryboardScenes,
     materialDiagnostics: diagnostics,
     renderer: env.VIDEO_RENDERER_EXPLICIT && env.VIDEO_RENDERER === 'canvas' ? 'canvas' : 'remotion',
     generatedAt: nowIso(),
@@ -2096,6 +2534,46 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     threshold: (env.STRICT_QUALITY_GATES || env.VIDEO_RENDER_STRICT) ? 0.88 : env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
   });
   const boardQuality = storyboardQuality(storyboard);
+  let storyboardVerifier = sourceGroundingJudge.judge({
+    feature: 'storyboard',
+    stage: 'post_generation_storyboard',
+    materialId,
+    resolvedTopic: generationTopic,
+    requestedTopic: concept,
+    domainInfo,
+    sourceOutline: understanding.sourceOutline || sourceOutline,
+    materialUnderstanding: understanding,
+    chunks: uploadedChunks,
+    sourceVisuals,
+    sourceTopicPlan,
+    topicMode,
+    outputText: [scriptFromStoryboard(storyboard), JSON.stringify(storyboard.scenes || [])].join('\n'),
+    outputJson: storyboard,
+    attempt: lessonVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY ? 1 : 0,
+  });
+  if (storyboardVerifier.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+    if (
+      env.SOURCE_REPAIR_SAVE_SAFE_FALLBACK &&
+      lesson &&
+      lesson.sourceRepair &&
+      lessonVerifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT &&
+      (sourceGroundingJudge.safeSourceFallbackAllowed(storyboardVerifier) || sourceGroundingJudge.sourceRepairSafe(storyboardVerifier))
+    ) {
+      storyboardVerifier = {
+        ...storyboardVerifier,
+        decision: sourceGroundingJudge.DECISIONS.ACCEPT,
+        reasonCodes: ['source_repair_storyboard_safe_fallback'],
+        repairedFrom: storyboardVerifier,
+      };
+    }
+  }
+  if (storyboardVerifier.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+    throw new HttpError(502, 'generation_verifier_blocked', 'The generated storyboard drifted away from the uploaded material, so I did not save it.', {
+      verifier: storyboardVerifier,
+      materialUnderstanding: understanding,
+      storyboardQuality: boardQuality,
+    });
+  }
   const quality = {
     storyboard: boardQuality,
     script: scriptQuality,
@@ -2113,6 +2591,20 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     topic_source: understanding.source || null,
     candidates: understanding.alternatives || [],
     materialDiagnostics: diagnostics,
+    sourceVisualCandidates: sourceVisuals,
+    sourceTopicPlan: {
+      topicMode: sourceTopicPlan.topicMode,
+      primaryTopic: sourceTopicPlan.primaryTopic,
+      topicBundle: sourceTopicPlan.topicBundle,
+      allowedTopics: sourceTopicPlan.allowedTopics,
+    },
+    repair_path: lesson && lesson.sourceRepair ? 'deterministic_source_repair' : 'ai_initial',
+    remaining_warnings: boardQuality.warnings || [],
+    verifier: {
+      pre: preVerifier,
+      lesson: lessonVerifier,
+      storyboard: storyboardVerifier,
+    },
     educationalContext: {
       curatedMatched: !!curatedTopicId,
       curatedTopicId,

@@ -179,3 +179,29 @@ describe('LESSON_GENERATE prompt', () => {
     expect(result).toContain('Source-backed ideas');
   });
 });
+
+describe('lesson source visuals', () => {
+  it('renders an important visuals section without exposing OCR wording', () => {
+    const lessons = require('../services/lesson.service');
+    const lesson = lessons.generalMaterialLesson(
+      'Bone Classification',
+      'Anatomy Slides',
+      'strong',
+      [1, 2],
+      [{ id: 1, text: 'Bones are classified as long, short, flat, irregular, and sesamoid.' }],
+      { domainInfo: { domain: 'general' } }
+    );
+    lesson.sourceVisuals = [{
+      pageNumber: 4,
+      sourcePage: 4,
+      heading: 'Bone shape classification diagram',
+      nearbyText: 'Explains long, short, flat, irregular, and sesamoid bones.',
+      importanceScore: 0.9,
+    }];
+
+    const md = lessons.lessonToMarkdown(lesson);
+    expect(md).toContain('## Important Visuals From the Material');
+    expect(md).toContain('Page 4: Bone shape classification diagram');
+    expect(md).not.toMatch(/\bOCR\b/i);
+  });
+});

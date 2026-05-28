@@ -47,6 +47,8 @@ function printLocalConfig() {
   console.log(`- Groq configured: ${yesNo(!!env.GROQ_API_KEY)}`);
   console.log(`- TTS engine: ${env.TTS_ENGINE}`);
   console.log(`- Video renderer: ${env.VIDEO_RENDERER}`);
+  console.log(`- OCR enabled: ${yesNo(env.OCR_ENABLED)}`);
+  console.log(`- OCR provider: ${env.OCR_PROVIDER}`);
   console.log('');
 }
 
@@ -65,12 +67,15 @@ function printHealth(result) {
   const generation = ai.generation || {};
   const renderer = data.renderer || {};
   const tts = data.tts || {};
+  const hasOcrStatus = Object.prototype.hasOwnProperty.call(data, 'ocr');
+  const ocr = data.ocr || {};
 
   console.log('- Status: reachable');
   console.log(`- Overall ok: ${yesNo(data.ok)}`);
   console.log(`- Generation ok: ${yesNo(generation.ok)}`);
   console.log(`- Generation provider: ${ai.provider || data.provider || 'unknown'}`);
   console.log(`- Renderer ok: ${yesNo(renderer.ok)}`);
+  console.log(`- OCR available: ${hasOcrStatus ? yesNo(!ocr.provider || ocr.available) : 'unknown (restart backend to expose OCR status)'}`);
   console.log(`- Active TTS engine: ${tts.active_engine || tts.engine || 'unknown'}`);
   console.log(`- Demo ok: ${yesNo(demo.ok)}`);
 
@@ -80,6 +85,8 @@ function printHealth(result) {
   if (demo.enabled && demo.groqReady === false) warnings.push('Strict demo health expects Groq for notes/video; core local flows may still work.');
   if (demo.enabled && demo.piperReady === false) warnings.push('Strict demo health expects Piper TTS; text-only and SAPI/espeak flows may still be usable.');
   if (renderer.ok === false) warnings.push('Video renderer is not ready; use storyboard review as the live fallback.');
+  if (!hasOcrStatus) warnings.push('Health endpoint did not report OCR status. Restart the backend so the readiness check can use the current OCR health code.');
+  if (env.OCR_ENABLED && hasOcrStatus && ocr.available === false) warnings.push('OCR is enabled but the selected local OCR provider is unavailable. Upload ingestion will fall back to normal extraction when possible.');
 
   if (warnings.length) {
     console.log('');

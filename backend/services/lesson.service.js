@@ -69,6 +69,21 @@ const DiagramSchema = z.object({
   caption: z.string().optional().default(''),
 }).optional();
 
+const SourceVisualSchema = z.object({
+  id: z.union([z.number(), z.string()]).optional(),
+  pageNumber: z.number().nullable().optional(),
+  sourcePage: z.number().nullable().optional(),
+  slideNumber: z.number().nullable().optional(),
+  heading: z.string().optional().default(''),
+  caption: z.string().optional().default(''),
+  nearbyText: z.string().optional().default(''),
+  evidence: z.string().optional().default(''),
+  visualTypeGuess: z.string().optional().default(''),
+  importanceScore: z.number().optional().default(0),
+  imagePath: z.string().nullable().optional(),
+  thumbnailPath: z.string().nullable().optional(),
+}).passthrough();
+
 const SectionSchema = z.object({
   type: z.enum(SECTION_TYPES),
   title: z.string().min(1),
@@ -97,6 +112,7 @@ const EducationalLessonSchema = z.object({
   prerequisites: z.array(z.string()).optional().default([]),
   sections: z.array(SectionSchema).min(6),
   relatedTopics: z.array(z.string()).optional().default([]),
+  sourceVisuals: z.array(SourceVisualSchema).optional().default([]),
 });
 
 const VideoSceneSchema = z.object({
@@ -205,6 +221,7 @@ function fallbackLesson(topic, opts = {}) {
   if (lower.includes('inheritance')) return inheritanceLesson(t, materialTitle, grounding, selectedChunkIds);
   if (lower.includes('polymorphism')) return polymorphismLesson(t, materialTitle, grounding, selectedChunkIds);
   if (lower.includes('linked list')) return linkedListLesson(t, materialTitle, grounding, selectedChunkIds);
+  if (lower.includes('tree') || /\bbst\b/.test(lower)) return treeLesson(t, materialTitle, grounding, selectedChunkIds);
   if (lower.includes('hash table') || lower.includes('hashmap') || lower.includes('hash map') || lower.includes('hash function') || lower === 'hashing') return hashTableLesson(t, materialTitle, grounding, selectedChunkIds);
   if (lower.includes('stack')) return stackLesson(t, materialTitle, grounding, selectedChunkIds);
   const curated = loadCuratedKnowledge(t);
@@ -401,6 +418,71 @@ function linkedListLesson(topic, materialTitle, grounding, selectedChunkIds) {
   return normalizeLesson(lesson, { topic, skipEnsureFallback: true });
 }
 
+function treeLesson(topic, materialTitle, grounding, selectedChunkIds) {
+  const isBst = /\b(binary search tree|bst)\b/i.test(topic || '');
+  const lesson = baseLesson(isBst ? 'Binary Search Tree' : 'Trees', 'data_structure', materialTitle, grounding, selectedChunkIds);
+  lesson.learningObjectives = [
+    'Identify root, parent, child, leaf, height, and depth in a tree.',
+    'Trace preorder, postorder, and inorder traversal order.',
+    'Explain how binary trees and BSTs organize search and insertion paths.',
+  ];
+  lesson.prerequisites = ['Nodes and references', 'Recursion', 'Basic comparison logic'];
+  lesson.sections = [
+    section('hook', 'Why Trees Matter', 'A tree organizes data hierarchically. Instead of one linear chain, each node can branch to children, which makes trees useful for folders, expression parsing, search structures, and priority-based organization.'),
+    section('definition', 'Definition', 'A tree is a collection of nodes connected by parent-child edges. The root is the top node, leaves have no children, and every non-root node has exactly one parent. Height and depth describe how far nodes are from the root or from the deepest leaf.'),
+    section('diagram', 'Tree Structure Diagram', 'The core visual model is root to children to leaves. Traversal walks through that hierarchy in a systematic order.', {
+      diagram: {
+        type: 'tree',
+        nodes: ['root', 'left child', 'right child', 'leaf one', 'leaf two', 'leaf three'],
+        edges: [['root', 'left child'], ['root', 'right child'], ['left child', 'leaf one'], ['left child', 'leaf two'], ['right child', 'leaf three']],
+        operations: ['visit root', 'traverse child edge', 'visit leaf'],
+        caption: 'A tree branches from one root through parent-child edges to leaves.',
+      },
+    }),
+    section('deep_explanation', 'Tree ADT and Implementation', 'A Tree ADT usually exposes root(), parent(v), children(v), size(), and tests such as isRoot(), isInternal(), and isExternal(). A common implementation stores a root reference, parent links, first-child links, and sibling links so the structure can represent any number of children.'),
+    section('code_example', 'Java Tree Node Example', 'This small node class shows the references behind the hierarchy and a preorder traversal.', {
+      code: {
+        language: 'java',
+        content: 'class TreeNode {\n  int data;\n  TreeNode left;\n  TreeNode right;\n}\n\nvoid preorder(TreeNode node) {\n  if (node == null) return;\n  visit(node);\n  preorder(node.left);\n  preorder(node.right);\n}',
+        explanation: [
+          { lineRange: '1-4', text: 'Each node stores data and child references.' },
+          { lineRange: '7', text: 'The base case stops traversal at an empty child.' },
+          { lineRange: '8', text: 'Preorder visits the root before its children.' },
+          { lineRange: '9-10', text: 'Recursive calls traverse the left and right subtrees.' },
+        ],
+      },
+    }),
+    section('code_walkthrough', 'Traversal Walkthrough', 'Preorder is root then children. Postorder is children then root. Inorder applies to binary trees: left subtree, root, right subtree. The important habit is to track the current node and which subtree is visited next.'),
+    section('complexity', 'BST Search and Height', 'A binary search tree adds an ordering rule: smaller values go left, larger values go right. Search follows one path down from the root, so the cost is O(h), where h is the height of the tree. Balanced trees keep h small; skewed trees can degrade toward O(n).', {
+      cards: [
+        { title: 'Search path', text: 'Compare once per level.' },
+        { title: 'Balanced BST', text: 'Often O(log n).' },
+        { title: 'Skewed BST', text: 'Can become O(n).' },
+        { title: 'Inorder traversal', text: 'Visits values in sorted order.' },
+      ],
+    }),
+    section('common_mistakes', 'Common Mistakes', '', {
+      cards: [
+        { title: 'Thinking every tree is a BST', text: 'A general tree only has hierarchy; a BST also has left-smaller/right-larger ordering.' },
+        { title: 'Mixing height and depth', text: 'Depth counts from root to node; height counts from node to deepest leaf.' },
+        { title: 'Forgetting subtree rules', text: 'BST ordering must hold for every subtree, not only the root.' },
+      ],
+    }),
+    section('checkpoint', 'Mini Checkpoint', 'In a BST search, why can the algorithm skip an entire subtree after one comparison?', {
+      quiz: [{
+        question: 'Why does BST search choose only left or right at each node?',
+        options: ['Because every node has one child', 'Because smaller keys are left and larger keys are right', 'Because traversal always starts at a leaf', 'Because arrays store the tree contiguously'],
+        answer: 'Because smaller keys are left and larger keys are right',
+        explanation: 'The ordering rule tells the search which subtree could contain the target and which subtree cannot.',
+      }],
+    }),
+    section('recap', 'Recap', 'Trees are hierarchical structures with roots, parent-child edges, and leaves. Traversals define visit order, and BSTs add an ordering rule so search and insertion follow a path rather than scanning every node.'),
+    section('next_steps', 'Next Steps', 'Practice drawing preorder, postorder, and inorder traversals, then compare balanced and skewed BST search paths.'),
+  ];
+  lesson.relatedTopics = ['Binary Search Tree', 'Heap', 'Graph Traversal'];
+  return normalizeLesson(lesson, { topic: lesson.topic, skipEnsureFallback: true });
+}
+
 function hashTableLesson(topic, materialTitle, grounding, selectedChunkIds) {
   const lesson = baseLesson('Hash Table', 'data_structure', materialTitle, grounding, selectedChunkIds);
   lesson.learningObjectives = [
@@ -556,7 +638,22 @@ function parseKeywordsJson(value) {
 function isGenericSourceLabel(value) {
   const text = inlineText(value, 120);
   if (!text) return true;
-  return /^(document|file|material|upload|uploaded material|source|lesson|chapter\s*\d+|slide\s*\d+|section\s*\d+|unit\s*\d+|module\s*\d+|top|home|welcome|contents?|table of contents|index|appendix|acknowledgements?|references?|quiz(?:zes)?|quiz answer keys?|answer keys?|answers?|objectives?|learning objectives?|untitled|\d+)$/i.test(text);
+  return /^(document|file|material|upload|uploaded material|source|lesson|chapter\s*\d+|slide\s*\d+|section\s*\d+|unit\s*\d+|module\s*\d+|top|home|welcome|introduction|overview|contents?|table of contents|index|appendix|acknowledgements?|references?|quiz(?:zes)?|quiz answer keys?|answer keys?|answers?|objectives?|learning objectives?|untitled|\d+)$/i.test(text)
+    || isNoisySourceLabel(text);
+}
+
+function isNoisySourceLabel(value) {
+  const text = inlineText(value, 120);
+  if (!text) return true;
+  const normalized = normalizedForCoverage(text);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (/\b\w+\.\w+\b/.test(text)) return true;
+  if (/[{};]/.test(text)) return true;
+  if (/[=()]/.test(text) && /\b(public|private|protected|return|void|null|new|class|node|head|next|set|get)\b/i.test(text)) return true;
+  if (/^(?:and|or|the|this|that|he|es|fer|nd)\b/i.test(text) && words.length >= 4) return true;
+  if (/\b(?:dr|prof|instructor|ccis|ksu|salah|hammami)\b/i.test(text)) return true;
+  if (words.length >= 8 && !/\b(?:linked list|self referential|data structure|binary tree|tree|stack|queue|hash|graph|array|class|object|anatomy|skeletal|marketing|strategy|demand|supply|classification|process|implementation)\b/.test(normalized)) return true;
+  return false;
 }
 
 function titleCaseLabel(value) {
@@ -576,6 +673,7 @@ function sourceConceptsFromChunks(chunks, topic, max = 8) {
     seen.add(key);
     out.push(label);
   };
+  add(topic);
   for (const chunk of chunks || []) {
     add(chunk.chapter_title || chunk.slide_title || chunk.section_title || chunk.heading);
     for (const keyword of parseKeywordsJson(chunk.keywords_json)) add(keyword);
@@ -614,10 +712,11 @@ function outlineFromLessonInputs(chunks = [], opts = {}) {
 function outlineConcepts(outline, fallbackConcepts = [], max = 10) {
   const sections = Array.isArray(outline && outline.meaningfulSections) ? outline.meaningfulSections : [];
   const values = [
+    ...fallbackConcepts,
+    outline && outline.mainTopic,
     ...(outline && Array.isArray(outline.keyConcepts) ? outline.keyConcepts : []),
     ...sections.map(section => section.title),
     ...sections.flatMap(section => Array.isArray(section.terms) ? section.terms.slice(0, 3) : []),
-    ...fallbackConcepts,
   ];
   return uniqueList(values, max).filter(label => !isGenericSourceLabel(label)).slice(0, max);
 }
@@ -672,9 +771,43 @@ function firstSourceFact(facts, keys = SOURCE_FACT_KEYS, fallback = '') {
   return flattenSourceFacts(facts, keys, 1)[0] || fallback;
 }
 
+function sourceFactLooksUseful(value) {
+  const text = inlineText(value, 260);
+  if (!text || text.length < 34) return false;
+  const normalized = normalizedForCoverage(text);
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length < 6) return false;
+  if (/^(?:once|thereby|because|while|when|where|es|fer|he|nd)\b/i.test(text)) return false;
+  if (/\b(?:dr|prof|instructor|ccis|ksu|salah|hammami)\b/i.test(text)) return false;
+  if (!/[a-z]{3,}/i.test(text)) return false;
+  return true;
+}
+
+function rankSourceFacts(values = [], anchors = [], max = 12) {
+  const anchorTerms = uniqueList(anchors, 12)
+    .map(term => normalizedForCoverage(term))
+    .filter(term => term && term.length >= 4);
+  return uniqueList(values, 40)
+    .filter(sourceFactLooksUseful)
+    .map(value => {
+      const normalized = normalizedForCoverage(value);
+      const anchorHits = anchorTerms.filter(term => normalized.includes(term)).length;
+      const sentenceBonus = /[.!?]$/.test(String(value).trim()) ? 1 : 0;
+      const definitionBonus = /\b(is|are|means|contains|includes|refers|stores|supports|uses|based on)\b/i.test(value) ? 1 : 0;
+      return { value, score: anchorHits * 4 + sentenceBonus + definitionBonus };
+    })
+    .sort((a, b) => b.score - a.score)
+    .map(item => item.value)
+    .slice(0, max);
+}
+
 function sectionFactText(section, max = 300) {
   const facts = sourceFactsFromOutline({ sourceFacts: section && section.sourceFacts });
-  const values = flattenSourceFacts(facts, ['definitions', 'facts', 'relationships', 'classifications', 'processes', 'examples', 'numbers'], 3);
+  const values = rankSourceFacts(
+    flattenSourceFacts(facts, ['definitions', 'facts', 'relationships', 'classifications', 'processes', 'examples', 'numbers'], 8),
+    [section && section.title, ...((section && section.terms) || [])],
+    3
+  );
   return cleanText(values.join(' '), max) || cleanText(section && section.excerpt || '', max);
 }
 
@@ -760,11 +893,22 @@ function sourceVisualFromDecision(decision, lessonTopic, cards, concepts) {
 
 function generalMaterialLesson(topic, materialTitle, grounding, selectedChunkIds, chunks = [], opts = {}) {
   const outline = outlineFromLessonInputs(chunks, { ...opts, topic, materialTitle });
-  const fallbackConcepts = sourceConceptsFromChunks(chunks, topic, 8);
+  const planConcepts = opts.sourceTopicPlan && Array.isArray(opts.sourceTopicPlan.topicBundle)
+    ? opts.sourceTopicPlan.topicBundle.flatMap(item => [item && item.topic, ...((item && item.terms) || [])])
+    : [];
+  const fallbackConcepts = uniqueList([
+    ...planConcepts,
+    ...sourceConceptsFromChunks(chunks, topic, 8),
+  ], 12);
   const concepts = outlineConcepts(outline, fallbackConcepts, 10);
   const examples = outlineExamples(outline, chunks, 5);
   const sourceFacts = sourceFactsFromOutline(outline);
-  const concreteFacts = flattenSourceFacts(sourceFacts, ['definitions', 'facts', 'relationships', 'classifications', 'processes', 'examples', 'numbers'], 14);
+  const sourceAnchors = [topic, outline && outline.mainTopic, ...concepts];
+  const concreteFacts = rankSourceFacts(
+    flattenSourceFacts(sourceFacts, ['definitions', 'facts', 'relationships', 'classifications', 'processes', 'examples', 'numbers'], 28),
+    sourceAnchors,
+    14
+  );
   const classifications = flattenSourceFacts(sourceFacts, ['classifications'], 8);
   const processes = flattenSourceFacts(sourceFacts, ['processes'], 8);
   const reviewQuestions = flattenSourceFacts(sourceFacts, ['reviewQuestions'], 5);
@@ -778,12 +922,18 @@ function generalMaterialLesson(topic, materialTitle, grounding, selectedChunkIds
   const sourcePath = cards.map(card => card.title).filter(Boolean).slice(0, 6);
   const overviewFacts = concreteFacts.slice(0, 4);
   const detailFacts = concreteFacts.slice(0, 8);
-  const firstFact = firstSourceFact(sourceFacts, ['definitions', 'facts', 'relationships', 'classifications'], examples[0] || `${lessonTopic} is the central topic identified from the uploaded material.`);
+  const firstFact = concreteFacts[0]
+    || rankSourceFacts(flattenSourceFacts(sourceFacts, ['definitions', 'facts', 'relationships', 'classifications'], 12), sourceAnchors, 1)[0]
+    || examples[0]
+    || `${lessonTopic} is the central topic identified from the uploaded material.`;
   const classificationText = classifications.length
     ? classifications.join(' ')
     : (cards.length >= 2 ? cards.map(card => `${card.title}: ${card.text}`).join(' ') : '');
   const processText = processes.length ? processes.join(' ') : '';
-  const exampleText = flattenSourceFacts(sourceFacts, ['examples', 'memoryHints', 'numbers'], 5).join(' ') || examples.slice(0, 3).join(' ');
+  const exampleText = rankSourceFacts([
+    ...flattenSourceFacts(sourceFacts, ['examples', 'memoryHints', 'numbers'], 8),
+    ...examples,
+  ], sourceAnchors, 5).join(' ') || examples.slice(0, 3).join(' ');
   const reviewQuizItems = reviewQuestions.length
     ? reviewQuestions.slice(0, 3)
     : [
@@ -1011,6 +1161,53 @@ function normalizeSection(raw, index) {
   };
 }
 
+function normalizeSourceVisual(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const sourcePage = raw.sourcePage ?? raw.pageNumber ?? raw.page_number ?? null;
+  const slideNumber = raw.slideNumber ?? raw.slide_number ?? null;
+  if (sourcePage == null && slideNumber == null && !raw.heading && !raw.caption) return null;
+  const label = slideNumber != null ? `Slide ${slideNumber}` : `Page ${sourcePage || 1}`;
+  const heading = inlineText(raw.heading || raw.visualTypeGuess || raw.visual_type_guess || 'source visual', 100);
+  return {
+    id: raw.id || raw.sourceVisualId || raw.source_visual_id || null,
+    pageNumber: sourcePage != null ? Number(sourcePage) : null,
+    sourcePage: sourcePage != null ? Number(sourcePage) : null,
+    slideNumber: slideNumber != null ? Number(slideNumber) : null,
+    heading,
+    caption: inlineText(raw.caption || (heading ? `${label}: ${heading}` : label), 160),
+    nearbyText: inlineText(raw.nearbyText || raw.nearby_text || raw.evidence || '', 260),
+    evidence: inlineText(raw.evidence || raw.nearbyText || raw.nearby_text || '', 260),
+    visualTypeGuess: inlineText(raw.visualTypeGuess || raw.visual_type_guess || '', 80),
+    importanceScore: Number(raw.importanceScore || raw.importance_score || 0),
+    imagePath: raw.imagePath || raw.image_path || null,
+    thumbnailPath: raw.thumbnailPath || raw.thumbnail_path || null,
+  };
+}
+
+function normalizeSourceVisuals(values = [], max = 8) {
+  const seen = new Set();
+  const out = [];
+  for (const item of values || []) {
+    const visual = normalizeSourceVisual(item);
+    if (!visual) continue;
+    const key = [visual.sourcePage, visual.slideNumber, visual.heading].join('|').toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(visual);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function attachSourceVisuals(lesson, opts = {}) {
+  const fromLesson = lesson && Array.isArray(lesson.sourceVisuals) ? lesson.sourceVisuals : [];
+  const fromOpts = opts.sourceVisualCandidates || opts.sourceVisuals || [];
+  return {
+    ...lesson,
+    sourceVisuals: normalizeSourceVisuals([...fromLesson, ...fromOpts], env.SOURCE_VISUALS_MAX_PER_MATERIAL || 8),
+  };
+}
+
 function ensureRequiredSections(lesson, opts = {}) {
   const existing = new Set(lesson.sections.map(s => s.type));
   const fallback = fallbackLesson(lesson.topic || opts.topic || 'Object-Oriented Programming', {
@@ -1048,6 +1245,7 @@ function normalizeLesson(raw, opts = {}) {
     prerequisites: uniqueList(src.prerequisites || [], 6),
     sections: (Array.isArray(src.sections) ? src.sections : []).map(normalizeSection).filter(s => s.title),
     relatedTopics: uniqueList(src.relatedTopics || [], 8),
+    sourceVisuals: normalizeSourceVisuals([...(src.sourceVisuals || []), ...(opts.sourceVisualCandidates || opts.sourceVisuals || [])], env.SOURCE_VISUALS_MAX_PER_MATERIAL || 8),
   };
   if (lesson.learningObjectives.length < 2 && !opts.skipEnsureFallback) {
     lesson.learningObjectives = fallbackLesson(topic, opts).learningObjectives.slice(0, 4);
@@ -1065,6 +1263,7 @@ function isCsLessonForQuality(lesson, opts = {}) {
   const domain = String(opts.domain || opts.domainInfo && opts.domainInfo.domain || '').toLowerCase();
   const lessonType = String((lesson && lesson.lessonType) || opts.lessonType || '').toLowerCase();
   const topic = String((lesson && lesson.topic) || opts.topic || '').toLowerCase();
+  if (opts.topicMode === 'material_wide' || opts.topicMode === 'source_repair' || opts.sourceRepair || lesson && lesson.sourceRepair) return false;
   if (domain && domain !== 'cs') return false;
   if (['oop', 'data_structure', 'algorithm'].includes(lessonType)) return true;
   return detectLessonType(topic) !== 'general';
@@ -1142,6 +1341,7 @@ function scoreLesson(lesson, opts = {}) {
   const all = JSON.stringify(lesson || {}).toLowerCase();
   const visible = lessonToMarkdown(lesson || {});
   const sections = Array.isArray(lesson && lesson.sections) ? lesson.sections : [];
+  const sourceRepairMode = !!(opts.sourceRepair || opts.topicMode === 'source_repair' || (lesson && lesson.sourceRepair));
   const requiresCode = isCsLessonForQuality(lesson, opts);
   const hasCode = sections.some(s => s.code && s.code.content && s.code.content.length > 40);
   const hasDiagram = sections.some(s => s.diagram && s.diagram.nodes && s.diagram.nodes.length >= 3);
@@ -1192,6 +1392,7 @@ function scoreLesson(lesson, opts = {}) {
   const weakSourceFactCoverage = !requiresCode && factCoverage.available > 0 && factCoverage.covered < minFactCoverage;
   const weakSourceSectionCoverage = !requiresCode && sectionCoverage.available > 1 && sectionCoverage.covered < minSectionCoverage;
   const repeatedGeneralHeadingLoop = !requiresCode && hasRepeatedGeneralHeadingLoop(visible, lesson, opts.sourceOutline);
+  const repeatedGeneralHeadingFailure = repeatedGeneralHeadingLoop && !sourceRepairMode;
   const genericFailure = sourceFreeGeneral ||
     (genericTopic && !hasGroundedGeneralContent) ||
     hasGenericChapterText ||
@@ -1200,7 +1401,7 @@ function scoreLesson(lesson, opts = {}) {
     generalInstructionalFailure ||
     weakSourceFactCoverage ||
     weakSourceSectionCoverage ||
-    repeatedGeneralHeadingLoop;
+    repeatedGeneralHeadingFailure;
   const criteria = [
     sections.length >= 8,
     requiresCode ? hasCode : true,
@@ -1225,6 +1426,7 @@ function scoreLesson(lesson, opts = {}) {
     weakSourceFactCoverage,
     weakSourceSectionCoverage,
     repeatedGeneralHeadingLoop,
+    repeatedGeneralHeadingFailure,
     genericFailure,
   };
 }
@@ -1265,7 +1467,7 @@ async function generateEducationalLesson(opts = {}) {
     })
     : '';
 
-  if (!prompt) return fallback;
+  if (!prompt) return attachSourceVisuals(fallback, opts);
 
   try {
     const raw = await ai.generate(prompt, {
@@ -1284,11 +1486,11 @@ async function generateEducationalLesson(opts = {}) {
         sourceMaterial: lesson.sourceMaterial || fallback.sourceMaterial,
         sections: mergeSections(lesson.sections, fallback.sections),
       }, { ...opts, topic, chunks: selectedChunks });
-      return { ...merged, quality };
+      return attachSourceVisuals({ ...merged, quality }, opts);
     }
-    return { ...lesson, quality };
+    return attachSourceVisuals({ ...lesson, quality }, opts);
   } catch (_) {
-    return { ...fallback, quality: { score: 0, passed: false, fallback: true } };
+    return attachSourceVisuals({ ...fallback, quality: { score: 0, passed: false, fallback: true } }, opts);
   }
 }
 
@@ -1344,7 +1546,11 @@ function diagramToMermaid(diagram) {
 }
 
 function lessonToMarkdown(lessonInput) {
-  const lesson = normalizeLesson(lessonInput || {});
+  const sourceOnlyMarkdown = lessonInput && (lessonInput.topicMode === 'material_wide' || lessonInput.sourceRepair);
+  const markdownOpts = sourceOnlyMarkdown
+    ? { topicMode: lessonInput.topicMode || 'source_repair', sourceRepair: !!lessonInput.sourceRepair, skipEnsureFallback: true }
+    : {};
+  const lesson = normalizeLesson(lessonInput || {}, markdownOpts);
   const lines = [`# ${lesson.topic}`, ''];
   if (lesson.learningObjectives.length) {
     lines.push('## Learning Objectives');
@@ -1379,6 +1585,16 @@ function lessonToMarkdown(lessonInput) {
       if (q.explanation) lines.push(q.explanation);
       lines.push('');
     }
+  }
+  if (lesson.sourceVisuals && lesson.sourceVisuals.length) {
+    lines.push('## Important Visuals From the Material');
+    for (const visual of lesson.sourceVisuals) {
+      const label = visual.slideNumber != null ? `Slide ${visual.slideNumber}` : `Page ${visual.sourcePage || visual.pageNumber || 1}`;
+      const heading = inlineText(visual.heading || visual.visualTypeGuess || 'source visual', 100);
+      const evidence = inlineText(visual.nearbyText || visual.evidence || '', 150);
+      lines.push(`- ${label}: ${heading}${evidence ? ` - ${evidence}` : ''}`);
+    }
+    lines.push('');
   }
   if (lesson.relatedTopics.length) {
     lines.push('## Related Topics');

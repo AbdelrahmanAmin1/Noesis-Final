@@ -47,6 +47,7 @@ app.get('/api/health', async (req, res) => {
     const aiHealth = await ai.healthCheck();
     const ttsStatus = typeof tts.detectTTS === 'function' ? tts.detectTTS() : { engine: env.TTS_ENGINE };
     const renderer = require('./services/renderer.service').status();
+    const ocr = require('./services/ocr.service').status();
     const demo = {
       enabled: env.NOESIS_DEMO_MODE,
       renderer: env.VIDEO_RENDERER,
@@ -55,6 +56,7 @@ app.get('/api/health', async (req, res) => {
       groqReady: !!env.GROQ_API_KEY && env.NOTES_PROVIDER === 'groq' && env.VIDEO_SCRIPT_PROVIDER === 'groq',
       piperReady: ttsStatus && ttsStatus.configured_engine === 'piper' && ttsStatus.active_engine === 'piper',
       rendererReady: renderer.ok,
+      ocrReady: !env.OCR_ENABLED || !!ocr.available,
       tutorProvider: env.TUTOR_PROVIDER,
       tutorFallbackProvider: env.TUTOR_FALLBACK_PROVIDER,
       tutorGroqReady: env.TUTOR_PROVIDER !== 'groq' || !!env.GROQ_API_KEY,
@@ -64,11 +66,11 @@ app.get('/api/health', async (req, res) => {
       learningMapLayout: env.LEARNING_MAP_LAYOUT,
     };
     demo.ok = !demo.enabled || (demo.groqReady && demo.piperReady && demo.rendererReady && demo.storyboardReviewRequired && demo.tutorGroqReady);
-    _healthCache = { at: now, data: { ai: aiHealth, tts: ttsStatus, renderer, demo } };
+    _healthCache = { at: now, data: { ai: aiHealth, tts: ttsStatus, renderer, ocr, demo } };
   }
   const hc = _healthCache.data || {};
   const aiOk = hc.ai && hc.ai.generation && hc.ai.generation.ok;
-  res.json({ ok: aiOk && (!hc.demo || hc.demo.ok !== false), provider: env.AI_PROVIDER, ai: hc.ai, tts: hc.tts, renderer: hc.renderer, demo: hc.demo, env: env.NODE_ENV });
+  res.json({ ok: aiOk && (!hc.demo || hc.demo.ok !== false), provider: env.AI_PROVIDER, ai: hc.ai, tts: hc.tts, renderer: hc.renderer, ocr: hc.ocr, demo: hc.demo, env: env.NODE_ENV });
 });
 
 app.use('/api/auth', require('./routes/auth.routes'));

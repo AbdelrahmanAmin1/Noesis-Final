@@ -87,7 +87,19 @@ const getVisualData = (scene = {}, slide = {}) => {
     details: { ...(slide.visual_node_details || {}), ...(data.details || {}), ...promotedDetails },
     operations: data.operations || slide.operations || [],
     caption: data.caption || slide.caption || '',
+    imagePath: data.imagePath || data.image_path || slide.image_path || '',
+    imageUrl: data.imageUrl || data.image_url || slide.image_url || '',
+    sourceVisualId: data.sourceVisualId || data.source_visual_id || slide.source_visual_id || null,
+    sourcePage: data.sourcePage || data.source_page || slide.source_page || null,
+    slideNumber: data.slideNumber || data.slide_number || slide.slide_number || null,
   };
+};
+
+const mediaSrc = (value) => {
+  const text = String(value || '');
+  if (!text) return '';
+  if (/^https?:\/\//i.test(text) || /^file:\/\//i.test(text)) return text;
+  return `file:///${text.replace(/\\/g, '/')}`;
 };
 
 function asList(value) {
@@ -569,6 +581,17 @@ const TableVisual = ({ frame, scene, slide }) => {
 
 const SourceReferenceVisual = ({ frame, scene, slide }) => {
   const data = getVisualData(scene, slide);
+  const src = mediaSrc(data.imageUrl || data.imagePath);
+  if (src) {
+    return (
+      <div style={{ height: '100%', boxSizing: 'border-box', border: `1px solid ${theme.line}`, borderRadius: 18, background: '#111827', padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ color: theme.text, fontSize: 24, fontWeight: 850, textAlign: 'center' }}>{safeLabel(data.caption || scene.sceneTitle || slide.title || 'Source visual', 90)}</div>
+        <div style={{ flex: 1, minHeight: 0, borderRadius: 14, overflow: 'hidden', background: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <img src={src} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+        </div>
+      </div>
+    );
+  }
   const nodes = asList(data.nodes).map(n => typeof n === 'string' ? n : n.label || n.id).filter(Boolean).slice(0, 4);
   const phase = activePhase(frame, Math.max(1, nodes.length));
   return (

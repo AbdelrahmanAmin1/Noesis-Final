@@ -11,6 +11,8 @@ const materialUnderstanding = require('./material-understanding.service');
 const learningMaps = require('./learning-map.service');
 const materialService = require('./material.service');
 const domainDetection = require('./domain-detection.service');
+const sourceGroundingJudge = require('./source-grounding-judge.service');
+const sourceTopicPlans = require('./source-topic-plan.service');
 const { recordConceptOutcome } = require('./mastery.service');
 const log = require('../utils/logger');
 
@@ -107,6 +109,8 @@ function sourceChunksForClient(chunks, materialTitle) {
       excerpt: cleanText(c.text, 520),
       score: typeof c.score === 'number' ? c.score : null,
       corpus: c.corpus || 'uploaded',
+      sourceKind: c.source_kind || c.sourceKind || 'text',
+      sourceVisualId: c.source_visual_id || c.sourceVisualId || null,
     };
   });
 }
@@ -591,16 +595,99 @@ async function runStartJob(userId, sessionId, jobId = null) {
     const topicInfo = useCuratedCs
       ? await resolveTopicCached(session.material_id, session.concept || (material && material.title))
       : topicFromMaterialSource(userId, session.material_id, session.concept, material && (material.display_title || material.title), domainInfo);
-    const sourceTopic = topicInfo.topic || (!isGeneric(session.concept) && session.concept) || (material && (material.display_title || material.title));
-    const topic = cleanText(sourceTopic, 120) || 'Uploaded Material';
+    let sourceTopic = topicInfo.topic || (!isGeneric(session.concept) && session.concept) || (material && (material.display_title || material.title));
+    let topic = cleanText(sourceTopic, 120) || 'Uploaded Material';
 
     jobUpdate({ progress: 45, message: 'Retrieving material context...' });
     updateSessionProgress(sessionId, { status: 'retrieving_context', trace: { message: 'Retrieving material context...', topic } });
     const retrievalStarted = Date.now();
-    const context = await retrieveContextCached(session.material_id, topic, { includeSystem: useCuratedCs });
-    const materialTitle = material && material.display_title || topic;
-    const sources = sourceChunksForClient(context.chunks, materialTitle);
-    const sourceTitle = sourceTitleFromChunks(context.chunks, topicInfo.sourceTitle || materialTitle);
+    let context = await retrieveContextCached(session.material_id, topic, { includeSystem: useCuratedCs });
+    let materialTitle = material && material.display_title || topic;
+    let sources = sourceChunksForClient(context.chunks, materialTitle);
+    let sourceTitle = sourceTitleFromChunks(context.chunks, topicInfo.sourceTitle || materialTitle);
+    let tutorChunks = context.uploaded && Array.isArray(context.uploaded.chunks) ? context.uploaded.chunks : context.chunks;
+    let sourceOutline = session.material_id
+      ? materialUnderstanding.buildSourceOutline(tutorChunks, {
+        explicitQuery: session.concept,
+        hint: topic,
+        title: material && material.title,
+        materialTitle: materialTitle,
+        domainInfo,
+      })
+      : null;
+    let sourceTopicPlan = session.material_id
+      ? sourceTopicPlans.buildSourceTopicPlan({
+        materialId: session.material_id,
+        materialTitle,
+        sourceScope: 'material',
+        explicitTopic: session.concept,
+        requestedTopic: topic,
+        domainInfo,
+        chunks: tutorChunks,
+        sourceOutline,
+        maxBalancedChunks: 24,
+      })
+      : null;
+    let topicVerifier = sourceGroundingJudge.judge({
+      feature: 'tutor',
+      stage: 'pre_generation',
+      materialId: session.material_id,
+      resolvedTopic: topic,
+      requestedTopic: session.concept,
+      domainInfo,
+      sourceOutline,
+      materialUnderstanding: topicInfo.understanding || null,
+      chunks: tutorChunks,
+      sourceTopicPlan,
+      attempt: 0,
+    });
+    if (topicVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY && topicVerifier.correctedTopic) {
+      topic = cleanText(topicVerifier.correctedTopic, 120) || topic;
+      sourceTopic = topic;
+      context = await retrieveContextCached(session.material_id, topic, { includeSystem: useCuratedCs });
+      materialTitle = material && material.display_title || topic;
+      sources = sourceChunksForClient(context.chunks, materialTitle);
+      sourceTitle = sourceTitleFromChunks(context.chunks, topicInfo.sourceTitle || materialTitle);
+      tutorChunks = context.uploaded && Array.isArray(context.uploaded.chunks) ? context.uploaded.chunks : context.chunks;
+      sourceOutline = session.material_id
+        ? materialUnderstanding.buildSourceOutline(tutorChunks, {
+          explicitQuery: session.concept,
+          hint: topic,
+          title: material && material.title,
+          materialTitle,
+          domainInfo,
+        })
+        : null;
+      sourceTopicPlan = session.material_id
+        ? sourceTopicPlans.buildSourceTopicPlan({
+          materialId: session.material_id,
+          materialTitle,
+          sourceScope: 'material',
+          explicitTopic: session.concept,
+          requestedTopic: topic,
+          domainInfo,
+          chunks: tutorChunks,
+          sourceOutline,
+          maxBalancedChunks: 24,
+        })
+        : null;
+      topicVerifier = sourceGroundingJudge.judge({
+        feature: 'tutor',
+        stage: 'pre_generation',
+        materialId: session.material_id,
+        resolvedTopic: topic,
+        requestedTopic: session.concept,
+        domainInfo,
+        sourceOutline,
+        materialUnderstanding: topicInfo.understanding || null,
+        chunks: tutorChunks,
+        sourceTopicPlan,
+        attempt: 1,
+      });
+    }
+    if (topicVerifier.decision === sourceGroundingJudge.DECISIONS.BLOCK) {
+      throw new HttpError(422, 'generation_verifier_blocked', 'The tutor could not verify a safe source topic for this material.', { verifier: topicVerifier });
+    }
 
     jobUpdate({ progress: 75, message: 'Generating warm-up...' });
     updateSessionProgress(sessionId, { status: 'generating_step', trace: { message: 'Generating warm-up...', sourceTitle } });
@@ -617,6 +704,15 @@ async function runStartJob(userId, sessionId, jobId = null) {
       topicSource: topicInfo.topic_source || topicInfo.source || 'resolver',
       domain: domainInfo,
       materialUnderstanding: topicInfo.understanding || null,
+      verifier: {
+        pre: topicVerifier,
+      },
+      sourceTopicPlan: sourceTopicPlan ? {
+        topicMode: sourceTopicPlan.topicMode,
+        primaryTopic: sourceTopicPlan.primaryTopic,
+        topicBundle: sourceTopicPlan.topicBundle,
+        allowedTopics: sourceTopicPlan.allowedTopics,
+      } : null,
       curatedCs: useCuratedCs,
       sourceTitle,
       retrievalMs: Date.now() - retrievalStarted,

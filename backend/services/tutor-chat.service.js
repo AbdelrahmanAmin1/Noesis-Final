@@ -9,6 +9,10 @@ const educationalContext = require('./educational-context.service');
 const domainDetection = require('./domain-detection.service');
 const { HttpError } = require('../middleware/error');
 const { sourceChunksForClient } = require('./tutor.service');
+const sourceVisualCandidates = require('./source-visual-candidates.service');
+const sourceGroundingJudge = require('./source-grounding-judge.service');
+const sourceTopicPlans = require('./source-topic-plan.service');
+const materialUnderstanding = require('./material-understanding.service');
 
 const CHAT_ACTIONS = {
   explain_deeper: {
@@ -570,6 +574,21 @@ function friendlyAiMessage(err) {
   return 'The tutor service is unavailable right now. Check provider settings or try again in a moment.';
 }
 
+function formatSourceVisualsForPrompt(candidates = []) {
+  const lines = (candidates || []).slice(0, 4).map((candidate) => {
+    const label = candidate.slideNumber != null ? `Slide ${candidate.slideNumber}` : `Page ${candidate.sourcePage || candidate.pageNumber || 1}`;
+    const heading = candidate.heading || candidate.visualTypeGuess || 'source visual';
+    const evidence = candidate.nearbyText || candidate.evidence || '';
+    return `- ${label}: ${heading}${evidence ? ` (${String(evidence).slice(0, 180)})` : ''}`;
+  });
+  if (!lines.length) return '';
+  return [
+    'Source visuals available from the uploaded material:',
+    ...lines,
+    'Use these only when they directly support the answer. You may say "Look at the diagram on page X" or "slide X" when relevant.',
+  ].join('\n');
+}
+
 async function sendMessage(userId, payload = {}) {
   const db = getDb();
   const actionKey = normalizeAction(payload.action);
@@ -604,6 +623,34 @@ async function sendMessage(userId, payload = {}) {
   const retrievalMs = Date.now() - retrievalStart;
   const tier = rag.groundingTier(context);
   const sources = sourceChunksForClient(context.chunks, material ? material.title : 'Noesis tutor corpus');
+  const sourceVisuals = conversation.material_id
+    ? sourceVisualCandidates.forPrompt(conversation.material_id, { max: Math.min(4, env.SOURCE_VISUALS_MAX_PER_MATERIAL || 4), minScore: 0.45 })
+    : [];
+  const uploadedChunks = context.uploaded && Array.isArray(context.uploaded.chunks)
+    ? context.uploaded.chunks
+    : context.chunks.filter(chunk => !chunk.corpus || chunk.corpus === 'uploaded');
+  const sourceOutline = conversation.material_id
+    ? materialUnderstanding.buildSourceOutline(uploadedChunks, {
+      explicitQuery: message,
+      hint: message,
+      title: material && material.title,
+      materialTitle: material && material.title,
+      domainInfo,
+    })
+    : null;
+  const sourceTopicPlan = conversation.material_id
+    ? sourceTopicPlans.buildSourceTopicPlan({
+      materialId: conversation.material_id,
+      materialTitle: material && material.title,
+      sourceScope: 'material',
+      explicitTopic: message,
+      requestedTopic: message,
+      domainInfo,
+      chunks: uploadedChunks,
+      sourceOutline,
+      maxBalancedChunks: 24,
+    })
+    : null;
   const grounding = groundingSummary(tier, sources);
 
   storeMessage(db, conversation.id, 'user', message);
@@ -623,9 +670,15 @@ async function sendMessage(userId, payload = {}) {
       audienceLevel: 'beginner',
     })
     : null;
-  const educationalContextPrompt = education
+  const baseEducationalContextPrompt = education
     ? educationalContext.formatEducationalContextForPrompt(education, { maxChars: env.KNOWLEDGE_CONTEXT_MAX_CHARS })
     : '(Curated knowledge context is disabled.)';
+  const visualContextPrompt = formatSourceVisualsForPrompt(sourceVisuals);
+  const educationalContextPrompt = [
+    baseEducationalContextPrompt,
+    visualContextPrompt,
+    sourceTopicPlans.formatSourceTopicPlanForPrompt(sourceTopicPlan),
+  ].filter(Boolean).join('\n\n');
   const prompt = actionKey
     ? prompts.TUTOR_CHAT_ACTION(context.chunks, message, {
       groundingTier: tier,
@@ -651,24 +704,85 @@ async function sendMessage(userId, payload = {}) {
     }
     throw err;
   }
-  const raw = String(generation.text || '').replace(/[\u2010-\u2015]/g, '-');
+  let raw = String(generation.text || '').replace(/[\u2010-\u2015]/g, '-');
   const generationMs = Date.now() - generationStart;
-  const parsedAction = parseActionArtifacts(raw, actionKey);
+  let parsedAction = parseActionArtifacts(raw, actionKey);
   let { reply, suggestions } = parseSuggestions(parsedAction.text);
   if (!reply) reply = 'I could not form a useful answer from the available context. Try asking the question in a more specific way.';
-  const normalizedReply = normalizeTutorChatReply(reply, { sources, message, grounding });
+  let normalizedReply = normalizeTutorChatReply(reply, { sources, message, grounding });
   reply = normalizedReply.reply;
   reply = ensureGroundingDisclosure(reply, grounding);
   if (!suggestions.length) suggestions = fallbackSuggestions(message);
+  const skipVerifier = actionKey === 'quiz_me' || actionKey === 'make_flashcards';
+  let verifier = skipVerifier
+    ? { enabled: true, mode: 'deterministic', decision: 'accept', reasonCodes: ['action_artifact_unchanged'], correctedTopic: null, scores: {}, evidence: {} }
+    : sourceGroundingJudge.judge({
+      feature: 'tutor',
+      stage: 'post_generation_chat',
+      materialId: conversation.material_id,
+      resolvedTopic: null,
+      requestedTopic: message,
+      domainInfo,
+      sourceOutline,
+      chunks: uploadedChunks,
+      sourceVisuals,
+      sourceTopicPlan,
+      outputText: reply,
+      attempt: 0,
+    });
+  if (!skipVerifier && verifier.decision === sourceGroundingJudge.DECISIONS.RETRY) {
+    const retryPrompt = [
+      prompt,
+      sourceGroundingJudge.retryGuidance(verifier),
+    ].filter(Boolean).join('\n\n');
+    try {
+      const retryGeneration = await ai.generateWithFallback(retryPrompt, { feature: 'tutor', temperature: 0.25, domain: domainInfo.domain });
+      raw = String(retryGeneration.text || '').replace(/[\u2010-\u2015]/g, '-');
+      generation = { ...retryGeneration, fallbackUsed: generation.fallbackUsed || retryGeneration.fallbackUsed };
+      parsedAction = parseActionArtifacts(raw, actionKey);
+      ({ reply, suggestions } = parseSuggestions(parsedAction.text));
+      if (!reply) reply = 'I could not form a useful answer from the available context. Try asking the question in a more specific way.';
+      normalizedReply = normalizeTutorChatReply(reply, { sources, message, grounding });
+      reply = ensureGroundingDisclosure(normalizedReply.reply, grounding);
+      if (!suggestions.length) suggestions = fallbackSuggestions(message);
+      verifier = sourceGroundingJudge.judge({
+        feature: 'tutor',
+        stage: 'post_generation_chat',
+        materialId: conversation.material_id,
+        resolvedTopic: verifier.correctedTopic || null,
+        requestedTopic: message,
+        domainInfo,
+        sourceOutline,
+        chunks: uploadedChunks,
+        sourceVisuals,
+        sourceTopicPlan,
+        outputText: reply,
+        attempt: 1,
+      });
+    } catch (_) {
+      verifier = {
+        ...verifier,
+        decision: sourceGroundingJudge.DECISIONS.BLOCK,
+        reasonCodes: [...new Set([...(verifier.reasonCodes || []), 'retry_generation_failed'])],
+      };
+    }
+  }
+  const verifierBlocked = verifier.decision !== sourceGroundingJudge.DECISIONS.ACCEPT;
+  if (verifierBlocked) {
+    reply = sourceGroundingJudge.sourceLimitedTutorFallback(verifier, sources);
+    suggestions = fallbackSuggestions(message);
+    parsedAction = { text: reply, artifacts: {} };
+    normalizedReply = { reply, response: { structured: false, type: 'source_grounding_fallback', title: 'Source grounding fallback', fields: [] } };
+  }
 
   let actionResult = null;
   const topicFallback = material && material.title || (historyRows.find(row => row.role === 'assistant') || {}).content || 'Tutor chat';
-  if (actionKey === 'make_flashcards') {
+  if (!verifierBlocked && actionKey === 'make_flashcards') {
     let cards = sanitizeFlashcards(parsedAction.artifacts.flashcards, context.chunks, topicFallback);
     if (!cards.length) cards = sanitizeFlashcards(fallbackFlashcards(reply, context.chunks, topicFallback), context.chunks, topicFallback);
     actionResult = persistFlashcards(db, userId, conversation, material, cards);
   }
-  if (actionKey === 'quiz_me') {
+  if (!verifierBlocked && actionKey === 'quiz_me') {
     actionResult = {
       type: 'quiz',
       quiz: normalizeQuiz(parsedAction.artifacts.quiz, reply, topicFallback),
@@ -688,10 +802,18 @@ async function sendMessage(userId, payload = {}) {
     grounding,
     response: normalizedReply.response,
     educationalContext: education && education.trace || null,
+    sourceVisuals,
+    sourceOutline: sourceOutline ? {
+      mainTopic: sourceOutline.mainTopic,
+      keyConcepts: sourceOutline.keyConcepts,
+      meaningfulSections: sourceOutline.meaningfulSections,
+    } : null,
+    verifier,
     domain: domainInfo,
   };
   const assistantMessageId = storeMessage(db, conversation.id, 'assistant', reply, {
     sources,
+    sourceVisuals,
     suggestions,
     groundingTier: tier,
     trace: actionResult ? { ...trace, actionResult } : trace,
