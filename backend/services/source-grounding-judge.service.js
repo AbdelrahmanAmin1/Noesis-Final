@@ -251,6 +251,7 @@ function allowedTopicKeys(sourceTopic, opts = {}) {
 }
 
 function unsupportedTopicHits(outputText, sourceText, sourceTopic, opts = {}) {
+  if (sourceLooksNonCs(opts.domainInfo || {}, sourceTopic)) return [];
   const output = cleanText(outputText).toLowerCase();
   const source = cleanText(sourceText).toLowerCase();
   const outlineText = sourceOutlineTerms(opts.sourceOutline || {}).join(' ').toLowerCase();
@@ -501,7 +502,8 @@ function judge(opts = {}) {
   const confidentSourceTopic = sourceTopic.topic && sourceTopic.confidence >= 0.45;
   const resolvedKnown = knownTopicFor(resolvedTopic);
   const sourceKnown = knownTopicFor(sourceTopic.topic);
-  const nonCsSourceWithCsResolved = sourceLooksNonCs(opts.domainInfo || {}, sourceTopic.topic)
+  const nonCsDomain = sourceLooksNonCs(opts.domainInfo || {}, sourceTopic.topic);
+  const nonCsSourceWithCsResolved = nonCsDomain
     && resolvedKnown
     && sourceTopic.confidence >= 0.45;
   const topicMismatch = confidentSourceTopic
@@ -509,6 +511,13 @@ function judge(opts = {}) {
     && !sourceWideTopicCompatible(sourceTopic.topic, opts)
     && (sourceKnown || nonCsSourceWithCsResolved);
 
+  if (topicMismatch && nonCsDomain) {
+    return {
+      enabled: true, mode: env.SOURCE_GROUNDING_JUDGE_MODE || 'deterministic',
+      decision: DECISIONS.ACCEPT, reasonCodes: ['non_cs_topic_corrected'],
+      correctedTopic: sourceTopic.topic, retryGuidance: '', scores, evidence,
+    };
+  }
   if (topicMismatch) {
     const correctedTopic = sourceTopic.topic;
     const retry = retryOrBlock(['topic_mismatch'], opts, { correctedTopic, evidence });
@@ -519,8 +528,8 @@ function judge(opts = {}) {
   if (outputText && drift.drifted && env.SOURCE_GROUNDING_JUDGE_BLOCK_ON_TOPIC_DRIFT !== false) {
     reasonCodes.push('topic_drift');
   }
-  if (outputText && unsupportedTopics.length) {
-    reasonCodes.push(sourceLooksNonCs(opts.domainInfo || {}, sourceTopic.topic) ? 'unsupported_curated_topic' : 'unsupported_topic_drift');
+  if (outputText && unsupportedTopics.length && !nonCsDomain) {
+    reasonCodes.push('unsupported_topic_drift');
   }
   const needsCoverage = outputText
     && ['notes', 'video', 'storyboard', 'quiz', 'flashcards'].includes(featureName)

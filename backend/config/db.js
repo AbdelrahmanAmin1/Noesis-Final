@@ -58,6 +58,9 @@ function migrate() {
   ensureColumn(db, 'materials', 'extraction_diagnostics_json', "TEXT DEFAULT '{}'");
   ensureColumn(db, 'materials', 'ocr_status', "TEXT DEFAULT 'not_evaluated'");
   ensureColumn(db, 'materials', 'ocr_provider', 'TEXT');
+  ensureColumn(db, 'materials', 'topic_map_json', "TEXT DEFAULT '{}'");
+  ensureColumn(db, 'materials', 'topic_map_version', 'INTEGER DEFAULT 1');
+  ensureColumn(db, 'materials', 'topic_map_updated_at', 'TEXT');
   ensureColumn(db, 'notes', 'lesson_json', 'TEXT');
   ensureColumn(db, 'notes', 'source_map_json', 'TEXT');
   ensureColumn(db, 'videos', 'lesson_json', 'TEXT');

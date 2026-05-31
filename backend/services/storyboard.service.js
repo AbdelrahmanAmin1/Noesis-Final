@@ -20,6 +20,7 @@ const codeWindow = require('../utils/code-window');
 const sourceVisualCandidates = require('./source-visual-candidates.service');
 const sourceGroundingJudge = require('./source-grounding-judge.service');
 const sourceTopicPlans = require('./source-topic-plan.service');
+const materialTopicMap = require('./material-topic-map.service');
 const topicResolver = require('./topic-resolver.service');
 const { HttpError } = require('../middleware/error');
 
@@ -101,22 +102,40 @@ const CRITICAL_PATTERNS = [
   /^domain:algorithm_missing_flow_or_complexity_visual$/,
   /^domain:missing_code_scene$/,
   /^domain:unrelated_cs_injection$/,
+  /^topic:missing_bundle_coverage/,
 ];
 const INFO_PATTERNS = [
   /^enrichment:/,
   /^grounding:missing_topic_drift_risk$/,
+  /:missing_learning_point$/,
+  /^domain:missing_common_mistake_scene$/,
 ];
 
 function classifyWarnings(warnings) {
   const critical = [];
   const warn = [];
   const info = [];
+  const autoRepairable = [];
+  const userActionRequired = [];
   for (const w of (warnings || [])) {
     if (CRITICAL_PATTERNS.some(p => p.test(w))) critical.push(w);
     else if (INFO_PATTERNS.some(p => p.test(w))) info.push(w);
     else warn.push(w);
+    if (/missing_checkpoint_scene|missing_recap_scene|missing_concrete_example_scene|missing_required_visual|missing_code_scene|insufficient_visual_variety|low_confidence|missing_bundle_coverage|short_focus_labels|meaningful_bullets|data_structure_missing_operation_visual|algorithm_missing_flow_or_complexity_visual|oop_missing_class_object_visual|page_number_center_visual|missing_source_evidence|generic_fallback_not_allowed|narration_visual_mismatch|missing_visual_elements|vague_visual/.test(String(w))) {
+      autoRepairable.push(w);
+    }
   }
-  return { critical, warnings: warn, info };
+  for (const w of critical) {
+    if (!autoRepairable.includes(w)) userActionRequired.push(w);
+  }
+  return {
+    critical,
+    warnings: warn,
+    info,
+    hardBlockers: userActionRequired,
+    autoRepairable,
+    userActionRequired,
+  };
 }
 
 const WARNING_MESSAGES = {
@@ -138,6 +157,7 @@ const WARNING_MESSAGES = {
   'domain:missing_recap_scene': { label: 'Missing recap scene', fix: null },
   'domain:missing_concrete_example_scene': { label: 'Missing concrete example or scenario scene', fix: null },
   'domain:unrelated_cs_injection': { label: 'Unrelated CS terms appeared in non-CS storyboard', fix: null },
+  'domain:unrelated_cs_injection_hint': { label: 'Some CS terms detected in non-CS material (non-blocking)', fix: null },
   'domain:generic_visual_nodes_only': { label: 'Visual nodes are too generic', fix: null },
   'domain:queue_missing_fifo_operations': { label: 'Queue storyboard needs FIFO, enqueue, dequeue, front, and rear', fix: null },
   'domain:bst_missing_search_order': { label: 'BST storyboard needs root, left/right order, search/insert path, and inorder traversal', fix: null },
@@ -147,6 +167,7 @@ const WARNING_MESSAGES = {
   'topic:generic_or_missing_topic': { label: 'Topic is generic or missing', fix: null },
   'topic:unsupported_domain': { label: 'Domain is not fully supported', fix: null },
   'topic:insufficient_key_concepts': { label: 'Too few key concepts detected', fix: null },
+  'topic:missing_bundle_coverage': { label: 'Storyboard misses one or more material topics', fix: 'Add missing topic scene' },
   'topic:insufficient_source_evidence': { label: 'Insufficient source evidence chunks', fix: null },
 };
 
@@ -689,39 +710,77 @@ function visualLabelIsGeneric(label = '') {
   return words.every(word => GENERIC_VISUAL_WORDS.has(word) || /^(definition|rule|boundary|example|practice|concept|topic|summary|takeaway|step)$/i.test(word));
 }
 
+function extractConcreteNodesFromNarration(scene, topic) {
+  const NOISE_WORDS = new Set([
+    'document', 'handout', 'chunk', 'source', 'material', 'should', 'would', 'could',
+    'scene', 'visual', 'example', 'diagram', 'concept', 'topic', 'summary', 'learn',
+    'understand', 'explain', 'describe', 'define', 'show', 'step', 'next', 'also',
+    'important', 'note', 'called', 'known', 'used', 'using', 'make', 'many', 'each',
+    'type', 'like', 'such', 'form', 'part', 'helps', 'allows', 'provides', 'includes',
+  ]);
+  const narration = scene.narration || '';
+  const learning = scene.learningPoint || scene.teachingGoal || '';
+  const evidence = Array.isArray(scene.sourceEvidence) ? scene.sourceEvidence : [];
+  const evidenceText = evidence.map(e => e && (e.quote || e.text || e.heading) || '').join(' ');
+  const fullText = [narration, learning, evidenceText].filter(Boolean).join(' ');
+  const capitalized = fullText.match(/\b[A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]{2,})*/g) || [];
+  const quoted = fullText.match(/["'`]([^"'`]{3,40})["'`]/g) || [];
+  const codeIds = fullText.match(/\b[a-z]+[A-Z][a-zA-Z]*\b|\b[A-Z][a-z]+[A-Z][a-zA-Z]*\b/g) || [];
+  const candidates = [
+    ...capitalized.map(s => s.trim()),
+    ...quoted.map(s => s.replace(/["'`]/g, '').trim()),
+    ...codeIds,
+  ];
+  const seen = new Set();
+  const nodes = [];
+  for (const raw of candidates) {
+    const label = raw.slice(0, 40).trim();
+    const key = label.toLowerCase();
+    if (key.length < 3 || seen.has(key) || NOISE_WORDS.has(key)) continue;
+    seen.add(key);
+    nodes.push(label);
+    if (nodes.length >= 6) break;
+  }
+  if (nodes.length < 3) {
+    const words = [...new Set(significantTopicWords(fullText))]
+      .filter(w => !NOISE_WORDS.has(w) && !seen.has(w))
+      .slice(0, 5 - nodes.length);
+    nodes.push(...words);
+  }
+  return nodes;
+}
+
+const CS_VISUAL_TYPES = new Set([
+  'encapsulation_boundary', 'class_object', 'inheritance_uml', 'polymorphism_dispatch',
+  'linked_list_operation', 'stack_operation', 'queue_operation', 'hash_table_operation',
+  'tree_visual', 'big_o_growth',
+]);
+
+const CS_FALLBACK_NODES = {
+  encapsulation_boundary: ['class boundary', 'private fields', 'public methods', 'blocked direct access', 'valid object state'],
+  class_object: ['class blueprint', 'object instance', 'fields store state', 'methods define behavior'],
+  inheritance_uml: ['superclass', 'subclass', 'extends arrow', 'inherited method'],
+  polymorphism_dispatch: ['base reference', 'runtime object', 'overridden method', 'dynamic dispatch'],
+  linked_list_operation: ['head pointer', 'node', 'next pointer', 'null stop'],
+  stack_operation: ['stack', 'push operation', 'pop operation', 'top item'],
+  queue_operation: ['queue', 'enqueue operation', 'dequeue operation', 'front pointer', 'rear pointer'],
+  hash_table_operation: ['key', 'hash function', 'bucket index', 'collision handling'],
+  tree_visual: ['root node', 'child node', 'edge', 'traversal path'],
+  big_o_growth: ['input size n', 'growth rate', 'operation count', 'complexity label'],
+};
+
 function topicSpecificVisualNodes(scene, topic, canonicalType) {
+  const concreteNodes = extractConcreteNodesFromNarration(scene, topic);
+  if (concreteNodes.length >= 3) return concreteNodes.slice(0, 6);
+  const topicLower = String(topic || '').toLowerCase();
+  if (canonicalType === 'tree_visual' && /priority\s+queue|heap/.test(topicLower)) {
+    return ['priority queue', 'heap root', 'highest priority', 'insert item', 'extract item'];
+  }
+  if (canonicalType === 'queue_operation' && /deque|double[-\s]?ended/.test(topicLower)) {
+    return ['deque', 'front end', 'rear end', 'insert front', 'delete rear'];
+  }
+  if (CS_FALLBACK_NODES[canonicalType]) return CS_FALLBACK_NODES[canonicalType];
   const text = sourceEvidenceText(scene, topic);
-  const lower = text.toLowerCase();
-  if (canonicalType === 'encapsulation_boundary' || /\b(encapsulation|private|public|controlled access|internal state)\b/.test(lower)) {
-    return ['class boundary', 'private fields', 'public methods', 'blocked direct access', 'valid object state'];
-  }
-  if (canonicalType === 'class_object' || /\b(class|object|instance|blueprint)\b/.test(lower)) {
-    return ['class blueprint', 'object instance', 'fields store state', 'methods define behavior'];
-  }
-  if (canonicalType === 'inheritance_uml' || /\b(inheritance|superclass|subclass|extends)\b/.test(lower)) {
-    return ['superclass', 'subclass', 'extends arrow', 'inherited method'];
-  }
-  if (canonicalType === 'polymorphism_dispatch' || /\b(polymorphism|dispatch|override|runtime)\b/.test(lower)) {
-    return ['base reference', 'runtime object', 'overridden method', 'dynamic dispatch'];
-  }
-  if (canonicalType === 'linked_list_operation' || /\b(linked list|node\.next|next pointer|head pointer)\b/.test(lower)) {
-    return ['head pointer', 'node', 'next pointer', 'null stop'];
-  }
-  if (canonicalType === 'stack_operation' || /\b(stack|push|pop|top)\b/.test(lower)) {
-    return ['stack', 'push operation', 'pop operation', 'top item'];
-  }
-  if (canonicalType === 'queue_operation' || /\b(queue|enqueue|dequeue|front|rear)\b/.test(lower)) {
-    return ['queue', 'enqueue operation', 'dequeue operation', 'front pointer', 'rear pointer'];
-  }
-  if (canonicalType === 'hash_table_operation' || /\b(hash|bucket|collision|key)\b/.test(lower)) {
-    return ['key', 'hash function', 'bucket index', 'collision handling'];
-  }
-  if (canonicalType === 'tree_visual' || /\b(tree|root|child|leaf|traversal)\b/.test(lower)) {
-    return ['root node', 'child node', 'edge', 'traversal path'];
-  }
-  if (canonicalType === 'big_o_growth' || /\b(big.?o|complexity|growth|o\()\b/.test(lower)) {
-    return ['input size n', 'growth rate', 'operation count', 'complexity label'];
-  }
   if (canonicalType === 'concept_cards' || canonicalType === 'classification_table' || canonicalType === 'comparison_table' || canonicalType === 'source_page_reference' || canonicalType === 'source_slide_reference' || canonicalType === 'no_visual') {
     const evidenceWords = [...new Set(significantTopicWords(text))]
       .filter(word => !/^(document|handout|chunk|source|material|should|would|could|scene|visual)$/.test(word))
@@ -775,6 +834,19 @@ function topicSpecificEdges(nodes = []) {
     edges.push([labels[i], labels[i + 1]]);
   }
   return edges;
+}
+
+function labelIsPageOnly(value) {
+  return /^(?:page|slide)\s*\d+$/i.test(String(value || '').replace(/\s+/g, ' ').trim());
+}
+
+function sceneHasPageNumberCenterVisual(scene) {
+  if (sceneHasSourceImage(scene)) return false;
+  const labels = visualLabelsFor(scene);
+  if (!labels.length) return false;
+  const resolution = visualResolutionForScene(scene, scene && (scene.topicName || scene.title || ''));
+  const sourceReference = resolution.supported && ['source_page_reference', 'source_slide_reference'].includes(resolution.canonical);
+  return sourceReference || labelIsPageOnly(labels[0]);
 }
 
 function repairSceneVisualPayload(scene, topic) {
@@ -858,6 +930,7 @@ function validateVisualRelevance(scene, topic = '') {
   const conceptMap = !!(resolution.supported && resolution.config && resolution.config.conceptMap);
   const optionalNoVisual = canonicalType === 'no_visual';
   const sourceLedGeneralVisual = ['concept_cards', 'classification_table', 'comparison_table', 'source_page_reference', 'source_slide_reference'].includes(canonicalType);
+  if (sceneHasPageNumberCenterVisual(scene)) addWarning(warnings, 'page_number_center_visual');
 
   if (optionalNoVisual) {
     const hasSource = Array.isArray(scene.sourceEvidence) && scene.sourceEvidence.length > 0;
@@ -1280,7 +1353,12 @@ function sceneCanonicalVisual(scene, topic) {
     topic,
     text: visualText,
   });
-  return resolved.supported ? resolved.canonical : null;
+  if (!resolved.supported) return null;
+  if (['source_page_reference', 'source_slide_reference', 'source_reference'].includes(resolved.canonical)) {
+    const inferred = inferVisualTypeFromTopic(visualText);
+    if (inferred && CS_VISUAL_TYPES.has(inferred)) return inferred;
+  }
+  return resolved.canonical;
 }
 
 function storyboardVisualTypes(storyboard) {
@@ -1292,7 +1370,16 @@ function storyboardVisualTypes(storyboard) {
 function requiredVisualCoverage(storyboard) {
   const understanding = materialUnderstandingFor(storyboard) || {};
   const domain = understanding.domain;
-  const topic = String(understanding.normalizedTopic || understanding.topic || storyboard.topic || '').toLowerCase();
+  const bundleTerms = understanding.sourceTopicPlan && Array.isArray(understanding.sourceTopicPlan.topicBundle)
+    ? understanding.sourceTopicPlan.topicBundle.flatMap(item => [item.topic, ...((item && item.terms) || [])])
+    : [];
+  const topic = String([
+    understanding.normalizedTopic,
+    understanding.topic,
+    storyboard.topic,
+    ...(Array.isArray(understanding.keyConcepts) ? understanding.keyConcepts : []),
+    ...bundleTerms,
+  ].filter(Boolean).join(' ')).toLowerCase();
   if (domain === 'Object-Oriented Programming') {
     const required = ['class_object', 'code_walkthrough'];
     if (topic.includes('encapsulation')) required.unshift('encapsulation_boundary');
@@ -1301,12 +1388,14 @@ function requiredVisualCoverage(storyboard) {
     return [...new Set(required)];
   }
   if (domain === 'Data Structures') {
-    if (topic.includes('linked')) return ['linked_list_operation', 'code_walkthrough'];
-    if (topic.includes('stack')) return ['stack_operation', 'code_walkthrough'];
-    if (topic.includes('queue')) return ['queue_operation', 'code_walkthrough'];
-    if (topic.includes('hash')) return ['hash_table_operation', 'code_walkthrough'];
-    if (topic.includes('tree')) return ['tree_visual', 'code_walkthrough'];
-    return ['process_flow', 'code_walkthrough'];
+    const required = ['code_walkthrough'];
+    if (/linked/.test(topic)) required.unshift('linked_list_operation');
+    if (/stack|lifo|push|pop/.test(topic)) required.unshift('stack_operation');
+    if (/queue|fifo|enqueue|dequeue|deque|double ended|double-ended/.test(topic)) required.unshift('queue_operation');
+    if (/hash|bucket|collision/.test(topic)) required.unshift('hash_table_operation');
+    if (/tree|bst|binary|heap|priority queue/.test(topic)) required.unshift('tree_visual');
+    if (required.length === 1) required.unshift('process_flow');
+    return [...new Set(required)];
   }
   if (domain === 'Algorithms') {
     if (topic.includes('big') || topic.includes('complexity')) return ['big_o_growth', 'code_walkthrough'];
@@ -1660,12 +1749,14 @@ function topicDetectionWarnings(storyboard) {
   if (!understanding) return ['topic:missing_detection'];
   if (!topic || /^unresolved|unknown|cs topic|computer science$/i.test(topic)) warnings.push('topic:generic_or_missing_topic');
   const generalDomain = isGeneralStoryboardDomain(understanding.domain);
+  const topicMap = understanding.topicMap || storyboard.topicMap || {};
+  const topicMapTopics = Array.isArray(topicMap.topics) ? topicMap.topics.filter(item => item && item.name) : [];
   if (!generalDomain && !SUPPORTED_DOMAINS.has(understanding.domain)) warnings.push('topic:unsupported_domain');
   const confidenceThreshold = generalDomain ? 0.35 : MIN_TOPIC_CONFIDENCE;
-  if (Number(understanding.confidence || 0) < confidenceThreshold) warnings.push('topic:low_confidence');
+  if (Number(understanding.confidence || 0) < confidenceThreshold && topicMapTopics.length < 2) warnings.push('topic:low_confidence');
   const keyConcepts = Array.isArray(understanding.keyConcepts) ? understanding.keyConcepts.filter(Boolean) : [];
-  if (keyConcepts.length < (generalDomain ? 2 : MIN_KEY_CONCEPTS)) warnings.push('topic:insufficient_key_concepts');
-  if (sourceEvidenceChunkCount(understanding) < (generalDomain ? 1 : MIN_SOURCE_EVIDENCE_CHUNKS)) warnings.push('topic:insufficient_source_evidence');
+  if (keyConcepts.length < (generalDomain ? 2 : MIN_KEY_CONCEPTS) && topicMapTopics.length < 2) warnings.push('topic:insufficient_key_concepts');
+  if (sourceEvidenceChunkCount(understanding) < (generalDomain ? 1 : MIN_SOURCE_EVIDENCE_CHUNKS) && topicMapTopics.length < 2) warnings.push('topic:insufficient_source_evidence');
   return warnings;
 }
 
@@ -1694,10 +1785,8 @@ function domainSpecificWarnings(storyboard, visualTypes) {
   const understanding = materialUnderstandingFor(storyboard) || {};
   const domain = understanding.domain;
   if (isGeneralStoryboardDomain(domain)) {
-    if (!hasCommonMistakeScene(storyboard)) addWarning(warnings, 'domain:missing_common_mistake_scene');
-    if (!hasCheckpointScene(storyboard)) addWarning(warnings, 'domain:missing_checkpoint_scene');
     if (!hasRecapScene(storyboard)) addWarning(warnings, 'domain:missing_recap_scene');
-    if (!hasConcreteExampleScene(storyboard)) addWarning(warnings, 'domain:missing_concrete_example_scene');
+    if (!hasCheckpointScene(storyboard)) addWarning(warnings, 'domain:missing_checkpoint_scene');
     if (hasForbiddenCsInjection(storyboard)) addWarning(warnings, 'domain:unrelated_cs_injection');
     return warnings;
   }
@@ -1732,6 +1821,17 @@ function domainSpecificWarnings(storyboard, visualTypes) {
   return warnings;
 }
 
+function enrichNarrationWithImageContext(narration, visual) {
+  if (!visual) return narration;
+  const desc = visual.imageDescription || visual.ocrText || visual.nearbyText;
+  if (!desc || !visual.imagePath) return narration;
+  const context = String(desc).slice(0, 300).trim();
+  if (!context) return narration;
+  const already = narration.toLowerCase();
+  if (already.includes(context.slice(0, 40).toLowerCase())) return narration;
+  return `${narration}\n[Visual context from source image: ${context}]`;
+}
+
 function toStoryboardScene(scene, index, topic, slide) {
   const visual = scene.visual || {};
   const codeFocus = scene.codeFocus || scene.code_focus || null;
@@ -1757,7 +1857,7 @@ function toStoryboardScene(scene, index, topic, slide) {
     title: scene.title || `${topic} scene ${index + 1}`,
     teachingGoal: goalFor(scene, topic),
     studentFacingGoal: studentGoalFor(scene, topic),
-    narration: scene.narration || '',
+    narration: enrichNarrationWithImageContext(scene.narration || '', visual),
     visualTemplate: visualTemplateFor(scene, topic),
     visualData: {
       type: visual.type || slide.visual_type || 'mindmap',
@@ -1771,6 +1871,9 @@ function toStoryboardScene(scene, index, topic, slide) {
       sourceVisualId: visual.sourceVisualId || visual.source_visual_id || slide.source_visual_id || null,
       sourcePage: visual.sourcePage || visual.source_page || slide.source_page || null,
       slideNumber: visual.slideNumber || visual.slide_number || slide.slide_number || null,
+      ocrText: visual.ocrText || null,
+      nearbyText: visual.nearbyText || null,
+      imageDescription: visual.imageDescription || null,
     },
     code: normalizedCode ? {
       language: normalizedCode.language || 'text',
@@ -1834,6 +1937,7 @@ function storyboardQuality(storyboard) {
     ...groundingWarnings(qualityStoryboard),
     ...enrichmentWarnings(qualityStoryboard),
     ...domainSpecificWarnings(qualityStoryboard, visualTypes),
+    ...topicBundleCoverageWarnings(qualityStoryboard),
     ...visual.warnings,
   ];
   const warnings = [...new Set([...sceneWarningsFlat, ...globalWarnings])];
@@ -1879,8 +1983,57 @@ function prepareSceneForQuality(scene, topic, opts = {}) {
   return hasCompleteGrounding ? withVisualGrounding(repaired, topic) : repaired;
 }
 
+const BANNED_NARRATION_RE = /\b(?:the\s+uploaded\s+material|this\s+uploaded\s+material|the\s+material|this\s+material|the\s+uploaded\s+file|this\s+uploaded\s+file|the\s+document)\s+(?:is|was|contains|covers|discusses|explains|shows|talks\s+about|is\s+organized\s+around)\b/i;
+
+function directNarrationFallback(scene = {}, topic = '') {
+  const explicitType = [scene.visualType, scene.visualTemplate, scene.visualElements && scene.visualElements.type, scene.visualData && scene.visualData.type].filter(Boolean).join(' ');
+  const text = [explicitType, scene.topicName, scene.sceneTitle, scene.title, scene.learningPoint, visualLabelsFor(scene).join(' '), topic].filter(Boolean).join(' ');
+  if (/queue_operation|queue|fifo|enqueue|dequeue|front|rear/i.test(explicitType)) {
+    return 'Queue operations use FIFO order: enqueue adds at the rear, dequeue removes from the front, and the front and rear pointers show the current state.';
+  }
+  if (/stack_operation|stack|lifo|push|pop|top/i.test(explicitType)) {
+    return 'Stack operations use LIFO order: push adds a value on top, pop removes the top value, and underflow happens when the stack is empty.';
+  }
+  const inferred = inferVisualTypeFromTopic(text) || scene.visualType || scene.visualTemplate || '';
+  const label = scene.topicName || scene.sceneTitle || scene.title || topic || 'This idea';
+  if (String(inferred).includes('stack') || /\bstack|lifo|push|pop|top\b/i.test(text)) {
+    return 'Stack operations use LIFO order: push adds a value on top, pop removes the top value, and underflow happens when the stack is empty.';
+  }
+  if (String(inferred).includes('queue') || /\bqueue|fifo|enqueue|dequeue|front|rear\b/i.test(text)) {
+    return 'Queue operations use FIFO order: enqueue adds at the rear, dequeue removes from the front, and the front and rear pointers show the current state.';
+  }
+  if (String(inferred).includes('linked')) {
+    return 'Linked list operations move through nodes by following next pointers, then update the affected pointer so the list stays connected.';
+  }
+  if (String(inferred).includes('tree')) {
+    return 'Tree operations follow parent and child links, so the visual should show the root, the path taken, and the node that changes.';
+  }
+  if (String(inferred).includes('class') || /class|object|inheritance|polymorphism|encapsulation/i.test(text)) {
+    return 'Use the class and object labels to show which data is owned, which method runs, and how the relationship changes the result.';
+  }
+  return `${label} is the focus here. Name the rule, point to the visual label that supports it, and finish with the mistake a learner should avoid.`;
+}
+
+function sanitizeNarrationText(value, scene = {}, topic = '') {
+  const text = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!text) return text;
+  const fallback = directNarrationFallback(scene, topic);
+  const parts = text.match(/[^.!?]+[.!?]?/g) || [text];
+  const cleaned = parts.map(part => {
+    const sentence = part.trim();
+    if (!sentence) return '';
+    return BANNED_NARRATION_RE.test(sentence) ? fallback : sentence;
+  }).filter(Boolean).join(' ');
+  return (cleaned || fallback).replace(/\s+/g, ' ').trim();
+}
+
+function sanitizeLearnerFacingScene(scene = {}, topic = '') {
+  const narration = sanitizeNarrationText(scene.narration, scene, topic);
+  return { ...scene, narration };
+}
+
 function withFreshSceneQuality(scene, topic) {
-  const grounded = prepareSceneForQuality(scene, topic);
+  const grounded = prepareSceneForQuality(sanitizeLearnerFacingScene(scene, topic), topic);
   return {
     ...grounded,
     visualValidation: validateVisualRelevance(grounded, topic),
@@ -1888,20 +2041,493 @@ function withFreshSceneQuality(scene, topic) {
   };
 }
 
+const AUTO_REPAIRABLE_VISUAL_WARNINGS = new Set([
+  'narration_visual_mismatch',
+  'unrelated_diagram',
+  'vague_visual',
+  'missing_visual_elements',
+  'decorative_only_visual',
+  'concept_map_nodes_not_source_backed',
+  'generic_fallback_not_allowed',
+  'page_number_center_visual',
+]);
+
+function sceneHasSourceImage(scene) {
+  const ve = scene.visualElements || {};
+  const vd = scene.visualData || {};
+  return !!(ve.imagePath || ve.image_path || ve.imageUrl || ve.image_url || vd.imagePath || vd.image_path || vd.imageUrl || vd.image_url);
+}
+
+function checkTopicCoverage(scenes, topicBundle) {
+  if (!topicBundle || topicBundle.length < 2) return { covered: [], missing: [] };
+  const sceneText = scenes.map(s =>
+    [
+      s.title,
+      s.sceneTitle,
+      s.type,
+      s.teachingGoal,
+      s.learningPoint,
+      s.studentFacingGoal,
+      s.narration,
+      Array.isArray(s.onScreenText) ? s.onScreenText.join(' ') : '',
+      Array.isArray(s.motionInstructions) ? s.motionInstructions.join(' ') : '',
+      visualLabelsFor(s).join(' '),
+      s.visualPurpose,
+      s.visualRationale,
+      s.viewerTakeaway,
+      codeSnippetFor(s, {}),
+      evidenceTextForScene(s),
+    ].filter(Boolean).join(' ').toLowerCase()
+  ).join(' ');
+  const covered = [];
+  const missing = [];
+  for (const item of topicBundle) {
+    const terms = [item.topic, ...(item.terms || [])].map(t => String(t || '').toLowerCase());
+    const found = terms.some(term => term.length >= 3 && sceneText.includes(term));
+    (found ? covered : missing).push(item);
+  }
+  return { covered, missing };
+}
+
+function topicBundleCoverageWarnings(storyboard) {
+  const understanding = materialUnderstandingFor(storyboard) || {};
+  const plan = understanding.sourceTopicPlan || storyboard.sourceTopicPlan || {};
+  if (plan.topicMode !== 'material_wide' || !Array.isArray(plan.topicBundle) || plan.topicBundle.length < 2) return [];
+  const coverage = checkTopicCoverage(storyboard.scenes || [], plan.topicBundle);
+  if (!coverage.missing.length) return [];
+  return [`topic:missing_bundle_coverage:${coverage.missing.slice(0, 6).map(item => item.topic).filter(Boolean).join(',')}`];
+}
+
+function createScenesForMissingTopics(missing, topic, domainInfo, sourceChunks) {
+  const sceneCount = missing.length > 6 ? 6 : missing.length;
+  return missing.slice(0, sceneCount).map((item, idx) => {
+    const relevantChunk = (sourceChunks || []).find(c => (item.chunkIds || []).includes(c.id)) || (sourceChunks && sourceChunks[0]) || null;
+    const visualType = inferVisualTypeFromTopic(item.topic) || 'concept_cards';
+    const evidence = item.evidence || '';
+    const chunkText = relevantChunk ? String(relevantChunk.text || '').slice(0, 400) : '';
+    const narration = chunkText || evidence || `This section covers ${item.topic}.`;
+    const terms = (item.terms || []).slice(0, 6);
+    const nodes = topicSpecificVisualNodes({ sceneTitle: item.topic, narration }, item.topic, visualType);
+    return {
+      id: cleanId(`extra-${idx + 1}-${item.topic}`, `scene-extra-${idx + 1}`),
+      type: 'concept',
+      title: item.topic,
+      sceneTitle: item.topic,
+      teachingGoal: `Explain ${item.topic} using the uploaded material.`,
+      learningPoint: `Understand the key concepts of ${item.topic}.`,
+      studentFacingGoal: `Learn about ${item.topic}.`,
+      narration,
+      visualTemplate: visualType,
+      visualType: visualType,
+      visualData: {
+        type: visualType,
+        nodes: nodes.length ? nodes : (terms.length ? terms : [item.topic]),
+        edges: topicSpecificEdges(nodes.length ? nodes : terms),
+        operations: topicSpecificVisualOperations(visualType),
+        caption: `${item.topic} overview`,
+      },
+      sourceEvidence: relevantChunk ? [{ chunkId: relevantChunk.id, quote: String(relevantChunk.text || '').slice(0, 200) }] : [],
+    };
+  });
+}
+
+function quoteFromChunk(chunk = {}, max = 260) {
+  return String(chunk.text || '').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function evidenceForTopic(topic = {}, chunks = [], limit = 2) {
+  const ids = new Set((topic.sourceChunkIds || []).map(Number));
+  return chunks
+    .filter(chunk => ids.has(Number(chunk.id)))
+    .slice(0, limit)
+    .map(chunk => ({
+      chunkId: chunk.id,
+      quote: quoteFromChunk(chunk),
+      heading: chunk.heading || chunk.chapter_title || chunk.slide_title || chunk.section_title || '',
+      chapterTitle: chunk.chapter_title || '',
+      slideNumber: chunk.slide_number || null,
+      slideTitle: chunk.slide_title || '',
+      sourcePage: chunk.source_page || null,
+    }))
+    .filter(item => item.quote || item.heading);
+}
+
+function topicOperationText(topic = {}) {
+  const terms = [...(topic.terms || []), ...(topic.requiredVisualTypes || [])].join(' ').toLowerCase();
+  const named = [];
+  if (/stack|lifo|push|pop/.test(terms)) named.push('push', 'pop', 'top pointer', 'LIFO order');
+  if (/queue|fifo|enqueue|dequeue|front|rear/.test(terms)) named.push('enqueue', 'dequeue', 'front pointer', 'rear pointer', 'FIFO order');
+  if (/linked/.test(terms)) named.push('node', 'head pointer', 'next pointer', 'insert or delete');
+  if (/tree|bst|heap/.test(terms)) named.push('root', 'child node', 'traversal path');
+  if (/hash/.test(terms)) named.push('hash function', 'bucket', 'collision handling');
+  if (/complexity|big/.test(terms)) named.push('input size', 'growth rate', 'complexity class');
+  return [...new Set(named)].slice(0, 5).join(', ');
+}
+
+function directTopicNarration(topic = {}, evidence = [], opts = {}) {
+  const name = topic.name || 'this topic';
+  const quote = evidence[0] && evidence[0].quote ? evidence[0].quote : '';
+  const operations = topicOperationText(topic);
+  const page = evidence[0] && (evidence[0].sourcePage || evidence[0].slideNumber)
+    ? ` The source reference for this idea is ${evidence[0].slideNumber ? `slide ${evidence[0].slideNumber}` : `page ${evidence[0].sourcePage}`}.`
+    : '';
+  if (opts.kind === 'checkpoint') {
+    return `Pause on ${name}: explain the main rule, name one supporting detail, and predict what changes in the visual state. This checkpoint keeps the lesson tied to the source before moving on.`;
+  }
+  if (opts.kind === 'recap') {
+    return `Bring the topics together by naming each major idea and the rule that makes it useful. A strong recap connects definitions, operations, visuals, and source evidence instead of memorizing isolated labels.`;
+  }
+  if (opts.kind === 'operation') {
+    return `${name} becomes clear when you trace one concrete change. ${operations ? `Watch for ${operations}. ` : ''}${quote || `Start with the current state, apply one operation or step, then compare the result.`}${page} For data structures, also name the cost such as O(1), O(log n), or O(n) when the source supports it.`;
+  }
+  return `${name} is one of the major ideas in this source set. ${quote || `Focus on its definition, purpose, and the terms the source uses around it.`}${operations ? ` The key labels to keep in view are ${operations}.` : ''}${page}`;
+}
+
+function baseTopicScene(topic, index, kind, title, narration, visualType, sourceEvidence) {
+  const id = cleanId(`${index + 1}-${topic.id || topic.name}-${kind}`, `scene-${index + 1}`);
+  const scene = {
+    id,
+    type: kind,
+    sceneType: kind,
+    title,
+    sceneTitle: title,
+    topicId: topic.id || '',
+    topicName: topic.name || '',
+    conceptIds: topic.conceptIds || [],
+    sourceChunkIds: topic.sourceChunkIds || [],
+    sourcePageRefs: topic.sourcePageRefs || [],
+    sourceVisualIds: topic.sourceVisualIds || [],
+    teachingGoal: `Teach ${topic.name} from the uploaded source evidence.`,
+    learningPoint: `Understand ${topic.name}.`,
+    studentFacingGoal: `Explain ${topic.name} with one source detail.`,
+    narration,
+    visualTemplate: visualType,
+    visualType,
+    visualData: {
+      type: visualType,
+      nodes: [topic.name, ...(topic.terms || []).slice(0, 4)].filter(Boolean),
+      edges: topicSpecificEdges([topic.name, ...(topic.terms || []).slice(0, 4)].filter(Boolean)),
+      operations: topicSpecificVisualOperations(visualType),
+      caption: `${topic.name} - ${visualType.replace(/_/g, ' ')}.`,
+    },
+    visualPlan: {
+      visualType,
+      sourceVisualUsed: (topic.sourceVisualIds || [])[0] || null,
+      reason: `Teach ${topic.name} with a concrete ${visualType.replace(/_/g, ' ')} visual.`,
+      exactLabels: [topic.name, ...(topic.terms || []).slice(0, 5)].filter(Boolean),
+      animationStateChange: topicSpecificVisualOperations(visualType),
+      conceptTaught: topic.name,
+      sourceGrounding: topic.sourcePageRefs || [],
+    },
+    animationPlan: {
+      steps: topicSpecificVisualOperations(visualType),
+    },
+    validationTags: ['topic_map', `topic:${topic.id || topic.name}`, visualType],
+    repairHistory: [],
+    durationSec: kind === 'code_walkthrough' ? 28 : 24,
+    durationSeconds: kind === 'code_walkthrough' ? 28 : 24,
+    sourceEvidence,
+    enrichment: { used: false, type: 'none', content: '' },
+  };
+  const patch = visualType === 'code_walkthrough'
+    ? codeWalkthroughPatch(scene, topic.name)
+    : visualPatchForScene(scene, [topic.name, ...(topic.terms || [])].join(' '), visualType);
+  return withFreshSceneQuality({ ...scene, ...patch }, topic.name);
+}
+
+function topicMapScenePlan(topicMap = {}, chunks = [], sourceVisuals = [], domainInfo = {}) {
+  const topics = Array.isArray(topicMap.topics) ? topicMap.topics : [];
+  if (!topics.length) return [];
+  const domain = topicMap.domain || domainInfo.domain || '';
+  const multi = topics.length >= 2;
+  const scenes = [];
+  const maxScenes = 12;
+  const supportedDomain = SUPPORTED_DOMAINS.has(domain);
+  const topicLimit = Math.min(topics.length, supportedDomain ? 5 : 6);
+  if (multi) {
+    const overviewTopic = {
+      id: 'coverage-overview',
+      name: topicMap.title || topics.map(t => t.name).join(' / '),
+      terms: topics.map(t => t.name),
+      conceptIds: topics.flatMap(t => t.conceptIds || []).slice(0, 8),
+      sourceChunkIds: [...new Set(topics.flatMap(t => t.sourceChunkIds || []))].slice(0, 8),
+      sourcePageRefs: topics.flatMap(t => t.sourcePageRefs || []).slice(0, 6),
+      sourceVisualIds: topics.flatMap(t => t.sourceVisualIds || []).slice(0, 4),
+    };
+    scenes.push(baseTopicScene(
+      overviewTopic,
+      scenes.length,
+      'overview',
+      'Topic Map Overview',
+      `This lesson follows the source order across ${topics.slice(0, topicLimit).map(t => t.name).join(', ')}. Each section gets its own rule, visual, and checkpoint cue so one topic does not crowd out the rest.`,
+      'concept_cards',
+      evidenceForTopic(overviewTopic, chunks, 2)
+    ));
+  }
+  for (const topic of topics.slice(0, topicLimit)) {
+    const evidence = evidenceForTopic(topic, chunks, 2);
+    const required = topic.requiredVisualTypes && topic.requiredVisualTypes.length
+      ? topic.requiredVisualTypes
+      : ['concept_cards'];
+    const primaryVisual = required.find(type => type !== 'code_walkthrough') || 'concept_cards';
+    scenes.push(baseTopicScene(
+      topic,
+      scenes.length,
+      'definition',
+      topic.name,
+      directTopicNarration(topic, evidence),
+      primaryVisual,
+      evidence
+    ));
+    if (scenes.length >= maxScenes - 2) continue;
+    const secondaryVisual = required.find(type => type !== primaryVisual) || primaryVisual;
+    scenes.push(baseTopicScene(
+      topic,
+      scenes.length,
+      secondaryVisual === 'code_walkthrough' ? 'code_walkthrough' : 'diagram',
+      `${topic.name} Walkthrough`,
+      directTopicNarration(topic, evidence, { kind: 'operation' }),
+      secondaryVisual,
+      evidence
+    ));
+  }
+  if (supportedDomain && scenes.length < maxScenes - 2 && !scenes.some(scene => scene.visualType === 'code_walkthrough' || scene.code)) {
+    const topic = topics.find(t => (t.requiredVisualTypes || []).includes('code_walkthrough')) || topics[0];
+    const evidence = evidenceForTopic(topic, chunks, 1);
+    scenes.push(baseTopicScene(
+      topic,
+      scenes.length,
+      'code_walkthrough',
+      `${topic.name} Code Trace`,
+      `Trace the code by connecting the operation line to the visual state. The goal is to explain what changes, why the invariant still holds, and what the operation costs.`,
+      'code_walkthrough',
+      evidence
+    ));
+  }
+  if (scenes.length < maxScenes - 1) {
+    const checkpointTopic = {
+      id: 'topic-checkpoint',
+      name: multi ? 'Topic Checkpoint' : topics[0].name,
+      terms: topics.slice(0, topicLimit).map(t => t.name),
+      conceptIds: topics.flatMap(t => t.conceptIds || []).slice(0, 8),
+      sourceChunkIds: [...new Set(topics.flatMap(t => t.sourceChunkIds || []))].slice(0, 8),
+      sourcePageRefs: topics.flatMap(t => t.sourcePageRefs || []).slice(0, 6),
+      sourceVisualIds: topics.flatMap(t => t.sourceVisualIds || []).slice(0, 4),
+    };
+    scenes.push(baseTopicScene(
+      checkpointTopic,
+      scenes.length,
+      'checkpoint',
+      'Checkpoint',
+      directTopicNarration(checkpointTopic, [], { kind: 'checkpoint' }),
+      'summary_path',
+      evidenceForTopic(checkpointTopic, chunks, 2)
+    ));
+  }
+  const recapTopic = {
+    id: 'topic-recap',
+    name: topicMap.title || topics.map(t => t.name).join(' / '),
+    terms: topics.slice(0, topicLimit).map(t => t.name),
+    conceptIds: topics.flatMap(t => t.conceptIds || []).slice(0, 8),
+    sourceChunkIds: [...new Set(topics.flatMap(t => t.sourceChunkIds || []))].slice(0, 8),
+    sourcePageRefs: topics.flatMap(t => t.sourcePageRefs || []).slice(0, 6),
+    sourceVisualIds: topics.flatMap(t => t.sourceVisualIds || []).slice(0, 4),
+  };
+  scenes.push(baseTopicScene(
+    recapTopic,
+    scenes.length,
+    'recap',
+    'Recap',
+    directTopicNarration(recapTopic, [], { kind: 'recap' }),
+    'summary_path',
+    evidenceForTopic(recapTopic, chunks, 2)
+  ));
+  const filled = [...scenes];
+  let fillIndex = 0;
+  while (filled.length < 8 && topics.length) {
+    const topic = topics[fillIndex % topics.length];
+    filled.push(baseTopicScene(
+      topic,
+      filled.length,
+      'deep_explanation',
+      `${topic.name} Example`,
+      directTopicNarration(topic, evidenceForTopic(topic, chunks, 1), { kind: 'operation' }),
+      (topic.requiredVisualTypes || ['concept_cards'])[0],
+      evidenceForTopic(topic, chunks, 1)
+    ));
+    fillIndex += 1;
+  }
+  return attachSourceVisualsToScenes(filled.slice(0, maxScenes), sourceVisuals)
+    .map(scene => withFreshSceneQuality(scene, scene.topicName || topicMap.title || 'Uploaded Material'));
+}
+
+function topicSectionScenes(topicMap = {}, topic = {}, chunks = [], sourceVisuals = [], domainInfo = {}, startIndex = 0) {
+  const evidence = evidenceForTopic(topic, chunks, 2);
+  const required = Array.isArray(topic.requiredVisualTypes) && topic.requiredVisualTypes.length
+    ? topic.requiredVisualTypes
+    : [inferVisualTypeFromTopic(topic.name) || 'concept_cards'];
+  const primaryVisual = required.find(type => type !== 'code_walkthrough') || 'concept_cards';
+  const secondaryVisual = required.find(type => type !== primaryVisual) || primaryVisual;
+  const scenes = [
+    baseTopicScene(
+      topic,
+      startIndex,
+      'definition',
+      topic.name || 'Topic',
+      directTopicNarration(topic, evidence),
+      primaryVisual,
+      evidence,
+    ),
+    baseTopicScene(
+      topic,
+      startIndex + 1,
+      secondaryVisual === 'code_walkthrough' ? 'code_walkthrough' : 'diagram',
+      `${topic.name || 'Topic'} Walkthrough`,
+      directTopicNarration(topic, evidence, { kind: 'operation' }),
+      secondaryVisual,
+      evidence,
+    ),
+  ];
+  const domain = domainInfo.domain || topicMap.domain || '';
+  if (
+    SUPPORTED_DOMAINS.has(domain)
+    && !scenes.some(scene => scene.visualType === 'code_walkthrough' || scene.code)
+    && (required.includes('code_walkthrough') || /code|operation|stack|queue|list|tree|graph|algorithm/i.test([topic.name, ...(topic.terms || [])].join(' ')))
+  ) {
+    scenes.push(baseTopicScene(
+      topic,
+      startIndex + scenes.length,
+      'code_walkthrough',
+      `${topic.name || 'Topic'} Code Trace`,
+      'Trace one operation line by line, then connect each highlighted line to the state change in the visual.',
+      'code_walkthrough',
+      evidence.slice(0, 1),
+    ));
+  }
+  scenes.push(baseTopicScene(
+    {
+      ...topic,
+      id: `${topic.id || cleanId(topic.name, 'topic')}-checkpoint`,
+      name: `${topic.name || 'Topic'} Checkpoint`,
+      terms: [topic.name, ...(topic.terms || [])].filter(Boolean),
+    },
+    startIndex + scenes.length,
+    'checkpoint',
+    `${topic.name || 'Topic'} Checkpoint`,
+    directTopicNarration(topic, [], { kind: 'checkpoint' }),
+    'summary_path',
+    evidence.slice(0, 1),
+  ));
+  return attachSourceVisualsToScenes(scenes, sourceVisuals)
+    .map(scene => withFreshSceneQuality(scene, scene.topicName || topic.name || topicMap.title || 'Uploaded Material'));
+}
+
+function sourceTopicPlanFromTopicMap(topicMap = {}, chunks = [], fallbackPlan = {}) {
+  const topics = Array.isArray(topicMap.topics) ? topicMap.topics : [];
+  const topicBundle = topics.map(topic => ({
+    topic: topic.name,
+    terms: topic.terms || [],
+    chunkIds: topic.sourceChunkIds || [],
+    evidence: topic.evidence || '',
+    sourcePages: (topic.sourcePageRefs || []).map(ref => ref.pageNumber || ref.slideNumber).filter(Boolean),
+  }));
+  const allowedTopics = [...new Set([
+    topicMap.title,
+    ...topics.flatMap(topic => [topic.name, ...((topic.terms) || [])]),
+  ].filter(Boolean))];
+  return {
+    ...fallbackPlan,
+    topicMode: topics.length >= 2 ? 'material_wide' : (fallbackPlan.topicMode || 'focused'),
+    primaryTopic: topicMap.title || fallbackPlan.primaryTopic || (topics[0] && topics[0].name) || 'Uploaded Material',
+    topicBundle,
+    allowedTopics,
+    blockedTopics: fallbackPlan.blockedTopics || [],
+    sourceOutline: topicMap.sourceOutline || fallbackPlan.sourceOutline || {},
+    chunks,
+    balancedChunks: materialTopicMap.balancedChunksForPlan(topicMap, chunks, 48),
+    hasMultipleTopics: topics.length >= 2,
+    topicMap,
+  };
+}
+
+function ensureDomainVisualTypes(scenes = [], topic = '', domainInfo = {}) {
+  const domain = (domainInfo && domainInfo.domain) || '';
+  if (!['Data Structures', 'Object-Oriented Programming', 'Algorithms'].includes(domain)) return scenes;
+  const visualSet = new Set(scenes.map(s => sceneCanonicalVisual(s, topic) || s.visualTemplate || s.visualType || ''));
+  const required = requiredVisualCoverage({ topic, materialUnderstanding: domainInfo && domainInfo.domain ? domainInfo : { domain } });
+  const missing = required.filter(type => !visualSet.has(type));
+  if (!missing.length) return scenes;
+  const out = scenes.map(scene => {
+    if (!missing.length) return scene;
+    const currentType = scene.visualTemplate || scene.visualType || '';
+    if (CS_VISUAL_TYPES.has(currentType)) return scene;
+    const sceneText = [scene.title, scene.sceneTitle, scene.narration, scene.learningPoint].filter(Boolean).join(' ');
+    const inferred = inferVisualTypeFromTopic(sceneText);
+    if (inferred && missing.includes(inferred)) {
+      missing.splice(missing.indexOf(inferred), 1);
+      return withFreshSceneQuality({ ...scene, ...visualPatchForScene(scene, topic, inferred) }, topic);
+    }
+    return scene;
+  });
+  if (missing.length) {
+    for (let i = 0; i < out.length && missing.length; i++) {
+      const t = out[i].visualTemplate || out[i].visualType || '';
+      if (CS_VISUAL_TYPES.has(t) || t === 'code' || t === 'code_walkthrough') continue;
+      const sceneType = out[i].type || '';
+      if (sceneType === 'hook' || sceneType === 'recap') continue;
+      const target = missing.shift();
+      out[i] = withFreshSceneQuality({ ...out[i], ...visualPatchForScene(out[i], topic, target) }, topic);
+    }
+  }
+  return out;
+}
+
+// Deterministically clean up scenes whose visual does not match their narration before the
+// storyboard is scored and saved. A real source image is always kept. Otherwise we try to
+// switch to the visual the scene's own narration implies; if that still does not validate,
+// the scene becomes a clean text board (no_visual) — never a forced, meaningless concept map.
+function autoRepairSceneVisuals(scenes = [], topic = '') {
+  const repairedSceneIds = [];
+  const out = scenes.map((scene) => {
+    const validation = scene.visualValidation || validateVisualRelevance(scene, topic);
+    const warnings = Array.isArray(validation.warnings) ? validation.warnings : [];
+    const needsRepair = sceneHasPageNumberCenterVisual(scene) ||
+      warnings.some(w => AUTO_REPAIRABLE_VISUAL_WARNINGS.has(w) || String(w).startsWith('unsupported_visual_type'));
+    if (!needsRepair) return scene;
+    if (sceneHasSourceImage(scene)) return scene;
+
+    const sceneTopicText = [scene.sceneTitle, scene.title, scene.learningPoint, scene.narration].filter(Boolean).join(' ');
+    let patched = null;
+    const inferred = inferVisualTypeFromTopic(sceneTopicText);
+    if (inferred) {
+      const candidate = withFreshSceneQuality({ ...scene, ...visualPatchForScene(scene, sceneTopicText, inferred) }, topic);
+      if (candidate.visualValidation && candidate.visualValidation.passed) patched = candidate;
+    }
+    if (!patched) {
+      patched = withFreshSceneQuality({ ...scene, ...visualPatchForScene(scene, topic, 'no_visual') }, topic);
+    }
+    if (scene.id) repairedSceneIds.push(scene.id);
+    return patched;
+  });
+  return { scenes: out, repairedSceneIds };
+}
+
 const BANNED_VISIBLE_RE = new RegExp(
-  'teaching\\s*goal\\s*:|\\bqualityWarnings\\b|\\bqualityChecks\\b|\\bdebugWarnings\\b|\\bsourceChunkIds\\b|\\[chunk:\\s*\\d+\\]',
+  'teaching\\s*goal\\s*:|\\bqualityWarnings\\b|\\bqualityChecks\\b|\\bdebugWarnings\\b|\\bsourceChunkIds\\b|\\[chunk:\\s*\\d+\\]|\\b(?:the\\s+uploaded\\s+material|this\\s+uploaded\\s+material|the\\s+material|this\\s+material|the\\s+uploaded\\s+file|this\\s+uploaded\\s+file|the\\s+document)\\s+(?:is|was|contains|covers|discusses|explains|shows|talks\\s+about|is\\s+organized\\s+around)',
   'i'
 );
 
-function sanitizeSceneForRender(scene) {
+function sanitizeSceneForRender(scene, topic = '') {
   const { teachingGoal, qualityWarnings, renderSlide, ...rest } = scene;
-  return rest;
+  return sanitizeLearnerFacingScene(rest, topic);
 }
 
 function sanitizeForRender(storyboard) {
+  const topic = storyboardDisplayTitle(storyboard, storyboard && storyboard.topic);
   return {
     ...storyboard,
-    scenes: (storyboard.scenes || []).map(sanitizeSceneForRender),
+    topic,
+    scenes: (storyboard.scenes || []).map(scene => sanitizeSceneForRender(scene, topic)),
   };
 }
 
@@ -1932,12 +2558,31 @@ function focusLabelsForScene(scene) {
   const nodes = scene.visualData && Array.isArray(scene.visualData.nodes) ? scene.visualData.nodes : [];
   return nodes.map(n => String(typeof n === 'string' ? n : n.label || n.id || '').trim())
     .filter(Boolean)
+    .filter(label => !visualLabelIsGeneric(label))
     .map(label => label.split(/\s+/).slice(0, 4).join(' '))
     .slice(0, 2);
 }
 
+function topicMapFromStoryboardObject(storyboard = {}) {
+  const understanding = materialUnderstandingFor(storyboard) || {};
+  return storyboard.topicMap || understanding.topicMap || (storyboard.quality && storyboard.quality.topicMap) || null;
+}
+
+function storyboardDisplayTitle(storyboard = {}, fallback = '') {
+  const topicMap = topicMapFromStoryboardObject(storyboard);
+  const topics = topicMap && Array.isArray(topicMap.topics) ? topicMap.topics.filter(t => t && (t.name || t.topic)) : [];
+  if (topics.length >= 2) {
+    if (topicMap.title && !/^uploaded material$/i.test(String(topicMap.title))) return topicMap.title;
+    return topics.slice(0, 4).map(t => t.name || t.topic).join(' / ');
+  }
+  if (topics.length === 1) return topics[0].name || topics[0].topic;
+  return fallback || storyboard.topic || 'Uploaded Material';
+}
+
 function scriptFromStoryboard(storyboard) {
-  const slides = (storyboard.scenes || []).map(scene => {
+  const displayTopic = storyboardDisplayTitle(storyboard, storyboard.topic);
+  const slides = (storyboard.scenes || []).map(rawScene => {
+    const scene = sanitizeLearnerFacingScene(rawScene, displayTopic);
     const slide = scene.renderSlide || {};
     const requestedVisualType = scene.visualElements && scene.visualElements.type || scene.visualData && scene.visualData.type || scene.visualType || scene.visualTemplate || slide.visual_type;
     const visualText = [
@@ -1951,8 +2596,8 @@ function scriptFromStoryboard(storyboard) {
       ...slide,
       title: scene.sceneTitle || scene.title || slide.title,
       narration: scene.narration || slide.narration,
-      bullets: renderBulletLabels(scene, slide, storyboard.topic),
-      visual_type: visualRegistry.legacyVisualTypeFor(requestedVisualType, { topic: storyboard.topic, text: visualText }),
+      bullets: renderBulletLabels(scene, slide, displayTopic),
+      visual_type: visualRegistry.legacyVisualTypeFor(requestedVisualType, { topic: displayTopic, text: visualText }),
       visual_nodes: scene.visualElements && scene.visualElements.nodes || scene.visualData && scene.visualData.nodes || slide.visual_nodes || [],
       visual_edges: scene.visualElements && scene.visualElements.edges || scene.visualData && scene.visualData.edges || slide.visual_edges || [],
       visual_node_details: scene.visualElements && scene.visualElements.details || scene.visualData && scene.visualData.details || slide.visual_node_details || {},
@@ -1963,6 +2608,9 @@ function scriptFromStoryboard(storyboard) {
       source_visual_id: scene.visualElements && scene.visualElements.sourceVisualId || scene.visualData && (scene.visualData.sourceVisualId || scene.visualData.source_visual_id) || slide.source_visual_id || null,
       source_page: scene.visualElements && scene.visualElements.sourcePage || scene.visualData && (scene.visualData.sourcePage || scene.visualData.source_page) || slide.source_page || null,
       slide_number: scene.visualElements && scene.visualElements.slideNumber || scene.visualData && (scene.visualData.slideNumber || scene.visualData.slide_number) || slide.slide_number || null,
+      ocr_text: scene.visualElements && scene.visualElements.ocrText || scene.visualData && (scene.visualData.ocrText || scene.visualData.ocr_text) || slide.ocr_text || '',
+      nearby_text: scene.visualElements && scene.visualElements.nearbyText || scene.visualData && (scene.visualData.nearbyText || scene.visualData.nearby_text) || slide.nearby_text || '',
+      visual_type_guess: scene.visualElements && scene.visualElements.visualTypeGuess || scene.visualData && (scene.visualData.visualTypeGuess || scene.visualData.visual_type_guess) || slide.visual_type_guess || '',
       example_code: scene.codeSnippet || scene.code && scene.code.content || slide.example_code || '',
       code_focus: scene.code ? (() => {
         const normalizedCode = codeWindow.normalizeCodeWindow({
@@ -1985,7 +2633,7 @@ function scriptFromStoryboard(storyboard) {
     };
   });
   return {
-    topic: storyboard.topic,
+    topic: displayTopic,
     audienceLevel: storyboard.audienceLevel || 'beginner',
     learningObjectives: storyboard.learningObjectives || [],
     slides,
@@ -1996,15 +2644,24 @@ function isConcreteSourceVisual(candidate) {
   return !!(candidate && (candidate.id || candidate.imagePath || candidate.thumbnailPath || Number(candidate.importanceScore || 0) >= 0.6));
 }
 
+function candidateHasSourceImage(candidate) {
+  return !!(candidate && (candidate.imagePath || candidate.thumbnailPath || candidate.imageUrl));
+}
+
 function sourceVisualPayload(candidate) {
   if (!candidate) return {};
   const sourcePage = candidate.sourcePage ?? candidate.pageNumber ?? null;
   const slideNumber = candidate.slideNumber ?? null;
   const label = slideNumber != null ? `Slide ${slideNumber}` : `Page ${sourcePage || 1}`;
   const heading = candidate.heading || candidate.visualTypeGuess || 'source visual';
+  const ocrText = String(candidate.ocrText || '').trim();
+  const nearbyText = String(candidate.nearbyText || '').trim();
+  const imageDescription = ocrText || nearbyText || '';
+  const ocrTerms = ocrText ? ocrText.split(/\s+/).filter(w => w.length >= 3 && !/^(the|and|for|that|this|with|from|page|slide)$/i.test(w)).slice(0, 4) : [];
+  const nodeList = [heading, ...ocrTerms].filter(item => item && !labelIsPageOnly(item));
   return {
     type: slideNumber != null ? 'source_slide_reference' : 'source_page_reference',
-    nodes: [label, heading].filter(Boolean),
+    nodes: [...new Set(nodeList)].slice(0, 6),
     edges: [],
     details: {},
     operations: [],
@@ -2012,27 +2669,211 @@ function sourceVisualPayload(candidate) {
     imagePath: candidate.imagePath || candidate.thumbnailPath || null,
     imageUrl: candidate.imageUrl || null,
     sourceVisualId: candidate.id || null,
+    materialId: candidate.materialId || candidate.material_id || null,
     sourcePage,
     slideNumber,
+    ocrText: ocrText || null,
+    nearbyText: nearbyText || null,
+    imageDescription: imageDescription ? imageDescription.slice(0, 500) : null,
+    visualTypeGuess: candidate.visualTypeGuess || null,
+  };
+}
+
+function sourceVisualKey(candidate) {
+  return String(candidate && (candidate.id || `${candidate.sourcePage}:${candidate.slideNumber}:${candidate.heading}:${candidate.imagePath || candidate.thumbnailPath || candidate.imageUrl}`));
+}
+
+function sourceVisualsForBoard(userId, board) {
+  const materialId = board && (board.material_id || board.materialId);
+  if (!materialId) return [];
+  let candidates = [];
+  try {
+    candidates = sourceVisualCandidates.listForMaterial(userId, materialId, { max: 50 }) || [];
+  } catch (_) {
+    candidates = [];
+  }
+  if (!candidates.length) {
+    try {
+      const db = getDb();
+      const chunks = db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading,
+          slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
+        FROM chunks WHERE material_id=? ORDER BY idx LIMIT 60`).all(materialId);
+      candidates = sourceVisualCandidates.fromMaterialAndChunks(materialId, chunks, { max: 50, includeChunkFallback: false }) || [];
+    } catch (_) {
+      candidates = [];
+    }
+  }
+  const seen = new Set();
+  return candidates.filter(candidate => {
+    if (!candidateHasSourceImage(candidate)) return false;
+    const k = sourceVisualKey(candidate);
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function scoreSourceVisualForScene(candidate, scene, topic, targetType = '') {
+  const sceneText = [
+    scene && scene.id,
+    scene && scene.type,
+    scene && scene.sceneTitle,
+    scene && scene.title,
+    scene && scene.learningPoint,
+    scene && scene.teachingGoal,
+    scene && scene.studentFacingGoal,
+    scene && scene.narration,
+    visualLabelsFor(scene || {}).join(' '),
+    topic,
+    String(targetType || '').replace(/_/g, ' '),
+  ].filter(Boolean).join(' ').toLowerCase();
+  const candidateText = [
+    candidate && candidate.heading,
+    candidate && candidate.caption,
+    candidate && candidate.nearbyText,
+    candidate && candidate.ocrText,
+    candidate && candidate.visualTypeGuess,
+  ].filter(Boolean).join(' ').toLowerCase();
+  const words = [...new Set(candidateText.split(/[^a-z0-9+#]+/).filter(w => w.length >= 3 && !/^(the|and|for|from|with|this|that|page|slide|definition|chart)$/.test(w)))];
+  let score = words.filter(word => sceneText.includes(word)).length;
+  const targetText = String(targetType || '').replace(/_/g, ' ').toLowerCase();
+  if (targetText && candidateText.includes(targetText.split(/\s+/)[0])) score += 2;
+  if (targetText.includes('queue') && /queue|fifo|enqueue|dequeue|front|rear/.test(candidateText)) score += 4;
+  if (targetText.includes('stack') && /stack|lifo|push|pop|top/.test(candidateText)) score += 4;
+  if (targetText.includes('tree') && /tree|heap|priority|root|child/.test(candidateText)) score += 3;
+  const sourcePages = (scene && scene.sourceEvidence || []).map(item => item && (item.sourcePage || item.pageNumber || item.slideNumber)).filter(Boolean).map(String);
+  if (sourcePages.includes(String(candidate.sourcePage || candidate.pageNumber || candidate.slideNumber || ''))) score += 3;
+  return score + Math.min(2, Number(candidate.importanceScore || 0) * 2);
+}
+
+function bestSourceVisualForScene(userId, board, scene, opts = {}) {
+  const candidates = sourceVisualsForBoard(userId, board);
+  if (!candidates.length) return null;
+  const requestedId = opts.sourceVisualId || opts.source_visual_id;
+  if (requestedId != null) {
+    return candidates.find(candidate => String(candidate.id) === String(requestedId)) || null;
+  }
+  const targetType = opts.targetVisualType || opts.visualType || scene.visualType || scene.visualTemplate || '';
+  const ranked = candidates
+    .map(candidate => ({ candidate, score: scoreSourceVisualForScene(candidate, scene, board.storyboard && board.storyboard.topic || board.topic || '', targetType) }))
+    .sort((a, b) => b.score - a.score || Number(b.candidate.importanceScore || 0) - Number(a.candidate.importanceScore || 0));
+  const best = ranked[0];
+  if (!best) return null;
+  if (best.score >= 1.5 || opts.sourcePreference === 'material') return best.candidate;
+  return null;
+}
+
+function sourceVisualPatchForScene(userId, board, scene, opts = {}) {
+  const candidate = bestSourceVisualForScene(userId, board, scene, opts);
+  if (!candidate) return null;
+  const payload = sourceVisualPayload(candidate);
+  const topic = board.storyboard && board.storyboard.topic || board.topic || '';
+  const targetType = opts.targetVisualType || opts.visualType || inferVisualTypeFromTopic([
+    scene.sceneTitle,
+    scene.title,
+    scene.learningPoint,
+    scene.narration,
+    candidate.heading,
+    candidate.caption,
+    candidate.nearbyText,
+    candidate.ocrText,
+    candidate.visualTypeGuess,
+  ].filter(Boolean).join(' ')) || '';
+  const targetLabel = targetType ? targetType.replace(/_/g, ' ') : 'source visual';
+  const sourceLabel = payload.slideNumber != null ? `Slide ${payload.slideNumber}` : `Page ${payload.sourcePage || 1}`;
+  const caption = payload.caption || `${sourceLabel}: ${candidate.heading || targetLabel}`;
+  const nodes = [...new Set([targetLabel, ...(payload.nodes || [])].filter(item => item && !labelIsPageOnly(item)))].slice(0, 6);
+  const visualData = {
+    ...payload,
+    nodes,
+    caption,
+    visualTypeGuess: candidate.visualTypeGuess || targetLabel,
+  };
+  return {
+    visualTemplate: visualData.type,
+    visualType: visualData.type,
+    visualData,
+    visualElements: visualData,
+    sourceVisualId: visualData.sourceVisualId,
+    visualPurpose: `Use the extracted material image to explain ${targetLabel} directly from the source.`,
+    visualRationale: 'A real uploaded visual is more useful here than a generic generated diagram.',
+    viewerTakeaway: `Connect the source image to ${scene.learningPoint || scene.title || topic}.`,
+    visualGrounding: {
+      sceneIntent: scene.teachingGoal || scene.learningPoint || scene.narration || '',
+      selectedVisualReason: `Selected extracted material visual ${sourceLabel}.`,
+      requiredVisualEvidence: nodes,
+    },
+    onScreenText: [
+      targetLabel === 'source visual' ? 'Material visual' : targetLabel,
+      sourceLabel,
+    ],
+    motionInstructions: [
+      'Show the extracted source image.',
+      'Highlight the relevant labels in narration.',
+      'Connect the image to the scene takeaway.',
+    ],
   };
 }
 
 function attachSourceVisualsToScenes(scenes = [], candidates = []) {
-  const concrete = (candidates || []).filter(isConcreteSourceVisual);
+  const concrete = (candidates || []).filter(candidateHasSourceImage);
   if (!concrete.length) return scenes;
   const used = new Set();
-  const nextCandidate = () => concrete.find(c => !used.has(c.id || `${c.sourcePage}:${c.slideNumber}:${c.heading}`));
-  let attached = false;
-  const out = scenes.map((scene) => {
-    const template = String(scene.visualTemplate || scene.visualType || scene.visualElements && scene.visualElements.type || '').toLowerCase();
-    const explicitSourceRef = template === 'source_page_reference' || template === 'source_slide_reference' || template === 'source_reference';
-    const generalVisual = !attached && ['diagram', 'mindmap', 'flow', 'classification_table', 'comparison_table', 'concept_cards'].includes(template);
-    if (!explicitSourceRef && !generalVisual) return scene;
-    const candidate = nextCandidate();
-    if (!candidate) return scene;
-    used.add(candidate.id || `${candidate.sourcePage}:${candidate.slideNumber}:${candidate.heading}`);
-    attached = true;
+  function candidateKey(c) { return c.id || `${c.sourcePage}:${c.slideNumber}:${c.heading}`; }
+  function sceneKeywords(scene) {
+    return [scene.sceneTitle, scene.title, scene.narration, scene.learningPoint]
+      .filter(Boolean).join(' ').toLowerCase();
+  }
+  function bestCandidateForScene(scene) {
+    const text = sceneKeywords(scene);
+    if (!text) return null;
+    let best = null;
+    let bestScore = 0;
+    for (const c of concrete) {
+      if (used.has(candidateKey(c))) continue;
+      const cText = [c.heading, c.nearbyText, c.ocrText, c.visualTypeGuess, c.caption].filter(Boolean).join(' ').toLowerCase();
+      const cWords = cText.split(/\s+/).filter(w => w.length >= 3);
+      const overlap = cWords.filter(w => text.includes(w)).length;
+      if (overlap > bestScore) { bestScore = overlap; best = c; }
+    }
+    return bestScore >= 1 ? best : null;
+  }
+  function applyCandidate(scene, candidate) {
+    used.add(candidateKey(candidate));
     const payload = sourceVisualPayload(candidate);
+    const resolved = visualResolutionForScene(scene, scene.topicName || scene.title || '');
+    const currentType = resolved.supported ? resolved.canonical : String(scene.visualTemplate || scene.visualType || '');
+    const explicitSourceRef = ['source_page_reference', 'source_slide_reference', 'source_reference'].includes(currentType);
+    const keepDeterministicVisual = !explicitSourceRef && (CS_VISUAL_TYPES.has(currentType) || ['code_walkthrough', 'process_flow', 'comparison_contrast'].includes(currentType));
+    if (keepDeterministicVisual) {
+      const visualData = {
+        ...(scene.visualData || {}),
+        sourceVisualId: payload.sourceVisualId,
+        sourcePage: payload.sourcePage,
+        slideNumber: payload.slideNumber,
+        sourceImagePath: payload.imagePath,
+        sourceImageUrl: payload.imageUrl,
+        sourceImageCaption: payload.caption,
+        sourceImageReason: `Reference image for ${scene.topicName || scene.title || 'this scene'}.`,
+      };
+      return withFreshSceneQuality({
+        ...scene,
+        visualData,
+        visualElements: { ...(scene.visualElements || {}), ...visualData },
+        sourceVisualId: payload.sourceVisualId,
+        sourceVisualIds: [...new Set([...(scene.sourceVisualIds || []), payload.sourceVisualId].filter(Boolean))],
+        visualPlan: {
+          ...(scene.visualPlan || {}),
+          sourceVisualUsed: payload.sourceVisualId,
+          fallbackGeneratedVisual: false,
+          reason: scene.visualPlan && scene.visualPlan.reason || `Use a deterministic ${String(currentType).replace(/_/g, ' ')} visual and cite the matching source image.`,
+        },
+        repairHistory: [
+          ...(scene.repairHistory || []),
+          { action: 'attach_source_visual_metadata', sourceVisualId: payload.sourceVisualId, at: nowIso() },
+        ],
+      }, scene.topicName || scene.title || '');
+    }
     return {
       ...scene,
       visualTemplate: payload.type,
@@ -2040,8 +2881,39 @@ function attachSourceVisualsToScenes(scenes = [], candidates = []) {
       visualData: { ...(scene.visualData || {}), ...payload },
       visualElements: { ...(scene.visualElements || {}), ...payload },
       sourceVisualId: payload.sourceVisualId,
+      sourceVisualIds: [...new Set([...(scene.sourceVisualIds || []), payload.sourceVisualId].filter(Boolean))],
     };
+  }
+  const out = scenes.map((scene) => {
+    if (sceneHasSourceImage(scene)) return scene;
+    const template = String(scene.visualTemplate || scene.visualType || scene.visualElements && scene.visualElements.type || '').toLowerCase();
+    const explicitSourceRef = template === 'source_page_reference' || template === 'source_slide_reference' || template === 'source_reference';
+    const isGenerated = CS_VISUAL_TYPES.has(template) || ['diagram', 'mindmap', 'flow', 'classification_table', 'comparison_table', 'concept_cards', 'process_flow', 'flowchart', 'summary', 'cards', 'table', 'concept_map', 'comparison'].includes(template);
+    if (!explicitSourceRef && !isGenerated) return scene;
+    if (!explicitSourceRef && /overview|checkpoint|recap|summary/.test(String(scene.type || scene.sceneType || scene.title || '').toLowerCase())) return scene;
+    const matched = bestCandidateForScene(scene);
+    if (matched) return applyCandidate(scene, matched);
+    if (explicitSourceRef) {
+      const fallback = concrete.find(c => !used.has(candidateKey(c)));
+      if (fallback) return applyCandidate(scene, fallback);
+    }
+    return scene;
   });
+  // Round-robin: distribute remaining unused images to scenes that have no source image
+  const unused = concrete.filter(c => !used.has(candidateKey(c)));
+  if (unused.length) {
+    let ui = 0;
+    for (let i = 0; i < out.length && ui < unused.length; i++) {
+      if (sceneHasSourceImage(out[i])) continue;
+      const template = String(out[i].visualTemplate || out[i].visualType || '').toLowerCase();
+      const resolved = visualResolutionForScene(out[i], out[i].topicName || out[i].title || '');
+      const currentType = resolved.supported ? resolved.canonical : template;
+      if (template === 'code' || template === 'no_visual' || CS_VISUAL_TYPES.has(currentType)) continue;
+      if (/overview|checkpoint|recap|summary/.test(String(out[i].type || out[i].sceneType || out[i].title || '').toLowerCase())) continue;
+      out[i] = applyCandidate(out[i], unused[ui]);
+      ui++;
+    }
+  }
   return out;
 }
 
@@ -2092,8 +2964,21 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     sourceOutline: preOutline,
     maxBalancedChunks: 48,
   });
+  const sharedTopicMap = materialTopicMap.getOrBuild(userId, materialId, {
+    hint: concept || material.title,
+    explicitTopic: concept || '',
+    sourceScope,
+    chapterId,
+    chunkId,
+  });
+  const sharedCoveragePlan = sharedTopicMap && sharedTopicMap.coveragePlan || null;
+  const sharedMaterialWide = !concept &&
+    sharedCoveragePlan &&
+    sharedCoveragePlan.mode === 'material_wide' &&
+    Array.isArray(sharedTopicMap.topics) &&
+    sharedTopicMap.topics.length >= 2;
   if (!concept && preSourceTopicPlan.hasMultipleTopics) {
-    generationTopic = preSourceTopicPlan.primaryTopic || generationTopic;
+    generationTopic = sharedMaterialWide ? (sharedTopicMap.title || preSourceTopicPlan.primaryTopic || generationTopic) : (preSourceTopicPlan.primaryTopic || generationTopic);
     retrievalTopic = generationTopic;
     focusTerms = sourceTopicPlans.focusTerms(preSourceTopicPlan, generationTopic);
     avoidTerms = [];
@@ -2101,6 +2986,19 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     understanding.normalizedTopic = generationTopic;
     understanding.source = 'source_topic_plan';
     understanding.alternatives = (preSourceTopicPlan.topicBundle || []).map(item => ({ topic: item.topic, score: 0.5, evidence: [item.evidence].filter(Boolean) }));
+  } else if (sharedMaterialWide) {
+    generationTopic = sharedTopicMap.title || generationTopic;
+    retrievalTopic = generationTopic;
+    focusTerms = [
+      generationTopic,
+      ...sharedTopicMap.topics.flatMap(topic => [topic.name, ...((topic.terms) || [])]),
+    ];
+    avoidTerms = [];
+    understanding.topic = generationTopic;
+    understanding.normalizedTopic = generationTopic;
+    understanding.source = 'material_topic_map';
+    understanding.confidence = Math.max(Number(understanding.confidence || 0), Number(sharedTopicMap.confidence || 0), 0.72);
+    understanding.alternatives = sharedTopicMap.topics.map(topic => ({ topic: topic.name, score: topic.weight || 1, evidence: [topic.evidence].filter(Boolean) }));
   }
   let rag = await retrieveLessonContext(materialId, retrievalTopic, {
     feature: 'video',
@@ -2117,7 +3015,8 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
   });
   let uploadedChunks = rag.uploaded && Array.isArray(rag.uploaded.chunks) ? rag.uploaded.chunks : [];
   let sourceVisuals = sourceVisualCandidates.fromMaterialAndChunks(materialId, uploadedChunks, {
-    max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
+    max: env.SOURCE_VISUALS_MAX_PER_MATERIAL || 20,
+    minScore: 0.15,
     includeChunkFallback: true,
   });
   let sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
@@ -2140,8 +3039,25 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     sourceOutline,
     maxBalancedChunks: 48,
   });
-  const topicMode = sourceTopicPlan.topicMode;
-  if (!concept && preSourceTopicPlan.hasMultipleTopics) {
+  if (sharedMaterialWide) {
+    sourceTopicPlan = sourceTopicPlanFromTopicMap(sharedTopicMap, sourceTopicPlan.chunks && sourceTopicPlan.chunks.length ? sourceTopicPlan.chunks : uploadedChunks, preSourceTopicPlan);
+    generationTopic = sourceTopicPlan.primaryTopic || generationTopic;
+    retrievalTopic = generationTopic;
+    uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
+    sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
+    focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, generationTopic);
+    avoidTerms = [];
+    sourceVisuals = sourceVisualCandidates.fromMaterialAndChunks(materialId, uploadedChunks, {
+      max: env.SOURCE_VISUALS_MAX_PER_MATERIAL || 20,
+      minScore: 0.15,
+      includeChunkFallback: true,
+    });
+    understanding.topic = generationTopic;
+    understanding.normalizedTopic = generationTopic;
+    understanding.source = 'material_topic_map';
+    understanding.confidence = Math.max(Number(understanding.confidence || 0), Number(sharedTopicMap.confidence || 0), 0.72);
+    understanding.alternatives = sharedTopicMap.topics.map(topic => ({ topic: topic.name, score: topic.weight || 1, evidence: [topic.evidence].filter(Boolean) }));
+  } else if (!concept && preSourceTopicPlan.hasMultipleTopics) {
     sourceTopicPlan = preSourceTopicPlan;
     generationTopic = sourceTopicPlan.primaryTopic || generationTopic;
     retrievalTopic = generationTopic;
@@ -2150,7 +3066,8 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, generationTopic);
     avoidTerms = [];
     sourceVisuals = sourceVisualCandidates.fromMaterialAndChunks(materialId, uploadedChunks, {
-      max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
+      max: env.SOURCE_VISUALS_MAX_PER_MATERIAL || 20,
+      minScore: 0.15,
       includeChunkFallback: true,
     });
     understanding.topic = generationTopic;
@@ -2189,6 +3106,7 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       });
     }
   }
+  let topicMode = sourceTopicPlan.topicMode;
   if (!shouldUseCs) {
     understanding = generalUnderstandingFromChunks({ understanding, domainInfo, chunks: uploadedChunks, material, concept });
     understanding.sourceVisualCandidates = sourceVisuals;
@@ -2204,6 +3122,7 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     topicBundle: sourceTopicPlan.topicBundle,
     allowedTopics: sourceTopicPlan.allowedTopics,
   };
+  if (sharedMaterialWide) understanding.topicMap = sharedTopicMap;
   let preVerifier = sourceGroundingJudge.judge({
     feature: 'storyboard',
     stage: 'pre_generation',
@@ -2239,7 +3158,8 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     });
     uploadedChunks = rag.uploaded && Array.isArray(rag.uploaded.chunks) ? rag.uploaded.chunks : [];
     sourceVisuals = sourceVisualCandidates.fromMaterialAndChunks(materialId, uploadedChunks, {
-      max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
+      max: env.SOURCE_VISUALS_MAX_PER_MATERIAL || 20,
+      minScore: 0.15,
       includeChunkFallback: true,
     });
     sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
@@ -2262,7 +3182,15 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       sourceOutline,
       maxBalancedChunks: 48,
     });
-    if (!concept && sourceTopicPlan.hasMultipleTopics) {
+    if (sharedMaterialWide) {
+      sourceTopicPlan = sourceTopicPlanFromTopicMap(sharedTopicMap, sourceTopicPlan.chunks && sourceTopicPlan.chunks.length ? sourceTopicPlan.chunks : uploadedChunks, sourceTopicPlan);
+      uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
+      sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
+      generationTopic = sourceTopicPlan.primaryTopic || generationTopic;
+      retrievalTopic = generationTopic;
+      focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, generationTopic);
+      avoidTerms = [];
+    } else if (!concept && sourceTopicPlan.hasMultipleTopics) {
       uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
       sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
       generationTopic = sourceTopicPlan.primaryTopic || generationTopic;
@@ -2270,6 +3198,7 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, generationTopic);
       avoidTerms = [];
     }
+    topicMode = sourceTopicPlan.topicMode;
     understanding = shouldUseCs
       ? materialUnderstanding.understandFromChunks(uploadedChunks, {
         resolvedTopic: generationTopic,
@@ -2286,6 +3215,7 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       topicBundle: sourceTopicPlan.topicBundle,
       allowedTopics: sourceTopicPlan.allowedTopics,
     };
+    if (sharedMaterialWide) understanding.topicMap = sharedTopicMap;
     preVerifier = sourceGroundingJudge.judge({
       feature: 'storyboard',
       stage: 'pre_generation',
@@ -2351,6 +3281,7 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     avoidTerms,
     sourceVisualCandidates: sourceVisuals,
     sourceTopicPlan,
+    topicMap: sharedMaterialWide ? sharedTopicMap : sourceTopicPlan.topicMap || null,
     topicMode,
   });
   let lessonDrift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
@@ -2484,18 +3415,48 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       });
     }
   }
+  if (sharedMaterialWide) {
+    lesson.topic = generationTopic;
+    lesson.topicMode = 'material_wide';
+    lesson.learningObjectives = sharedTopicMap.learningObjectives && sharedTopicMap.learningObjectives.length
+      ? sharedTopicMap.learningObjectives
+      : (lesson.learningObjectives || []);
+  }
   const video = lessons.lessonToVideoScript(lesson);
   const scenes = lessons.lessonToVideoScenes(lesson);
-  const storyboardScenes = groundedEnrichment.annotateScenes(
-    (video.slides || []).map((slide, index) => toStoryboardScene(scenes[index] || slide, index, generationTopic, slide)),
-    { understanding, enrichmentPolicy }
-  );
+  const topicMapScenes = sharedMaterialWide
+    ? topicMapScenePlan(sharedTopicMap, uploadedChunks, sourceVisuals, domainInfo)
+    : [];
+  const storyboardScenes = topicMapScenes.length
+    ? groundedEnrichment.annotateScenes(topicMapScenes, { understanding, enrichmentPolicy })
+    : groundedEnrichment.annotateScenes(
+      (video.slides || []).map((slide, index) => toStoryboardScene(scenes[index] || slide, index, generationTopic, slide)),
+      { understanding, enrichmentPolicy }
+    );
   const storyboardScenesWithVisuals = attachSourceVisualsToScenes(storyboardScenes, sourceVisuals);
-  const finalStoryboardScenes = storyboardScenesWithVisuals.map(scene => withFreshSceneQuality({
+  const qualityScoredScenes = storyboardScenesWithVisuals.map(scene => withFreshSceneQuality({
     ...scene,
     domain: understanding.domain || domainInfo.domain || '',
     materialDomain: domainInfo.domain || '',
   }, generationTopic));
+  // Auto-repair scenes whose visual does not match their narration so the saved storyboard
+  // never contains a meaningless or topic-mismatched visual (no manual repair step required).
+  const autoRepair = autoRepairSceneVisuals(qualityScoredScenes, generationTopic);
+  let domainFixed = ensureDomainVisualTypes(autoRepair.scenes, generationTopic, domainInfo);
+  const topicCoverage = checkTopicCoverage(domainFixed, sourceTopicPlan && sourceTopicPlan.topicBundle);
+  if (topicCoverage.missing.length > 0) {
+    const extraScenes = createScenesForMissingTopics(topicCoverage.missing, generationTopic, domainInfo, uploadedChunks);
+    const recapIdx = domainFixed.findIndex(s => (s.type || '') === 'recap' || (s.type || '') === 'checkpoint');
+    const insertAt = recapIdx >= 0 ? recapIdx : domainFixed.length;
+    const extraWithVisuals = attachSourceVisualsToScenes(extraScenes, sourceVisuals);
+    const extraScored = extraWithVisuals.map(scene => withFreshSceneQuality({
+      ...scene,
+      domain: understanding.domain || domainInfo.domain || '',
+      materialDomain: domainInfo.domain || '',
+    }, generationTopic));
+    domainFixed = [...domainFixed.slice(0, insertAt), ...extraScored, ...domainFixed.slice(insertAt)];
+  }
+  const finalStoryboardScenes = domainFixed;
   const storyboard = {
     topic: generationTopic,
     materialUnderstanding: understanding,
@@ -2513,6 +3474,8 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       nextTopics: nextTopicsFor(generationTopic),
     },
     scenes: finalStoryboardScenes,
+    topicMap: sharedMaterialWide ? sharedTopicMap : null,
+    coveragePlan: sharedMaterialWide ? sharedTopicMap.coveragePlan : null,
     materialDiagnostics: diagnostics,
     renderer: env.VIDEO_RENDERER_EXPLICIT && env.VIDEO_RENDERER === 'canvas' ? 'canvas' : 'remotion',
     generatedAt: nowIso(),
@@ -2531,6 +3494,7 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     lowGrounding: groundingTier === 'weak',
     domainInfo,
     domain: domainInfo.domain,
+    topicMap: sharedMaterialWide ? sharedTopicMap : null,
     threshold: (env.STRICT_QUALITY_GATES || env.VIDEO_RENDER_STRICT) ? 0.88 : env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
   });
   const boardQuality = storyboardQuality(storyboard);
@@ -2598,6 +3562,12 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
       topicBundle: sourceTopicPlan.topicBundle,
       allowedTopics: sourceTopicPlan.allowedTopics,
     },
+    topicMap: sharedMaterialWide ? {
+      title: sharedTopicMap.title,
+      topics: sharedTopicMap.topics,
+      coveragePlan: sharedTopicMap.coveragePlan,
+      sourceVisuals: sharedTopicMap.sourceVisuals,
+    } : null,
     repair_path: lesson && lesson.sourceRepair ? 'deterministic_source_repair' : 'ai_initial',
     remaining_warnings: boardQuality.warnings || [],
     verifier: {
@@ -2623,6 +3593,7 @@ async function generateStoryboard({ userId, materialId, concept, sourceScope = '
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
     .run(userId, materialId, generationTopic, status, JSON.stringify(lesson), JSON.stringify(storyboard), JSON.stringify(quality), storyboard.renderer, nowIso(), nowIso(), status === 'approved' ? nowIso() : null);
   insertScenes(db, r.lastInsertRowid, storyboard.scenes);
+  ensureStoryboardReady(userId, r.lastInsertRowid);
   return getStoryboard(userId, r.lastInsertRowid);
 }
 
@@ -2637,13 +3608,30 @@ function nextTopicsFor(topic) {
   return ['Practice', 'Quiz Review', 'Next Course Topic'];
 }
 
-function insertScenes(db, storyboardId, scenes) {
+function insertSceneRows(db, storyboardId, scenes, approved = 0) {
   const ins = db.prepare(`INSERT INTO video_storyboard_scenes
     (storyboard_id, scene_id, scene_order, scene_json, quality_json, approved, updated_at)
     VALUES (?,?,?,?,?,?,?)`);
+  scenes.forEach((scene, index) => ins.run(
+    storyboardId,
+    scene.id,
+    index,
+    JSON.stringify(scene),
+    JSON.stringify({ warnings: scene.qualityWarnings || [] }),
+    approved,
+    nowIso(),
+  ));
+}
+
+function insertScenes(db, storyboardId, scenes) {
   db.transaction(() => {
-    scenes.forEach((scene, index) => ins.run(storyboardId, scene.id, index, JSON.stringify(scene), JSON.stringify({ warnings: scene.qualityWarnings || [] }), 0, nowIso()));
+    insertSceneRows(db, storyboardId, scenes, 0);
   })();
+}
+
+function replaceSceneRows(db, storyboardId, scenes, approved = 0) {
+  db.prepare('DELETE FROM video_storyboard_scenes WHERE storyboard_id=?').run(storyboardId);
+  insertSceneRows(db, storyboardId, scenes, approved);
 }
 
 function hydrate(row) {
@@ -2662,11 +3650,14 @@ function getStoryboard(userId, id) {
   if (!row) return null;
   const out = hydrate(row);
   if (out.storyboard) {
+    const displayTopic = storyboardDisplayTitle(out.storyboard, out.topic || out.storyboard.topic);
     out.storyboard = {
       ...out.storyboard,
-      scenes: (out.storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, out.storyboard.topic)),
+      topic: displayTopic,
+      scenes: (out.storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, displayTopic)),
     };
-    out.quality = { ...out.quality, storyboard: storyboardQuality(out.storyboard) };
+    out.topic = displayTopic;
+    out.quality = { ...out.quality, storyboard: classifiedQuality(storyboardQuality(out.storyboard)) };
   }
   out.scenes = db.prepare('SELECT * FROM video_storyboard_scenes WHERE storyboard_id=? ORDER BY scene_order').all(id)
     .map(scene => ({ ...scene, scene: withFreshSceneQuality(parseJson(scene.scene_json, {}), out.storyboard && out.storyboard.topic) }));
@@ -2730,23 +3721,26 @@ function classifiedQuality(quality) {
 
 function persistStoryboardQuality(userId, id, storyboard, quality, currentStatus = '', existingQuality = {}) {
   const db = getDb();
+  const classified = classifyWarnings(quality.warnings || []);
+  const readyWithoutUserInput = classified.userActionRequired.length === 0;
+  const qualityWithClassification = classifiedQuality(quality);
   const nextStatus = quality.passed
     ? (currentStatus === 'approved' || currentStatus === 'rendering' || currentStatus === 'rendered' ? currentStatus : 'draft')
-    : 'needs_review';
-  const updateSceneRow = db.prepare('UPDATE video_storyboard_scenes SET scene_json=?, quality_json=?, approved=0, updated_at=? WHERE storyboard_id=? AND scene_id=?');
+    : readyWithoutUserInput
+      ? (currentStatus === 'approved' || currentStatus === 'rendering' || currentStatus === 'rendered' ? currentStatus : 'draft')
+      : 'needs_review';
   db.transaction(() => {
     db.prepare('UPDATE video_storyboards SET storyboard_json=?, quality_json=?, status=?, updated_at=? WHERE id=? AND user_id=?')
-      .run(JSON.stringify(storyboard), JSON.stringify({ ...existingQuality, storyboard: quality }), nextStatus, nowIso(), id, userId);
-    for (const scene of storyboard.scenes || []) {
-      updateSceneRow.run(JSON.stringify(scene), JSON.stringify({ warnings: scene.qualityWarnings || [] }), nowIso(), id, scene.id);
-    }
+      .run(JSON.stringify(storyboard), JSON.stringify({ ...existingQuality, storyboard: qualityWithClassification }), nextStatus, nowIso(), id, userId);
+    replaceSceneRows(db, id, storyboard.scenes || [], 0);
   })();
   return nextStatus;
 }
 
 function approveStoryboard(userId, id, opts = {}) {
   const db = getDb();
-  const board = getStoryboard(userId, id);
+  const ready = ensureStoryboardReady(userId, id);
+  const board = ready && ready.board ? getStoryboard(userId, id) : null;
   if (!board) return null;
   const storyboard = {
     ...board.storyboard,
@@ -2757,13 +3751,19 @@ function approveStoryboard(userId, id, opts = {}) {
     const classified = classifyWarnings(quality.storyboard.warnings || []);
     quality.storyboard.classified = classified;
     quality.storyboard.warningDetails = (quality.storyboard.warnings || []).map(w => ({ code: w, ...warningMessage(w) }));
-    if (classified.critical.length > 0 || !opts.force) {
+    if (classified.userActionRequired.length || classified.hardBlockers.length) {
+      throw new HttpError(
+        422,
+        'storyboard_critical_blockers',
+        'Storyboard still needs user input before approval.',
+        quality.storyboard,
+      );
+    }
+    if (!opts.force) {
       const err = new HttpError(
         422,
-        classified.critical.length ? 'storyboard_critical_blockers' : 'storyboard_quality_failed',
-        classified.critical.length
-          ? 'Critical issues must be fixed before approval.'
-          : 'Fix storyboard quality issues before approval, or use "Approve anyway" for non-critical warnings.',
+        'storyboard_quality_failed',
+        'Non-critical warnings remain. Use "Approve anyway" to approve these warnings.',
         quality.storyboard,
       );
       throw err;
@@ -2784,15 +3784,9 @@ function approveStoryboard(userId, id, opts = {}) {
 }
 
 function recheckStoryboard(userId, id) {
-  const board = getStoryboard(userId, id);
-  if (!board) return null;
-  const storyboard = {
-    ...board.storyboard,
-    scenes: (board.storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, board.storyboard.topic)),
-  };
-  const quality = storyboardQuality(storyboard);
-  persistStoryboardQuality(userId, id, storyboard, quality, board.status, board.quality);
-  return classifiedQuality(quality);
+  const ready = ensureStoryboardReady(userId, id);
+  if (!ready) return null;
+  return ready.quality;
 }
 
 function targetVisualTypeFromWarning(code = '') {
@@ -2820,6 +3814,16 @@ function classObjectNodes(topic = '') {
     nodes.push('Shape superclass', 'Circle subclass', 'Runtime object');
   }
   return nodes;
+}
+
+function shouldIncludeVisual(scene, nodes, canonicalType) {
+  if (canonicalType === 'no_visual') return false;
+  if (canonicalType === 'code_walkthrough') return true;
+  if (canonicalType === 'source_page_reference' || canonicalType === 'source_slide_reference') return true;
+  const sceneType = String(scene.type || scene.sceneType || '').toLowerCase();
+  if (/intro|recap|summary|welcome|closing/.test(sceneType)) return false;
+  const nonGenericNodes = (nodes || []).filter(n => !visualLabelIsGeneric(n));
+  return nonGenericNodes.length >= 2;
 }
 
 function visualPatchForScene(scene, topic, targetType) {
@@ -2855,6 +3859,9 @@ function visualPatchForScene(scene, topic, targetType) {
   const nodes = canonicalType === 'class_object'
     ? classObjectNodes(topic)
     : topicSpecificVisualNodes(scene, topic, canonicalType);
+  if (!shouldIncludeVisual(scene, nodes, canonicalType)) {
+    return visualPatchForScene(scene, topic, 'no_visual');
+  }
   const edges = canonicalType === 'class_object'
     ? [
       ['Class blueprint', 'Object instance', 'creates'],
@@ -2953,7 +3960,19 @@ function fixStoryboardIssue(userId, storyboardId, payload = {}) {
   }
   const scene = chooseSceneForVisual(storyboard, targetType, payload.sceneId || payload.scene_id || '');
   if (!scene) throw new HttpError(422, 'storyboard_has_no_scenes', 'Generate storyboard scenes before applying an automatic fix.');
-  const updated = updateScene(userId, storyboardId, scene.id, visualPatchForScene(scene, topic, targetType));
+  const sourcePreference = String(payload.sourcePreference || payload.source_preference || 'auto');
+  let patch = null;
+  if (sourcePreference !== 'generated') {
+    patch = sourceVisualPatchForScene(userId, board, scene, {
+      ...payload,
+      targetVisualType: targetType,
+      sourcePreference,
+    });
+    if (!patch && sourcePreference === 'material') {
+      throw new HttpError(422, 'source_visual_candidate_not_found', 'No relevant extracted material image was found for this storyboard issue.');
+    }
+  }
+  const updated = updateScene(userId, storyboardId, scene.id, patch || visualPatchForScene(scene, topic, targetType));
   const quality = updated && updated.quality && updated.quality.storyboard;
   return {
     storyboard: updated,
@@ -2971,6 +3990,7 @@ function fixScene(userId, storyboardId, sceneId, fixType, opts = {}) {
   const scene = sceneRow.scene;
   const topic = board.storyboard.topic;
   const warnings = scene.qualityWarnings || [];
+  const sourcePreference = String(opts.sourcePreference || opts.source_preference || 'auto');
 
   if (fixType === 'fix_auto' || fixType === 'regenerate_visual') {
     const missingVisual = warnings.find(w => /missing_required_visual|missing_concrete_visual_payload|generic_visual_template|visual_type_payload_mismatch/.test(w));
@@ -2979,11 +3999,26 @@ function fixScene(userId, storyboardId, sceneId, fixType, opts = {}) {
       const match = missingVisual.match(/missing_required_visual:(\w+)/);
       if (match) targetType = match[1];
     }
-    if (!targetType || targetType === 'concept_map' || targetType === 'missing') {
+    const isEmptySourceRef = /^source_(page|slide)_reference$/.test(targetType) &&
+      !(scene.visualData && scene.visualData.imagePath && fs.existsSync(scene.visualData.imagePath));
+    if (!targetType || targetType === 'concept_map' || targetType === 'missing' || isEmptySourceRef) {
+      const sceneText = [scene.sceneTitle, scene.title, scene.narration, scene.learningPoint].filter(Boolean).join(' ');
+      const inferred = inferVisualTypeFromTopic(sceneText) || inferVisualTypeFromTopic(topic);
       const understanding = materialUnderstandingFor(board.storyboard) || {};
-      targetType = isGeneralStoryboardDomain(understanding.domain)
+      targetType = inferred || (isGeneralStoryboardDomain(understanding.domain)
         ? 'concept_cards'
-        : (inferVisualTypeFromTopic(topic) || 'process_flow');
+        : 'process_flow');
+    }
+    if (sourcePreference !== 'generated') {
+      const materialPatch = sourceVisualPatchForScene(userId, board, scene, {
+        ...opts,
+        targetVisualType: targetType,
+        sourcePreference,
+      });
+      if (materialPatch) return updateScene(userId, storyboardId, sceneId, materialPatch);
+      if (sourcePreference === 'material') {
+        throw new HttpError(422, 'source_visual_candidate_not_found', 'No relevant extracted material image was found for this scene.');
+      }
     }
     const nodes = topicSpecificVisualNodes(scene, topic, targetType);
     const edges = topicSpecificEdges(nodes);
@@ -3023,6 +4058,429 @@ function fixScene(userId, storyboardId, sceneId, fixType, opts = {}) {
   throw new HttpError(400, 'invalid_fix_type', 'fixType must be fix_auto, regenerate_visual, or regenerate_full');
 }
 
+function chunksForStoryboardBoard(board, limit = 80) {
+  const materialId = board && (board.material_id || board.materialId);
+  if (!materialId) return [];
+  try {
+    const db = getDb();
+    return db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading,
+        slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
+      FROM chunks WHERE material_id=? ORDER BY idx LIMIT ?`).all(materialId, limit);
+  } catch (_) {
+    return [];
+  }
+}
+
+function fallbackCodeForTopic(topic = '') {
+  const lower = String(topic || '').toLowerCase();
+  if (/stack|lifo/.test(lower)) {
+    return {
+      language: 'python',
+      content: [
+        'stack = []',
+        'stack.append("A")   # push',
+        'stack.append("B")   # push',
+        'top = stack.pop()   # pop B first',
+        'print(top)',
+      ].join('\n'),
+      lineRange: '1-5',
+      highlightLines: [2, 3, 4],
+      walkthrough: [
+        { lineRange: '2-3', text: 'Push adds items at the top of the stack.' },
+        { lineRange: '4', text: 'Pop removes the newest item first, which is LIFO.' },
+      ],
+    };
+  }
+  if (/priority\s+queue|heap/.test(lower)) {
+    return {
+      language: 'python',
+      content: [
+        'from heapq import heappush, heappop',
+        'pq = []',
+        'heappush(pq, (1, "urgent"))',
+        'heappush(pq, (3, "later"))',
+        'item = heappop(pq)',
+      ].join('\n'),
+      lineRange: '1-5',
+      highlightLines: [3, 4, 5],
+      walkthrough: [
+        { lineRange: '3-4', text: 'Each item enters with a priority key.' },
+        { lineRange: '5', text: 'The highest-priority item leaves before ordinary FIFO order.' },
+      ],
+    };
+  }
+  if (/deque|double[-\s]?ended/.test(lower)) {
+    return {
+      language: 'python',
+      content: [
+        'from collections import deque',
+        'items = deque(["B"])',
+        'items.appendleft("A")',
+        'items.append("C")',
+        'front = items.popleft()',
+      ].join('\n'),
+      lineRange: '1-5',
+      highlightLines: [3, 4, 5],
+      walkthrough: [
+        { lineRange: '3-4', text: 'A deque can insert at both front and rear.' },
+        { lineRange: '5', text: 'Removal can also happen from the front end.' },
+      ],
+    };
+  }
+  if (/queue|fifo/.test(lower)) {
+    return {
+      language: 'python',
+      content: [
+        'from collections import deque',
+        'queue = deque()',
+        'queue.append("A")      # enqueue rear',
+        'queue.append("B")',
+        'front = queue.popleft() # dequeue front',
+      ].join('\n'),
+      lineRange: '1-5',
+      highlightLines: [3, 5],
+      walkthrough: [
+        { lineRange: '3-4', text: 'Enqueue adds items at the rear pointer.' },
+        { lineRange: '5', text: 'Dequeue removes from the front pointer, which is FIFO.' },
+      ],
+    };
+  }
+  return {
+    language: 'python',
+    content: [
+      'def operation(state, item):',
+      '    before = list(state)',
+      '    state.append(item)',
+      '    after = list(state)',
+      '    return before, after',
+    ].join('\n'),
+    lineRange: '1-5',
+    highlightLines: [2, 3, 4],
+    walkthrough: [
+      { lineRange: '2', text: 'Capture the state before the operation.' },
+      { lineRange: '3-4', text: 'Apply one operation and compare the new state.' },
+    ],
+  };
+}
+
+function codeWalkthroughPatch(scene, topic) {
+  const code = scene.code && scene.code.content ? scene.code : fallbackCodeForTopic([topic, scene.sceneTitle, scene.title, scene.narration].filter(Boolean).join(' '));
+  return {
+    ...visualPatchForScene(scene, topic, 'code_walkthrough'),
+    type: scene.type === 'hook' ? 'code_walkthrough' : (scene.type || 'code_walkthrough'),
+    code,
+    codeSnippet: code.content,
+    onScreenText: ['Code trace', 'State change'],
+    motionInstructions: ['Show the code window.', 'Highlight the operation line.', 'Connect the line to the data-structure state.'],
+  };
+}
+
+function chooseSceneForRenderRepair(storyboard, targetType, used = new Set()) {
+  const scenes = storyboard.scenes || [];
+  const sorted = [...scenes].sort((a, b) =>
+    scoreSceneForVisual(b, storyboard.topic, targetType) - scoreSceneForVisual(a, storyboard.topic, targetType)
+  );
+  return sorted.find(scene => !used.has(scene.id) && !/hook|recap|checkpoint|quiz/.test(String(scene.type || '').toLowerCase()))
+    || sorted.find(scene => !used.has(scene.id))
+    || sorted[0]
+    || null;
+}
+
+function applyPatchToStoryboardScene(storyboard, sceneId, patch) {
+  let changed = false;
+  const scenes = (storyboard.scenes || []).map(scene => {
+    if (scene.id !== sceneId) return scene;
+    changed = true;
+    return withFreshSceneQuality({
+      ...scene,
+      ...patch,
+      visualData: patch.visualData ? { ...(scene.visualData || {}), ...patch.visualData } : scene.visualData,
+      visualElements: patch.visualElements ? { ...(scene.visualElements || {}), ...patch.visualElements } : scene.visualElements,
+      visualGrounding: patch.visualGrounding ? { ...(scene.visualGrounding || {}), ...patch.visualGrounding } : scene.visualGrounding,
+    }, storyboard.topic);
+  });
+  return changed ? { ...storyboard, scenes } : storyboard;
+}
+
+function supportSceneForStoryboard(storyboard, type, sourceChunks = []) {
+  const topic = storyboard.topic || 'Uploaded Material';
+  const topicMap = storyboard.topicMap || (storyboard.materialUnderstanding && storyboard.materialUnderstanding.topicMap) || {};
+  const topics = Array.isArray(topicMap.topics) && topicMap.topics.length
+    ? topicMap.topics
+    : [{ id: 'topic-main', name: topic, terms: [topic], sourceChunkIds: [], sourcePageRefs: [], sourceVisualIds: [], conceptIds: [] }];
+  const supportTopic = {
+    id: type === 'checkpoint' ? 'auto-checkpoint' : type === 'recap' ? 'auto-recap' : 'auto-example',
+    name: type === 'checkpoint' ? 'Checkpoint' : type === 'recap' ? 'Recap' : 'Concrete Example',
+    terms: topics.map(item => item.name || item.topic).filter(Boolean),
+    sourceChunkIds: [...new Set(topics.flatMap(item => item.sourceChunkIds || []))].slice(0, 8),
+    sourcePageRefs: topics.flatMap(item => item.sourcePageRefs || []).slice(0, 6),
+    sourceVisualIds: topics.flatMap(item => item.sourceVisualIds || []).slice(0, 4),
+    conceptIds: topics.flatMap(item => item.conceptIds || []).slice(0, 8),
+    requiredVisualTypes: [type === 'example' ? 'concept_cards' : 'summary_path'],
+  };
+  const narration = type === 'checkpoint'
+    ? `Pause and check the major ideas: ${supportTopic.terms.slice(0, 5).join(', ')}. Explain one rule from each topic and point to the visual state or source detail that proves it.`
+    : type === 'recap'
+      ? `Recap the lesson by connecting ${supportTopic.terms.slice(0, 5).join(', ')}. The useful pattern is to name the definition, trace the operation or process, and finish with the common mistake to avoid.`
+      : `Use one concrete source-backed example to connect the topics. Start with the current state, apply one rule or operation, then explain what changed and why.`;
+  return baseTopicScene(
+    supportTopic,
+    (storyboard.scenes || []).length,
+    type === 'example' ? 'deep_explanation' : type,
+    type === 'checkpoint' ? 'Checkpoint' : type === 'recap' ? 'Recap' : 'Concrete Example',
+    narration,
+    type === 'example' ? 'concept_cards' : 'summary_path',
+    evidenceForTopic(supportTopic, sourceChunks, 2)
+  );
+}
+
+function ensureSupportSceneEvidence(storyboard, sourceChunks = []) {
+  if (!sourceChunks.length) return { storyboard, changed: false };
+  let changed = false;
+  const scenes = (storyboard.scenes || []).map(scene => {
+    if (Array.isArray(scene.sourceEvidence) && scene.sourceEvidence.length) return scene;
+    const type = String(scene.type || scene.sceneType || scene.id || '').toLowerCase();
+    if (!/checkpoint|recap|example|overview|support/.test(type)) return scene;
+    const topic = {
+      name: scene.topicName || scene.sceneTitle || scene.title || storyboard.topic,
+      sourceChunkIds: scene.sourceChunkIds || [],
+    };
+    let evidence = evidenceForTopic(topic, sourceChunks, 2);
+    if (!evidence.length) evidence = sourceChunks.slice(0, 2).map(chunk => ({
+      chunkId: chunk.id,
+      quote: quoteFromChunk(chunk),
+      heading: chunk.heading || chunk.chapter_title || chunk.slide_title || chunk.section_title || '',
+      sourcePage: chunk.source_page || null,
+      slideNumber: chunk.slide_number || null,
+    }));
+    if (!evidence.length) return scene;
+    changed = true;
+    return withFreshSceneQuality({ ...scene, sourceEvidence: evidence }, storyboard.topic || scene.topicName || '');
+  });
+  return { storyboard: { ...storyboard, scenes }, changed };
+}
+
+function ensureSupportScenes(storyboard, sourceChunks = []) {
+  let changed = false;
+  const scenes = [...(storyboard.scenes || [])];
+  const next = { ...storyboard, scenes };
+  if (!hasConcreteExampleScene(next) && scenes.length < 14) {
+    scenes.splice(Math.max(0, scenes.length - 1), 0, supportSceneForStoryboard(next, 'example', sourceChunks));
+    changed = true;
+  }
+  if (!hasCheckpointScene(next) && scenes.length < 14) {
+    scenes.splice(Math.max(0, scenes.length - 1), 0, supportSceneForStoryboard(next, 'checkpoint', sourceChunks));
+    changed = true;
+  }
+  if (!hasRecapScene(next) && scenes.length < 14) {
+    scenes.push(supportSceneForStoryboard(next, 'recap', sourceChunks));
+    changed = true;
+  }
+  const evidence = ensureSupportSceneEvidence({ ...next, scenes }, sourceChunks);
+  return { storyboard: evidence.storyboard, changed: changed || evidence.changed };
+}
+
+function repairStoryboardForRender(userId, id) {
+  const board = getStoryboard(userId, id);
+  if (!board) return null;
+  const understanding = materialUnderstandingFor(board.storyboard) || {};
+  const topic = board.storyboard.topic || board.topic || '';
+  let storyboard = {
+    ...board.storyboard,
+    scenes: (board.storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, topic)),
+  };
+  const sourceChunks = chunksForStoryboardBoard(board);
+  const sourceVisuals = sourceVisualsForBoard(userId, board);
+  let changed = false;
+
+  const plan = understanding.sourceTopicPlan || storyboard.sourceTopicPlan || {};
+  if (plan.topicMode === 'material_wide' && Array.isArray(plan.topicBundle) && plan.topicBundle.length >= 2) {
+    const coverage = checkTopicCoverage(storyboard.scenes || [], plan.topicBundle);
+    if (coverage.missing.length) {
+      const extra = createScenesForMissingTopics(coverage.missing, topic, understanding, sourceChunks);
+      storyboard.scenes = [
+        ...(storyboard.scenes || []),
+        ...attachSourceVisualsToScenes(extra, sourceVisuals),
+      ];
+      changed = true;
+    }
+  }
+
+  const domainFixed = ensureDomainVisualTypes(storyboard.scenes || [], topic, understanding);
+  if (JSON.stringify(domainFixed) !== JSON.stringify(storyboard.scenes || [])) {
+    storyboard.scenes = domainFixed;
+    changed = true;
+  }
+
+  const auto = autoRepairSceneVisuals(storyboard.scenes || [], topic);
+  if (auto.repairedSceneIds.length) {
+    storyboard.scenes = auto.scenes;
+    changed = true;
+  }
+
+  const support = ensureSupportScenes(storyboard, sourceChunks);
+  if (support.changed) {
+    storyboard = support.storyboard;
+    changed = true;
+  }
+
+  if (SUPPORTED_DOMAINS.has(understanding.domain) && !hasCodeScene(storyboard)) {
+    const target = chooseSceneForRenderRepair(storyboard, 'code_walkthrough') || (storyboard.scenes || [])[0];
+    if (target) {
+      storyboard = applyPatchToStoryboardScene(storyboard, target.id, codeWalkthroughPatch(target, topic));
+      changed = true;
+    }
+  }
+
+  let quality = storyboardQuality({
+    ...storyboard,
+    scenes: (storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, topic)),
+  });
+  const usedScenes = new Set();
+  for (const warning of quality.warnings || []) {
+    const targetType = targetVisualTypeFromWarning(warning);
+    if (!targetType) continue;
+    const scene = chooseSceneForRenderRepair(storyboard, targetType, usedScenes);
+    if (!scene) continue;
+    usedScenes.add(scene.id);
+    const patch = targetType === 'code_walkthrough'
+      ? codeWalkthroughPatch(scene, topic)
+      : visualPatchForScene(scene, [topic, scene.sceneTitle, scene.title, scene.narration].filter(Boolean).join(' '), targetType);
+    storyboard = applyPatchToStoryboardScene(storyboard, scene.id, patch);
+    changed = true;
+  }
+
+  storyboard.scenes = (storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, topic));
+  quality = storyboardQuality(storyboard);
+  if (changed) persistStoryboardQuality(userId, id, storyboard, quality, board.status, board.quality);
+  return {
+    board: getStoryboard(userId, id),
+    quality: classifiedQuality(quality),
+    repaired: changed,
+  };
+}
+
+function ensureStoryboardReady(userId, id, opts = {}) {
+  let repaired = false;
+  let last = null;
+  const passes = Math.max(1, Math.min(3, Number(opts.passes || 3)));
+  for (let pass = 0; pass < passes; pass += 1) {
+    last = repairStoryboardForRender(userId, id);
+    if (!last) return null;
+    repaired = repaired || !!last.repaired;
+    const warnings = last.quality && Array.isArray(last.quality.warnings) ? last.quality.warnings : [];
+    const classified = last.quality && last.quality.classified ? last.quality.classified : classifyWarnings(warnings);
+    const repairableStillPresent = (classified.autoRepairable || []).some(code => warnings.includes(code) || warnings.some(w => String(w).includes(code)));
+    if (!last.repaired || !repairableStillPresent) break;
+  }
+  const board = getStoryboard(userId, id);
+  if (!board) return null;
+  const quality = classifiedQuality(storyboardQuality(board.storyboard));
+  const unresolved = {
+    hardBlockers: quality.classified.hardBlockers || [],
+    autoRepairable: (quality.classified.autoRepairable || []).filter(code =>
+      (quality.warnings || []).some(w => w === code || String(w).includes(code))
+    ),
+    userActionRequired: quality.classified.userActionRequired || [],
+    warnings: quality.classified.warnings || [],
+    info: quality.classified.info || [],
+  };
+  return {
+    board,
+    quality,
+    repaired,
+    ready: unresolved.userActionRequired.length === 0 && unresolved.hardBlockers.length === 0,
+    unresolved,
+  };
+}
+
+function topicMapForBoard(userId, board) {
+  const storyboard = board && board.storyboard || {};
+  const understanding = materialUnderstandingFor(storyboard) || {};
+  const fromStory = storyboard.topicMap || understanding.topicMap || (board.quality && board.quality.topicMap) || null;
+  if (fromStory && Array.isArray(fromStory.topics) && fromStory.topics.length) return fromStory;
+  const materialId = board && (board.material_id || board.materialId);
+  if (!materialId) return null;
+  try {
+    return materialTopicMap.getOrBuild(userId, materialId, { hint: board.topic || storyboard.topic });
+  } catch (_) {
+    return null;
+  }
+}
+
+function regenerateTopicSection(userId, id, topicId) {
+  const db = getDb();
+  const board = getStoryboard(userId, id);
+  if (!board) return null;
+  const topicMap = topicMapForBoard(userId, board);
+  const topics = Array.isArray(topicMap && topicMap.topics) ? topicMap.topics : [];
+  const wanted = String(topicId || '').trim().toLowerCase();
+  const topic = topics.find(item =>
+    String(item.id || '').toLowerCase() === wanted
+    || String(item.name || '').toLowerCase() === wanted
+  );
+  if (!topic) throw new HttpError(404, 'topic_not_found', 'Topic was not found in the material topic map.');
+  const sourceChunks = chunksForStoryboardBoard(board);
+  const sourceVisuals = sourceVisualsForBoard(userId, board);
+  const understanding = materialUnderstandingFor(board.storyboard) || {};
+  const domainInfo = { ...understanding, domain: understanding.domain || topicMap.domain };
+  const existingScenes = board.storyboard.scenes || [];
+  const replacedIndexes = existingScenes
+    .map((scene, index) => ({ scene, index }))
+    .filter(({ scene }) =>
+      String(scene.topicId || '').toLowerCase() === String(topic.id || '').toLowerCase()
+      || String(scene.topicName || '').toLowerCase() === String(topic.name || '').toLowerCase()
+    )
+    .map(item => item.index);
+  const recapIndex = existingScenes.findIndex(scene => /recap|summary|closing/i.test(String(scene.type || scene.title || '')));
+  const insertAt = replacedIndexes.length
+    ? Math.min(...replacedIndexes)
+    : (recapIndex >= 0 ? recapIndex : existingScenes.length);
+  const startIndex = insertAt >= 0 ? insertAt : existingScenes.length;
+  const generated = topicSectionScenes(topicMap, topic, sourceChunks, sourceVisuals, domainInfo, startIndex);
+  let nextScenes;
+  if (replacedIndexes.length) {
+    const remove = new Set(replacedIndexes);
+    nextScenes = [
+      ...existingScenes.slice(0, Math.min(...replacedIndexes)),
+      ...generated,
+      ...existingScenes.filter((_, index) => index > Math.max(...replacedIndexes) && !remove.has(index)),
+    ];
+  } else {
+    const idx = insertAt >= 0 ? insertAt : existingScenes.length;
+    nextScenes = [...existingScenes.slice(0, idx), ...generated, ...existingScenes.slice(idx)];
+  }
+  nextScenes = nextScenes.map((scene, index) => withFreshSceneQuality({
+    ...scene,
+    id: scene.id || cleanId(`${index + 1}-${scene.topicId || scene.title || 'scene'}`, `scene-${index + 1}`),
+    repairHistory: [
+      ...((scene.repairHistory || [])),
+      ...(generated.some(item => item.id === scene.id) ? [{ at: nowIso(), action: 'regenerate_topic_section', topicId: topic.id }] : []),
+    ],
+  }, board.storyboard.topic || topicMap.title || topic.name));
+  const storyboard = {
+    ...board.storyboard,
+    topicMap,
+    coveragePlan: topicMap.coveragePlan || board.storyboard.coveragePlan,
+    scenes: nextScenes,
+  };
+  const quality = storyboardQuality(storyboard);
+  db.transaction(() => {
+    db.prepare('UPDATE video_storyboards SET storyboard_json=?, quality_json=?, status=?, updated_at=? WHERE id=? AND user_id=?')
+      .run(
+        JSON.stringify(storyboard),
+        JSON.stringify({ ...board.quality, storyboard: classifiedQuality(quality), topicMap: board.quality && board.quality.topicMap }),
+        quality.passed ? 'draft' : (classifyWarnings(quality.warnings || []).userActionRequired.length ? 'needs_review' : 'draft'),
+        nowIso(),
+        id,
+        userId,
+      );
+    replaceSceneRows(db, id, storyboard.scenes || [], 0);
+  })();
+  ensureStoryboardReady(userId, id);
+  return getStoryboard(userId, id);
+}
+
 function inferVisualTypeFromTopic(topic) {
   const lower = String(topic || '').toLowerCase();
   if (/encapsulation/.test(lower)) return 'encapsulation_boundary';
@@ -3031,11 +4489,18 @@ function inferVisualTypeFromTopic(topic) {
   if (/polymorphism|override|dispatch/.test(lower)) return 'polymorphism_dispatch';
   if (/linked.?list/.test(lower)) return 'linked_list_operation';
   if (/stack/.test(lower)) return 'stack_operation';
+  if (/priority\s+queue|heap/.test(lower)) return 'tree_visual';
+  if (/deque|double[-\s]?ended\s+queue/.test(lower)) return 'queue_operation';
   if (/queue/.test(lower)) return 'queue_operation';
   if (/hash/.test(lower)) return 'hash_table_operation';
   if (/tree|bst|binary/.test(lower)) return 'tree_visual';
   if (/big.?o|complexity|growth/.test(lower)) return 'big_o_growth';
   if (/sort|search|algorithm/.test(lower)) return 'process_flow';
+  if (/compar|versus|differ|advantage|disadvantage|pros?\b|cons?\b/.test(lower)) return 'comparison_table';
+  if (/classif|categor|types?\s+of|kinds?\s+of/.test(lower)) return 'classification_table';
+  if (/process|pipeline|stages?|phases?|steps?\s+\d|workflow|cycle|procedure/.test(lower)) return 'flowchart';
+  if (/structur|component|system|part|layer|organ|section|element/.test(lower)) return 'concept_cards';
+  if (/defin|meaning|term|vocabul|glossar/.test(lower)) return 'concept_cards';
   return null;
 }
 
@@ -3077,12 +4542,17 @@ module.exports = {
   fixScene,
   classifyWarnings,
   renderScenePreview,
+  repairStoryboardForRender,
+  ensureStoryboardReady,
+  regenerateTopicSection,
   scriptForRender,
   scriptFromStoryboard,
   storyboardQuality,
   sanitizeForRender,
   sanitizeSceneForRender,
   scanVisibleText,
+  CRITICAL_PATTERNS,
+  INFO_PATTERNS,
   _internals: {
     visualTemplateFor,
     visualElementsFor,
@@ -3091,6 +4561,14 @@ module.exports = {
     conceptMapAllowedForScene,
     conceptMapNodesAreSourceBacked,
     visualPatchForScene,
+    sourceVisualPatchForScene,
+    checkTopicCoverage,
+    topicBundleCoverageWarnings,
     scoreSceneForVisual,
+    topicMapScenePlan,
+    topicSectionScenes,
+    storyboardDisplayTitle,
+    sanitizeNarrationText,
+    sceneHasPageNumberCenterVisual,
   },
 };

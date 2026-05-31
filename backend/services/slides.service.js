@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const env = require('../config/env');
 const codeWindow = require('../utils/code-window');
+const visualRegistry = require('../utils/visual-registry');
 
 const W = 1280;
 const H = 720;
@@ -261,10 +262,46 @@ function getSlideText(slide) {
   ].join(' ').toLowerCase();
 }
 
-function inferVisualType(slide) {
+const GENERIC_VISUAL_NODE_TERMS = new Set([
+  'definition', 'why it matters', 'where used', 'where it is used', 'core rule',
+  'example', 'examples', 'diagram', 'code', 'mistake', 'mistakes', 'practice',
+  'objectives', 'objective', 'question', 'think', 'answer', 'explain', 'context',
+  'purpose', 'trade-off', 'tradeoff', 'limit', 'shared behavior', 'real-world idea',
+  'real world', 'overview', 'summary', 'introduction', 'intro', 'concept', 'concepts',
+  'data structure', 'data structures', 'properties', 'operations', 'key insight',
+  'analogy maps to', 'analogy', 'formal definition', 'complexity', 'pitfalls',
+]);
+
+// A concept map is meaningful only when its nodes name real, distinct sub-ideas. If most
+// nodes are scaffold words or just restate the title/bullets, the map is the meaningless
+// "boxes of related words" case — the renderer should show a clean text board instead.
+function isGenericVisualNodeSet(nodes, title, bullets) {
+  const list = (nodes || []).map(n => String(typeof n === 'string' ? n : (n && (n.label || n.id)) || '').trim().toLowerCase()).filter(Boolean);
+  if (list.length < 2) return true;
+  const titleNorm = String(title || '').trim().toLowerCase();
+  const bulletNorms = new Set((bullets || []).map(b => String(b || '').trim().toLowerCase()));
+  let generic = 0;
+  for (const n of list) {
+    if (GENERIC_VISUAL_NODE_TERMS.has(n) || n === titleNorm || bulletNorms.has(n)) generic += 1;
+  }
+  return generic >= Math.ceil(list.length * 0.6);
+}
+
+function chooseVisualType(slide) {
   const nested = slide.visual && slide.visual.type;
-  const explicit = slide.visual_type || nested;
-  if (VISUAL_TYPES.includes(explicit)) return explicit;
+  const explicit = slide.visual_type || slide.visualType || slide.visualTemplate || nested;
+  // Resolve canonical names (no_visual, source_page_reference, stack_operation, ...) and
+  // legacy names through the shared registry so every renderer agrees on the visual type.
+  if (explicit) {
+    if (VISUAL_TYPES.includes(explicit)) return explicit;
+    const text = getSlideText(slide);
+    const legacy = visualRegistry.legacyVisualTypeFor(explicit, {
+      topic: slide.topic,
+      title: slide.title,
+      text,
+    });
+    if (VISUAL_TYPES.includes(legacy)) return legacy;
+  }
   const text = getSlideText(slide);
   if (text.includes('linked list') || text.includes('linkedlist')) return 'linkedlist';
   if (text.includes('hash table') || text.includes('hashmap') || text.includes('hash map') || text.includes('hash function') || text.includes('collision') || text.includes('load factor') || text.includes('bucket')) return 'hash_table';
@@ -276,7 +313,18 @@ function inferVisualType(slide) {
   if ((slide.slideType || slide.slide_type) === 'step_by_step') return 'flow';
   if ((slide.slideType || slide.slide_type) === 'mistakes' || (slide.slideType || slide.slide_type) === 'analogy') return 'comparison';
   if ((slide.slideType || slide.slide_type) === 'recap') return 'summary';
-  return 'mindmap';
+  return 'none';
+}
+
+function inferVisualType(slide) {
+  const type = chooseVisualType(slide);
+  // Never render a meaningless concept map: if a mindmap/summary's nodes just restate the
+  // outline, fall back to a clean text board (no_visual).
+  if (type === 'mindmap' || type === 'summary') {
+    const nodes = (slide.visual_nodes && slide.visual_nodes.length ? slide.visual_nodes : (slide.visual && slide.visual.nodes) || []);
+    if (isGenericVisualNodeSet(nodes, slide.title, slide.bullets)) return 'none';
+  }
+  return type;
 }
 
 function computeLayout(slide, width = W, height = H) {
@@ -1106,6 +1154,8 @@ async function renderWithCanvas(slide, outPath, options = {}) {
   if (visual.imagePath && fs.existsSync(visual.imagePath) && typeof loadImage === 'function') {
     try { visual.image = await loadImage(visual.imagePath); } catch (_) {}
   }
+  // A source reference with no usable image would otherwise render generic boxes; show a clean board instead.
+  if (visual.type === 'source_reference' && !visual.image) visual.type = 'none';
 
   ctx.fillStyle = '#f8fafc';
   ctx.fillRect(0, 0, W, H);

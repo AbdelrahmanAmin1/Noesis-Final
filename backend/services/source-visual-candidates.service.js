@@ -22,21 +22,51 @@ function looksTableLike(text) {
 
 function visualTypeGuess(value) {
   const text = String(value || '');
+  if (/\b(?:logo|watermark|background|decorative|divider|icon|footer|header|copyright|university|college)\b/i.test(text)) return 'decorative';
+  if (/\b(?:code|class\s+\w+|def\s+\w+|public\s+class|for\s*\(|while\s*\(|if\s*\(|return\s+|printf|cout|system\.out)\b/i.test(text)) return 'code_screenshot';
+  if (/\b(?:stack|lifo|push|pop|peek|top)\b/i.test(text)) return 'data_structure_visual';
+  if (/\b(?:queue|fifo|enqueue|dequeue|front|rear|deque)\b/i.test(text)) return 'data_structure_visual';
+  if (/\b(?:linked list|node|head|next|pointer)\b/i.test(text)) return 'data_structure_visual';
   if (/\b(?:bst|binary search tree|tree|node|root|leaf|traversal|heap|trie)\b/i.test(text)) return 'tree_diagram';
   if (/\b(?:hash table|hashing|bucket|collision|linear probing|chaining)\b/i.test(text)) return 'hash_table_diagram';
   if (/\b(?:flowchart|flow chart|process|pipeline|workflow|step\s+\d+|algorithm)\b/i.test(text)) return 'flowchart';
+  if (/\b(?:equation|formula|theorem|lemma|proof|=|≤|>=|<=|∑|sqrt|log\(|lim)\b/i.test(text)) return 'equation';
   if (/\b(?:chart|graph|plot|axis|trend|bar chart|line chart|pie chart)\b/i.test(text)) return 'chart';
   if (/\b(?:table|matrix|grid|classification|comparison)\b/i.test(text) || looksTableLike(text)) return 'table';
   if (/\b(?:diagram|figure|illustration|labeled|anatomy|vertebrae|bone|skeleton)\b/i.test(text)) return 'diagram';
   return '';
 }
 
+function classifyVisualCandidate(input = {}) {
+  const text = [input.heading, input.nearbyText, input.ocrText, input.visualTypeGuess].filter(Boolean).join('\n');
+  const guess = input.visualTypeGuess || visualTypeGuess(text);
+  const textLen = String(text || '').replace(/\s+/g, '').length;
+  const classification = guess === 'decorative' || (input.hasImage && textLen < 18 && !guess)
+    ? 'decorative'
+    : guess === 'table'
+      ? 'table'
+      : guess === 'flowchart'
+        ? 'flowchart'
+        : guess === 'code_screenshot'
+          ? 'code_screenshot'
+          : guess === 'equation'
+            ? 'equation'
+            : guess === 'data_structure_visual' || /tree|hash_table/.test(guess)
+              ? 'data_structure_visual'
+              : guess === 'chart'
+                ? 'diagram'
+                : guess || 'diagram';
+  return { guess, classification };
+}
+
 function importanceScore(input = {}) {
   const text = [input.heading, input.nearbyText, input.ocrText].filter(Boolean).join('\n');
+  const classified = classifyVisualCandidate({ ...input, visualTypeGuess: input.visualTypeGuess || visualTypeGuess(text) });
+  if (classified.classification === 'decorative') return 0;
   let score = input.hasImage ? 0.45 : 0.2;
   if (input.heading) score += 0.12;
   if (input.ocrText && input.ocrText.length > 40) score += 0.12;
-  if (visualTypeGuess(text)) score += 0.22;
+  if (classified.guess) score += 0.22;
   if (/\b(?:figure|diagram|chart|table|flow|tree|hash|caption|shown|below|above)\b/i.test(text)) score += 0.14;
   if (input.lowTextHighVisual) score += 0.14;
   if (input.width && input.height) {
@@ -177,6 +207,7 @@ function asCandidateRow(row) {
     nearbyText: row.nearby_text || '',
     ocrText: row.ocr_text || '',
     visualTypeGuess: row.visual_type_guess || '',
+    classification: parseJson(row.metadata_json, {}).classification || row.visual_type_guess || '',
     importanceScore: Number(row.importance_score || 0),
     metadata: parseJson(row.metadata_json, {}),
     type: row.slide_number != null ? 'source_slide_reference' : 'source_page_reference',
@@ -216,16 +247,18 @@ function persistForMaterial(materialId, extraction = {}, opts = {}) {
       const nearbyText = clean(page.text || page.normalText || '', 600);
       const ocrText = clean(page.ocrText || '', 600);
       const heading = clean(page.heading || headingFor({ text: nearbyText }) || '', 120);
-      const guess = visualTypeGuess([heading, nearbyText, ocrText].join('\n'));
+      const classified = classifyVisualCandidate({ heading, nearbyText, ocrText, hasImage: !!imagePath });
+      const guess = classified.guess;
       const score = importanceScore({
         heading,
         nearbyText,
         ocrText,
+        visualTypeGuess: guess,
         hasImage: !!imagePath,
         lowTextHighVisual: nearbyText.length < 120 && !!imagePath,
       });
       const dedupeKey = `${key}|${imagePath || ''}|${guess}`;
-      if (seen.has(dedupeKey) || score < 0.4) continue;
+      if (classified.classification === 'decorative' || seen.has(dedupeKey) || score < 0.4) continue;
       seen.add(dedupeKey);
       const info = insertCandidate.run(
         materialId,
@@ -238,7 +271,7 @@ function persistForMaterial(materialId, extraction = {}, opts = {}) {
         ocrText,
         guess,
         score,
-        JSON.stringify({ entryName: visual.entryName || '', mime: visual.mime || '', name: visual.name || '' })
+        JSON.stringify({ entryName: visual.entryName || '', mime: visual.mime || '', name: visual.name || '', classification: classified.classification, pageAssociation: key })
       );
       rows.push({ id: info.lastInsertRowid, key });
       if (rows.length >= max) break;
@@ -249,16 +282,18 @@ function persistForMaterial(materialId, extraction = {}, opts = {}) {
         const nearbyText = clean(page.text || page.normalText || '', 600);
         const ocrText = clean(page.ocrText || '', 600);
         const heading = clean(page.heading || '', 120);
-        const guess = visualTypeGuess([heading, nearbyText, ocrText].join('\n'));
+        const classified = classifyVisualCandidate({ heading, nearbyText, ocrText, hasImage: false });
+        const guess = classified.guess;
         if (!guess) continue;
         const score = importanceScore({
           heading,
           nearbyText,
           ocrText,
+          visualTypeGuess: guess,
           hasImage: false,
           lowTextHighVisual: (page.normalTextChars || 0) < 120 && (page.ocrTextChars || 0) > 60,
         });
-        if (score < 0.62) continue;
+        if (classified.classification === 'decorative' || score < 0.62) continue;
         const key = pageKey(page);
         const dedupeKey = `${key}|page-reference|${guess}`;
         if (seen.has(dedupeKey)) continue;
@@ -274,7 +309,7 @@ function persistForMaterial(materialId, extraction = {}, opts = {}) {
           ocrText,
           guess,
           score,
-          JSON.stringify({ sourceKind: page.sourceKind || 'text', referenceOnly: true })
+          JSON.stringify({ sourceKind: page.sourceKind || 'text', referenceOnly: true, classification: classified.classification, pageAssociation: key })
         );
         rows.push({ id: info.lastInsertRowid, key });
         if (rows.length >= max) break;
@@ -341,6 +376,7 @@ function fromMaterialAndChunks(materialId, chunks = [], opts = {}) {
 
 module.exports = {
   captionFor,
+  classifyVisualCandidate,
   forPrompt,
   fromChunks,
   fromMaterialAndChunks,
@@ -350,5 +386,5 @@ module.exports = {
   listForMaterial,
   persistForMaterial,
   visualTypeGuess,
-  _internals: { asCandidateRow, looksTableLike, headingFor, pageKey, safeExt, writeVisualFile },
+  _internals: { asCandidateRow, looksTableLike, headingFor, pageKey, safeExt, writeVisualFile, classifyVisualCandidate },
 };

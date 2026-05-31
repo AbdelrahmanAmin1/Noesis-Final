@@ -94,7 +94,7 @@ app.use('/api/jobs', require('./routes/jobs.routes'));
 app.use(notFound);
 app.use(errorHandler);
 
-app.listen(env.PORT, () => {
+const server = app.listen(env.PORT, () => {
   log.info(`Noesis API listening on http://localhost:${env.PORT}`);
   log.info(`AI provider: ${env.AI_PROVIDER}`);
   if (env.AI_PROVIDER === 'groq') {
@@ -111,4 +111,12 @@ app.listen(env.PORT, () => {
       log.warn(`AI not ready — provider=${hc.provider}`, gen.details || gen);
     }
   }).catch(err => log.warn('AI health check skipped', err.message || err));
+});
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    log.error(`Noesis API could not start because port ${env.PORT} is already in use. Stop the existing backend process or set PORT to a free port.`);
+    process.exit(1);
+  }
+  throw err;
 });

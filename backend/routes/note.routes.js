@@ -20,6 +20,7 @@ const gamification = require('../services/gamification.service');
 const sourceVisualCandidates = require('../services/source-visual-candidates.service');
 const sourceGroundingJudge = require('../services/source-grounding-judge.service');
 const sourceTopicPlans = require('../services/source-topic-plan.service');
+const materialTopicMap = require('../services/material-topic-map.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -561,6 +562,12 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       sourceOutline,
       maxBalancedChunks: topicMode === 'material_wide' ? 48 : 24,
     });
+    if (topicMode === 'material_wide') {
+      const topicMap = materialTopicMap.getOrBuild(req.user.id, material_id, { hint: resolvedTopic, sourceScope: scope.sourceScope, chapterId: scope.chapterId, chunkId: scope.chunkId });
+      if (topicMap && Array.isArray(topicMap.topics) && topicMap.topics.length >= 2) {
+        sourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(topicMap, uploadedChunks.length ? uploadedChunks : sourceTopicPlan.balancedChunks, sourceTopicPlan);
+      }
+    }
     if (topicMode === 'material_wide' && sourceTopicPlan.balancedChunks.length) {
       uploadedChunks = sourceTopicPlan.balancedChunks;
       sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
@@ -641,6 +648,12 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         sourceOutline,
         maxBalancedChunks: topicMode === 'material_wide' ? 48 : 24,
       });
+      if (topicMode === 'material_wide') {
+        const topicMap = materialTopicMap.getOrBuild(req.user.id, material_id, { hint: resolvedTopic, sourceScope: scope.sourceScope, chapterId: scope.chapterId, chunkId: scope.chunkId });
+        if (topicMap && Array.isArray(topicMap.topics) && topicMap.topics.length >= 2) {
+          sourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(topicMap, uploadedChunks.length ? uploadedChunks : sourceTopicPlan.balancedChunks, sourceTopicPlan);
+        }
+      }
       if (topicMode === 'material_wide' && sourceTopicPlan.balancedChunks.length) {
         uploadedChunks = sourceTopicPlan.balancedChunks;
         sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;

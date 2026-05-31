@@ -1,0 +1,30 @@
+{{SYSTEM_BASE}}
+
+Task: Build a material-wide topic map from the uploaded source excerpts.
+
+Return ONLY valid JSON with this shape:
+{
+  "domain": "...",
+  "topics": [
+    {
+      "name": "...",
+      "order": 0,
+      "weight": 1,
+      "terms": ["..."],
+      "operations": ["..."],
+      "requiredVisualTypes": ["diagram|table|flowchart|data_structure_visual|code_screenshot|equation"],
+      "checkpointNeeded": true
+    }
+  ],
+  "learningObjectives": ["..."]
+}
+
+Rules:
+- Preserve source order.
+- Cover the whole uploaded material, not only the first detected topic.
+- Use concrete topic names from headings, definitions, operations, examples, and figures.
+- Mark data-structure operations, algorithms, OOP relationships, equations, tables, or process visuals when the source supports them.
+- Ignore decorative images, page numbers, filenames, and generic labels.
+
+Source excerpts:
+{{SOURCE_EXCERPTS}}

@@ -7,8 +7,8 @@ const PLACEHOLDER_RE = /(this is a document|definition goes here|example here|lo
 const GENERIC_ONLY_NODES = new Set(['definition', 'rule', 'example', 'boundary', 'visual model', 'mistakes', 'concept', 'start', 'practice']);
 const FORBIDDEN_VISIBLE_RE = /\b(callout|source note|trace an example|code sketch|define the idea|qualityWarnings|qualityChecks|sourceChunkIds|debugWarnings)\b|teaching\s*goal\s*:|\[chunk:\s*\d+\]/i;
 const OOP_TERMS = ['class', 'object', 'method', 'private', 'public', 'field', 'interface', 'inheritance', 'polymorphism', 'encapsulation', 'abstraction'];
-const DS_TERMS = ['node', 'pointer', 'stack', 'queue', 'tree', 'linked list', 'binary search', 'complexity', 'big-o', 'o(n)', 'push', 'pop', 'hash table', 'hash', 'bucket', 'collision', 'load factor', 'resize', 'probe'];
-const DS_TOPIC_TERMS = ['linked list', 'node.next', 'stack', 'queue', 'tree', 'binary search tree', 'bst', 'heap', 'graph', 'hash table', 'hash map', 'hashmap', 'bucket', 'collision', 'load factor', 'resize', 'rehash', 'probe', 'chaining', 'push', 'pop', 'enqueue', 'dequeue'];
+const DS_TERMS = ['node', 'pointer', 'stack', 'queue', 'priority queue', 'deque', 'tree', 'linked list', 'binary search', 'complexity', 'big-o', 'o(n)', 'push', 'pop', 'hash table', 'hash', 'bucket', 'collision', 'load factor', 'resize', 'probe'];
+const DS_TOPIC_TERMS = ['linked list', 'node.next', 'stack', 'queue', 'priority queue', 'deque', 'double ended queue', 'tree', 'binary search tree', 'bst', 'heap', 'graph', 'hash table', 'hash map', 'hashmap', 'bucket', 'collision', 'load factor', 'resize', 'rehash', 'probe', 'chaining', 'push', 'pop', 'enqueue', 'dequeue'];
 const DS_OPERATION_VISUAL_TYPES = new Set(['linkedlist', 'linked_list_operation', 'hash_table', 'hash_table_operation', 'stack_queue', 'stack_operation', 'queue_operation', 'tree', 'tree_visual', 'bigo_chart', 'big_o_growth', 'flow', 'process_flow']);
 const DS_TOPIC_VISUAL_TYPES = new Set(['linkedlist', 'linked_list_operation', 'hash_table', 'hash_table_operation', 'stack_queue', 'stack_operation', 'queue_operation', 'tree', 'tree_visual']);
 const OOP_VISUAL_TYPES = new Set(['class_diagram', 'class_object', 'encapsulation_boundary', 'inheritance_uml', 'polymorphism_dispatch']);
@@ -169,6 +169,16 @@ function scoreVideoScript(script, opts = {}) {
   const reasons = [];
   const criteria = [];
   const allText = JSON.stringify(script || {}).toLowerCase();
+  const topicMapTopics = asList(
+    (opts.topicMap && opts.topicMap.topics) ||
+    (script && script.topicMap && script.topicMap.topics) ||
+    (script && script.sourceTopicPlan && script.sourceTopicPlan.topicBundle)
+  );
+  const teachingTopicNames = unique(topicMapTopics.map(item => String(item && (item.name || item.topic) || '').trim()).filter(Boolean));
+  const teachingTopicText = teachingTopicNames.join(' ').toLowerCase();
+  const topicNameMatches = (pattern) => teachingTopicText
+    ? pattern.test(teachingTopicText)
+    : pattern.test(concept.toLowerCase());
   const sourceText = chunks.map(chunk => String(chunk && chunk.text || '')).join(' ').toLowerCase();
   const types = slides.map(slideType);
   const visualTypes = unique(slides.map(visualType));
@@ -226,8 +236,12 @@ function scoreVideoScript(script, opts = {}) {
   const walkthroughExplanationFits = !walkthroughSlides.length || walkthroughDiagnostics.every(d => d.explanationFits);
   const walkthroughPointerTargets = !walkthroughSlides.length || walkthroughDiagnostics.every(d => d.pointerTargets);
   const hasOopVisual = !likelyOop || visualTypes.some(t => OOP_VISUAL_TYPES.has(t));
-  const hasDsOperationVisual = !likelyDs || visualTypes.some(t => DS_OPERATION_VISUAL_TYPES.has(t));
-  const hasDsComplexity = !likelyDs || /o\(\s*1\s*\)|o\(\s*n\s*\)|o\(\s*log\s*n\s*\)|complexity|constant time|linear time/i.test(visibleText);
+  const hasDsSourceOperationVisual = visualTypes.some(t => ['source_reference', 'source_page_reference', 'source_slide_reference'].includes(t)) &&
+    slides.some(s => (s.image_path || s.imagePath || s.source_visual_id || s.sourceVisualId) &&
+      /stack|queue|priority|deque|heap|push|pop|enqueue|dequeue|front|rear|root|node|operation|state/i.test(JSON.stringify(s)));
+  const hasDsOperationVisual = !likelyDs || visualTypes.some(t => DS_OPERATION_VISUAL_TYPES.has(t)) || hasDsSourceOperationVisual;
+  const topicRequiresComplexity = topicNameMatches(/complexity|big.?o|algorithm|linked\s+list|hash|binary\s+search\s+tree|\bbst\b|tree|graph|heap/);
+  const hasDsComplexity = !likelyDs || !topicRequiresComplexity || /o\(\s*1\s*\)|o\(\s*n\s*\)|o\(\s*log\s*n\s*\)|complexity|constant time|linear time/i.test(visibleText);
   const forbiddenCsTerms = ['search algorithm', 'binary search', 'linear search', 'data structure', 'object-oriented', 'oop', 'java', 'class diagram', 'class', 'object', 'interface', 'inheritance', 'polymorphism', 'encapsulation', 'abstraction', 'stack', 'queue', 'push', 'pop', 'enqueue', 'dequeue', 'lifo', 'fifo', 'hash function', 'hash table', 'hash map', 'bucket', 'bucket index', 'collision', 'collision handling', 'load factor', 'rehash', 'linked list', 'binary search tree', 'bst'];
   const forbiddenCsForNonCs = forbiddenCsTerms.some(term => {
     const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
@@ -275,14 +289,14 @@ function scoreVideoScript(script, opts = {}) {
       'Inheritance scripts must include Shape/Circle/Rectangle, extends, overriding, and composition contrast.',
       1.4);
   }
-  if (lowerConcept.includes('stack')) {
+  if (topicNameMatches(/\bstack\b|lifo/)) {
     addCriterion(criteria, 'stack_specifics',
       containsAny(visibleLower, ['lifo']) && containsAny(visibleLower, ['push']) && containsAny(visibleLower, ['pop']) &&
       containsAny(visibleLower, ['peek']) && containsAny(visibleLower, ['underflow']) && visualTypes.some(t => t === 'stack_queue' || t === 'stack_operation'),
       'Stack scripts must include LIFO, push/pop/peek, underflow, and a vertical stack visual.',
       1.4);
   }
-  if (lowerConcept.includes('queue')) {
+  if (topicNameMatches(/\bqueue\b|fifo|deque/)) {
     addCriterion(criteria, 'queue_specifics',
       containsAny(visibleLower, ['fifo', 'first in', 'first-in']) && containsAny(visibleLower, ['enqueue']) &&
       containsAny(visibleLower, ['dequeue']) && containsAny(visibleLower, ['front']) &&
@@ -298,14 +312,14 @@ function scoreVideoScript(script, opts = {}) {
       'Polymorphism scripts must include dynamic dispatch, superclass reference, subclass object, overloading contrast, and static/final warning.',
       1.4);
   }
-  if (lowerConcept.includes('linked list')) {
+  if (topicNameMatches(/linked\s+list/)) {
     addCriterion(criteria, 'linked_list_specifics',
       containsAny(allText, ['node']) && containsAny(allText, ['head']) && containsAny(allText, ['next']) &&
       containsAny(allText, ['insert']) && containsAny(allText, ['delete', 'deletion']) && containsAny(allText, ['o(n)', 'o(1)']),
       'Linked-list scripts must include node/head/next, insertion/deletion, and complexity.',
       1.4);
   }
-  if (lowerConcept.includes('hash')) {
+  if (topicNameMatches(/hash/)) {
     addCriterion(criteria, 'hash_table_specifics',
       containsAny(allText, ['hash function', 'hash(key)', 'hashcode']) &&
       containsAny(allText, ['bucket', 'bucket index']) &&
@@ -317,7 +331,7 @@ function scoreVideoScript(script, opts = {}) {
       'Hash-table scripts must include hashing, bucket index, collisions, load factor/resize, expected O(1), worst O(n), and a hash_table visual.',
       1.4);
   }
-  if (lowerConcept.includes('binary search tree') || /\bbst\b/.test(lowerConcept)) {
+  if (topicNameMatches(/binary\s+search\s+tree|\bbst\b/)) {
     addCriterion(criteria, 'bst_specifics',
       containsAny(allText, ['root']) && containsAny(allText, ['left']) && containsAny(allText, ['right']) &&
       containsAny(allText, ['search', 'insert']) && containsAny(allText, ['inorder', 'in-order']) &&
@@ -325,7 +339,7 @@ function scoreVideoScript(script, opts = {}) {
       'BST scripts must include root, smaller-left/larger-right rule, search/insert path, inorder traversal, and a tree visual.',
       1.4);
   }
-  if (/big.?o|complexity/.test(lowerConcept)) {
+  if (topicNameMatches(/big.?o|complexity/)) {
     addCriterion(criteria, 'big_o_specifics',
       containsAny(allText, ['input size', 'input n', 'n grows', 'as n']) &&
       containsAny(allText, ['growth rate', 'growth curve', 'rate of growth']) &&

@@ -592,16 +592,7 @@ const SourceReferenceVisual = ({ frame, scene, slide }) => {
       </div>
     );
   }
-  const nodes = asList(data.nodes).map(n => typeof n === 'string' ? n : n.label || n.id).filter(Boolean).slice(0, 4);
-  const phase = activePhase(frame, Math.max(1, nodes.length));
-  return (
-    <svg viewBox="0 0 820 470" style={styles.svg}>
-      <ClassNode x={170} y={54} w={480} h={104} title={data.caption || scene.sceneTitle || slide.title || 'Source reference'} sub="uploaded material" active tone="blue" />
-      {(nodes.length ? nodes : ['Source heading', 'Evidence', 'Review cue']).map((label, i) => (
-        <ClassNode key={label + i} x={190} y={188 + i * 76} w={440} h={58} title={label} sub={i === phase ? 'focus' : 'source-backed'} active={i === phase} tone={i % 2 ? 'green' : 'amber'} />
-      ))}
-    </svg>
-  );
+  return <NoVisual scene={scene} slide={slide} />;
 };
 
 const NoVisual = ({ scene, slide }) => (

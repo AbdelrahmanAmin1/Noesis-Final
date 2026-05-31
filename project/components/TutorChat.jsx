@@ -591,6 +591,8 @@ const TutorChat = ({ onNav, onMode, initialConversationId = null }) => {
               </div>
             ))}
 
+            <MaterialVisuals materialId={selectedMaterialId} />
+
             {latestTrace && (
               <div style={tc.traceBox}>
                 <TracePair label="Provider" value={latestTrace.provider || 'unknown'}/>
@@ -603,6 +605,60 @@ const TutorChat = ({ onNav, onMode, initialConversationId = null }) => {
         </aside>
       </div>
     </div>
+  );
+};
+
+// Shows real diagrams/figures detected in the selected material so the tutor can point at
+// actual source visuals. Only image-bearing candidates are shown; text-only refs are skipped.
+const MaterialVisuals = ({ materialId }) => {
+  const [visuals, setVisuals] = React.useState([]);
+  React.useEffect(() => {
+    let active = true;
+    if (!materialId) { setVisuals([]); return undefined; }
+    (async () => {
+      try {
+        const res = await window.NoesisAPI.materials.sourceVisuals(materialId);
+        const list = ((res && res.source_visuals) || []).filter(v => v && v.id && v.imagePath);
+        if (active) setVisuals(list.slice(0, 4));
+      } catch (_) { if (active) setVisuals([]); }
+    })();
+    return () => { active = false; };
+  }, [materialId]);
+  if (!visuals.length) return null;
+  return (
+    <div style={tc.materialVisuals}>
+      <div style={tc.materialVisualsLabel}>From your material</div>
+      {visuals.map(v => <SourceVisualThumb key={v.id} materialId={materialId} candidate={v} />)}
+    </div>
+  );
+};
+
+const SourceVisualThumb = ({ materialId, candidate }) => {
+  const [url, setUrl] = React.useState('');
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    let active = true;
+    let objUrl = '';
+    (async () => {
+      try {
+        objUrl = await window.NoesisAPI.materials.sourceVisualImageBlobUrl(materialId, candidate.id);
+        if (active) setUrl(objUrl); else URL.revokeObjectURL(objUrl);
+      } catch (_) { if (active) setFailed(true); }
+    })();
+    return () => { active = false; if (objUrl) URL.revokeObjectURL(objUrl); };
+  }, [materialId, candidate.id]);
+  if (failed) return null;
+  const where = candidate.pageNumber != null ? `p.${candidate.pageNumber}`
+    : (candidate.slideNumber != null ? `slide ${candidate.slideNumber}` : '');
+  return (
+    <figure style={tc.materialVisualFigure}>
+      {url
+        ? <img src={url} alt={candidate.caption || 'Source visual'} style={tc.materialVisualImg} onError={() => setFailed(true)} />
+        : <div style={tc.materialVisualLoading}>Loading…</div>}
+      {(candidate.caption || where) && (
+        <figcaption style={tc.materialVisualCaption}>{candidate.caption || 'Source visual'}{where ? ` (${where})` : ''}</figcaption>
+      )}
+    </figure>
   );
 };
 
@@ -1100,6 +1156,12 @@ const tc = {
   railBody: { height: 'calc(100vh - 143px)', overflow: 'auto', padding: 'calc(16px * var(--app-density-scale))' },
   badge: { padding: '4px 7px', borderRadius: 999, border: '1px solid var(--line)', fontSize: 'calc(10.5px * var(--app-font-scale))', whiteSpace: 'nowrap' },
   emptyRail: { color: 'var(--fg-3)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.6, padding: 'calc(12px * var(--app-density-scale))', border: '1px dashed var(--line)', borderRadius: 8 },
+  materialVisuals: { marginTop: 'calc(8px * var(--app-density-scale))', marginBottom: 'calc(12px * var(--app-density-scale))' },
+  materialVisualsLabel: { fontSize: 'calc(10.5px * var(--app-font-scale))', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 'calc(8px * var(--app-density-scale))' },
+  materialVisualFigure: { margin: '0 0 10px', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(8px * var(--app-density-scale))' },
+  materialVisualImg: { width: '100%', height: 'auto', display: 'block', borderRadius: 6, background: 'var(--bg-0)' },
+  materialVisualLoading: { padding: 'calc(16px * var(--app-density-scale))', textAlign: 'center', color: 'var(--fg-3)', fontSize: 'calc(11.5px * var(--app-font-scale))' },
+  materialVisualCaption: { margin: '6px 0 0', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', lineHeight: 1.4 },
   sourceCard: { padding: 'calc(12px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', marginBottom: 'calc(12px * var(--app-density-scale))' },
   sourceCardActive: { borderColor: 'var(--accent)', boxShadow: '0 0 0 3px var(--accent-glow)' },
   sourceTopline: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'calc(8px * var(--app-density-scale))', marginBottom: 'calc(5px * var(--app-density-scale))' },

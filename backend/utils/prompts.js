@@ -492,6 +492,27 @@ function compactSourceFacts(source, maxChars = 3000) {
   return lines.join('\n') || '(No structured source facts extracted.)';
 }
 
+function compactTopicMap(topicMap, maxChars = 2400) {
+  if (!topicMap || !Array.isArray(topicMap.topics) || !topicMap.topics.length) return '(No material topic map provided.)';
+  const lines = [
+    `Title: ${cleanExcerptText(topicMap.title || 'Uploaded Material')}`,
+    `Domain: ${cleanExcerptText(topicMap.domain || 'unknown')}`,
+  ];
+  for (const topic of topicMap.topics.slice(0, 8)) {
+    const refs = (topic.sourcePageRefs || [])
+      .map(ref => ref.label || (ref.pageNumber ? `Page ${ref.pageNumber}` : ref.slideNumber ? `Slide ${ref.slideNumber}` : ''))
+      .filter(Boolean)
+      .slice(0, 3)
+      .join(', ');
+    const visuals = (topic.requiredVisualTypes || []).slice(0, 4).join(', ');
+    const terms = (topic.terms || []).slice(0, 6).join(', ');
+    const order = Number.isFinite(Number(topic.order)) ? Number(topic.order) + 1 : lines.length - 1;
+    lines.push(`${order}. ${topic.name}${terms ? ` | terms: ${terms}` : ''}${visuals ? ` | visuals: ${visuals}` : ''}${refs ? ` | source: ${refs}` : ''}`);
+  }
+  const text = lines.join('\n');
+  return text.length > maxChars ? `${text.slice(0, maxChars).trim()}...` : text;
+}
+
 const visualTemplates = require('./visual-templates');
 
 const SYSTEM_BASE = readTemplate('system-base.txt', SYSTEM_BASE_FALLBACK);
@@ -515,6 +536,7 @@ const NOTES_SUMMARY = (chunks, title, opts = {}) => {
 
 const LESSON_GENERATE = (chunks, title, opts = {}) => {
   const tier = opts.groundingTier || 'moderate';
+  const topicMapBlock = compactTopicMap(opts.topicMap || opts.sourceTopicPlan && opts.sourceTopicPlan.topicMap || null);
   return renderTemplate('lesson-generate.txt', LESSON_GENERATE_FALLBACK, {
     SYSTEM_BASE,
     TITLE: title,
@@ -524,6 +546,7 @@ const LESSON_GENERATE = (chunks, title, opts = {}) => {
     ENRICHMENT_POLICY: opts.enrichmentPolicyPrompt || 'Enrichment policy: Use the uploaded source as the primary source of truth. Add examples only to simplify the same detected topic.',
     SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 950, maxTotalChars: 6200 }),
     SOURCE_FACTS_BLOCK: compactSourceFacts(opts.sourceFacts || opts.sourceOutline || null, opts.sourceFactsMaxChars || 3000),
+    TOPIC_MAP_BLOCK: topicMapBlock,
     EDUCATIONAL_CONTEXT_BLOCK: opts.educationalContext ? `Educational context:\n${opts.educationalContext}` : '',
     CURATED_KNOWLEDGE: opts.curatedKnowledge || '(No curated local knowledge provided.)',
   });
@@ -615,6 +638,7 @@ const VIDEO_SCRIPT = (concept, chunks, opts = {}) => {
     GROUNDING_STATUS: tier.toUpperCase(),
     GROUNDING_INSTRUCTION: groundingInstructions[tier] || groundingInstructions.moderate,
     SOURCE_EXCERPTS: sourceExcerpts(chunks, { maxCharsPerChunk: 900, maxTotalChars: 6000 }) + hint,
+    TOPIC_MAP_BLOCK: compactTopicMap(opts.topicMap || opts.sourceTopicPlan && opts.sourceTopicPlan.topicMap || null),
     EDUCATIONAL_CONTEXT_BLOCK: opts.educationalContext ? `Educational context:\n${opts.educationalContext}` : '',
   });
 };
@@ -653,5 +677,5 @@ module.exports = {
   VIDEO_CONCEPT_EXTRACT,
   CONCEPT_EXTRACT,
   REPAIR_JSON,
-  _internals: { readTemplate, renderTemplate, sourceExcerpts, templateCache },
+  _internals: { readTemplate, renderTemplate, sourceExcerpts, compactTopicMap, templateCache },
 };

@@ -120,12 +120,13 @@ describe('source-grounding-judge.service', () => {
       chunks,
     });
 
-    expect(verdict.decision).toBe('retry');
+    expect(verdict.decision).toBe('accept');
+    expect(verdict.reasonCodes).toContain('non_cs_topic_corrected');
     expect(verdict.correctedTopic).toMatch(/skeletal/i);
     expect(verdict.correctedTopic).not.toBe('Linked List');
   });
 
-  it('blocks unsupported curated CS drift in non-CS output after one retry', () => {
+  it('accepts non-CS material even when AI output drifts into CS terminology', () => {
     const chunks = [
       {
         id: 1,
@@ -146,8 +147,8 @@ describe('source-grounding-judge.service', () => {
       attempt: 1,
     });
 
-    expect(verdict.decision).toBe('block');
-    expect(verdict.reasonCodes).toContain('unsupported_curated_topic');
+    expect(verdict.decision).toBe('accept');
+    expect(verdict.reasonCodes).not.toContain('unsupported_curated_topic');
   });
 
   it('retries Trees quiz output that drifts into Linked List', () => {
@@ -290,11 +291,11 @@ describe('source-grounding-judge.service', () => {
       outputText,
     });
 
-    expect(verdict.decision).toBe('retry');
-    expect(verdict.reasonCodes).toContain('unsupported_curated_topic');
+    expect(verdict.decision).toBe('accept');
+    expect(verdict.reasonCodes).not.toContain('unsupported_curated_topic');
   });
 
-  it('rejects Java interface practice drift for marketing source material', () => {
+  it('retries marketing material for low coverage without CS-specific blocking', () => {
     const chunks = [
       {
         id: 1,
@@ -326,7 +327,7 @@ describe('source-grounding-judge.service', () => {
       outputText,
     });
 
-    expect(verdict.decision).toBe('retry');
-    expect(verdict.reasonCodes).toContain('unsupported_curated_topic');
+    expect(verdict.reasonCodes).not.toContain('unsupported_curated_topic');
+    expect(verdict.reasonCodes).toContain('low_source_coverage');
   });
 });

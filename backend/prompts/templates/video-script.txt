@@ -22,6 +22,9 @@ Each video must teach the concept, not merely label it. Include a clear definiti
 Source excerpts:
 {{SOURCE_EXCERPTS}}
 
+Material topic map:
+{{TOPIC_MAP_BLOCK}}
+
 {{EDUCATIONAL_CONTEXT_BLOCK}}
 
 Output STRICT JSON only:
@@ -49,6 +52,10 @@ Output STRICT JSON only:
 
 Rules:
 - Produce 8-10 slides.
+- If the topic map contains multiple topics, distribute slides across those topics in source order, include checkpoint/transition coverage, and do not focus only on the first topic.
+- Use direct teaching narration. Do not start with "The uploaded material is about".
+- Use concrete visual labels and state changes. For data structures, show operation state; for processes, show step flow; for tables or equations, preserve the source structure.
+- Never use a page number as the center of a concept map.
 - Every slide must have meaningful narration, 2-4 sentences, spoken like a tutor.
 - Use 2-5 short bullets per slide. Keep each bullet under 70 characters.
 - Use retrieved source chunks when available, but refer to them naturally as "the uploaded material" instead of showing raw chunk IDs.

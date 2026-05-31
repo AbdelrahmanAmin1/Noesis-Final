@@ -13,6 +13,7 @@ const materialService = require('./material.service');
 const domainDetection = require('./domain-detection.service');
 const sourceGroundingJudge = require('./source-grounding-judge.service');
 const sourceTopicPlans = require('./source-topic-plan.service');
+const materialTopicMap = require('./material-topic-map.service');
 const { recordConceptOutcome } = require('./mastery.service');
 const log = require('../utils/logger');
 
@@ -628,6 +629,13 @@ async function runStartJob(userId, sessionId, jobId = null) {
         maxBalancedChunks: 24,
       })
       : null;
+    if (session.material_id && sourceTopicPlan && sourceTopicPlan.topicMode === 'material_wide') {
+      const topicMap = materialTopicMap.getOrBuild(session.user_id, session.material_id, { hint: topic, sourceScope: 'material' });
+      if (topicMap && Array.isArray(topicMap.topics) && topicMap.topics.length >= 2) {
+        sourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(topicMap, tutorChunks, sourceTopicPlan);
+        topic = sourceTopicPlan.primaryTopic || topic;
+      }
+    }
     let topicVerifier = sourceGroundingJudge.judge({
       feature: 'tutor',
       stage: 'pre_generation',
@@ -671,6 +679,13 @@ async function runStartJob(userId, sessionId, jobId = null) {
           maxBalancedChunks: 24,
         })
         : null;
+      if (session.material_id && sourceTopicPlan && sourceTopicPlan.topicMode === 'material_wide') {
+        const topicMap = materialTopicMap.getOrBuild(session.user_id, session.material_id, { hint: topic, sourceScope: 'material' });
+        if (topicMap && Array.isArray(topicMap.topics) && topicMap.topics.length >= 2) {
+          sourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(topicMap, tutorChunks, sourceTopicPlan);
+          topic = sourceTopicPlan.primaryTopic || topic;
+        }
+      }
       topicVerifier = sourceGroundingJudge.judge({
         feature: 'tutor',
         stage: 'pre_generation',

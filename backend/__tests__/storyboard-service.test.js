@@ -108,6 +108,138 @@ describe('storyboard.service', () => {
     };
   }
 
+  it('plans material-wide topic-map scenes with coverage and checkpoints', () => {
+    const topicMap = {
+      title: 'Stack / Queue',
+      domain: 'Data Structures',
+      topics: [
+        {
+          id: 'topic-stack',
+          name: 'Stack',
+          order: 0,
+          terms: ['LIFO', 'push', 'pop', 'underflow'],
+          sourceChunkIds: [1],
+          sourcePageRefs: [{ kind: 'page', pageNumber: 7, label: 'Page 7' }],
+          sourceVisualIds: [],
+          conceptIds: ['concept-stack'],
+          requiredVisualTypes: ['stack_operation', 'code_walkthrough'],
+          checkpointNeeded: true,
+        },
+        {
+          id: 'topic-queue',
+          name: 'Queue',
+          order: 1,
+          terms: ['FIFO', 'enqueue', 'dequeue', 'front', 'rear'],
+          sourceChunkIds: [2],
+          sourcePageRefs: [{ kind: 'page', pageNumber: 8, label: 'Page 8' }],
+          sourceVisualIds: [],
+          conceptIds: ['concept-queue'],
+          requiredVisualTypes: ['queue_operation', 'code_walkthrough'],
+          checkpointNeeded: true,
+        },
+      ],
+    };
+    const chunks = [
+      { id: 1, text: 'Stack operations push and pop follow LIFO order and can underflow.', source_page: 7 },
+      { id: 2, text: 'Queue operations enqueue at rear, dequeue at front, and follow FIFO order.', source_page: 8 },
+    ];
+
+    const scenes = _internals.topicMapScenePlan(topicMap, chunks, [], { domain: 'Data Structures' });
+
+    expect(scenes.some(scene => scene.topicId === 'topic-stack')).toBe(true);
+    expect(scenes.some(scene => scene.topicId === 'topic-queue')).toBe(true);
+    expect(scenes.some(scene => /checkpoint/i.test(scene.type))).toBe(true);
+    expect(scenes.map(scene => scene.visualType)).toEqual(expect.arrayContaining(['stack_operation', 'queue_operation']));
+    expect(scenes.every(scene => Array.isArray(scene.validationTags) && scene.validationTags.includes('topic_map'))).toBe(true);
+  });
+
+  it('keeps deterministic operation visuals when attaching matching source images', () => {
+    const topicMap = {
+      title: 'Stack / Queue',
+      domain: 'Data Structures',
+      topics: [
+        {
+          id: 'topic-stack',
+          name: 'Stack',
+          terms: ['LIFO', 'push', 'pop'],
+          sourceChunkIds: [1],
+          sourcePageRefs: [{ kind: 'page', pageNumber: 7, label: 'Page 7' }],
+          sourceVisualIds: [10],
+          requiredVisualTypes: ['stack_operation'],
+        },
+        {
+          id: 'topic-queue',
+          name: 'Queue',
+          terms: ['FIFO', 'enqueue', 'dequeue', 'front', 'rear'],
+          sourceChunkIds: [2],
+          sourcePageRefs: [{ kind: 'page', pageNumber: 8, label: 'Page 8' }],
+          requiredVisualTypes: ['queue_operation'],
+        },
+      ],
+    };
+    const chunks = [
+      { id: 1, text: 'Stack push and pop use LIFO order.', source_page: 7 },
+      { id: 2, text: 'Queue enqueue and dequeue use FIFO order.', source_page: 8 },
+    ];
+    const sourceVisuals = [
+      { id: 10, sourcePage: 7, heading: 'Stack push pop diagram', ocrText: 'stack push pop top', imagePath: 'uploads/source-visuals/stack.png', importanceScore: 0.9 },
+    ];
+
+    const scenes = _internals.topicMapScenePlan(topicMap, chunks, sourceVisuals, { domain: 'Data Structures' });
+    const stackScene = scenes.find(scene => scene.topicId === 'topic-stack' && scene.visualType === 'stack_operation');
+
+    expect(stackScene).toBeTruthy();
+    expect(stackScene.visualType).toBe('stack_operation');
+    expect(stackScene.visualElements.type).toBe('stack_operation');
+    expect(stackScene.sourceVisualIds).toContain(10);
+  });
+
+  it('rejects page-number source references without a real image', () => {
+    const validation = _internals.validateVisualRelevance({
+      id: 'scene-page',
+      title: 'Stack Figure',
+      sceneTitle: 'Stack Figure',
+      narration: 'Stack push and pop update the top pointer while preserving LIFO order.',
+      visualType: 'source_page_reference',
+      visualTemplate: 'source_page_reference',
+      visualData: {
+        type: 'source_page_reference',
+        nodes: ['Page 7', 'Stack', 'push'],
+      },
+      sourceEvidence: [{ chunkId: 1, quote: 'Stack push and pop use LIFO order.' }],
+    }, 'Stack');
+
+    expect(validation.passed).toBe(false);
+    expect(validation.warnings).toContain('page_number_center_visual');
+  });
+
+  it('uses the topic-map title and sanitizes uploaded-material narration before scripting', () => {
+    const script = scriptFromStoryboard({
+      topic: 'Queue',
+      topicMap: {
+        title: 'Stack / Queue',
+        topics: [{ id: 'topic-stack', name: 'Stack' }, { id: 'topic-queue', name: 'Queue' }],
+      },
+      scenes: [
+        {
+          id: 'scene-1',
+          type: 'diagram',
+          title: 'Queue Operation',
+          sceneTitle: 'Queue Operation',
+          narration: 'The uploaded material is organized around queue operations and stack operations.',
+          visualType: 'queue_operation',
+          visualTemplate: 'queue_operation',
+          visualData: { type: 'queue_operation', nodes: ['queue', 'front pointer', 'rear pointer'], operations: ['enqueue at rear', 'dequeue at front'] },
+          sourceEvidence: [{ chunkId: 1, quote: 'Queue operations use FIFO.' }],
+        },
+      ],
+    });
+
+    expect(script.topic).toBe('Stack / Queue');
+    expect(script.slides[0].narration).toMatch(/Queue operations use FIFO/i);
+    expect(script.slides[0].narration).not.toMatch(/uploaded material is organized/i);
+  });
+
   it('rejects generic scenes before rendering', () => {
     const quality = storyboardQuality({
       topic: 'Polymorphism',
@@ -919,6 +1051,90 @@ describe('storyboard.service', () => {
     });
     expect(script.slides[0].visual_type).toBe('hash_table');
     expect(script.slides[0].visual_nodes.join(' ')).toMatch(/bucket|collision/i);
+  });
+
+  it('flags material-wide DS storyboards that only cover one topic from the detected bundle', () => {
+    const dsUnderstanding = understanding({
+      domain: 'Data Structures',
+      topic: 'Stack / Queue / Priority Queue / Deque',
+      normalizedTopic: 'Stack / Queue / Priority Queue / Deque',
+      keyConcepts: ['Stack', 'Queue', 'Priority Queue', 'Deque', 'LIFO', 'FIFO'],
+      sourceTopicPlan: {
+        topicMode: 'material_wide',
+        topicBundle: [
+          { topic: 'Stack', terms: ['stack', 'lifo', 'push', 'pop'] },
+          { topic: 'Queue', terms: ['queue', 'fifo', 'enqueue', 'dequeue'] },
+          { topic: 'Priority Queue', terms: ['priority queue', 'heap'] },
+          { topic: 'Deque', terms: ['deque', 'double ended queue'] },
+        ],
+      },
+    });
+    const queueScene = {
+      id: 'queue-only',
+      type: 'diagram',
+      sceneTitle: 'Queue FIFO Operation',
+      title: 'Queue FIFO Operation',
+      teachingGoal: 'Explain enqueue and dequeue with front and rear pointers.',
+      learningPoint: 'A queue uses FIFO order with front and rear pointers.',
+      narration: 'The uploaded material explains queue operations: enqueue adds at the rear and dequeue removes from the front, preserving FIFO order for the queue.',
+      onScreenText: ['Queue FIFO', 'front pointer', 'rear pointer'],
+      visualType: 'queue_operation',
+      visualTemplate: 'queue_operation',
+      visualData: {
+        type: 'queue_operation',
+        nodes: ['queue', 'front pointer', 'rear pointer', 'enqueue', 'dequeue'],
+        operations: ['enqueue at rear', 'dequeue from front'],
+      },
+      code: { language: 'python', content: 'queue.append(x)\nqueue.popleft()', lineRange: '1-2', highlightLines: [1, 2], walkthrough: [] },
+      sourceEvidence: [{ chunkId: 1, quote: 'Queues use FIFO. Enqueue at rear and dequeue at front.' }],
+    };
+    const board = storyboard([
+      queueScene,
+      { ...queueScene, id: 'queue-2', sceneTitle: 'Queue Rear Pointer' },
+      { ...queueScene, id: 'queue-3', sceneTitle: 'Queue Front Pointer' },
+      { ...queueScene, id: 'queue-4', sceneTitle: 'Queue Underflow' },
+      { ...queueScene, id: 'queue-5', sceneTitle: 'Queue Recap', type: 'recap' },
+    ], {
+      topic: 'Stack / Queue / Priority Queue / Deque',
+      materialUnderstanding: dsUnderstanding,
+    });
+
+    const quality = storyboardQuality(board);
+    expect(quality.warnings.join(' ')).toContain('topic:missing_bundle_coverage');
+    expect(quality.warnings.join(' ')).toMatch(/Stack|Priority Queue|Deque/);
+  });
+
+  it('carries extracted source image references into render scripts', () => {
+    const script = scriptFromStoryboard({
+      topic: 'Queue',
+      scenes: [
+        {
+          id: 'scene-source',
+          type: 'diagram',
+          title: 'Queue Figure',
+          sceneTitle: 'Queue Figure',
+          narration: 'The source figure shows enqueue at the rear and dequeue from the front.',
+          onScreenText: ['Queue operation', 'Page 2'],
+          visualType: 'source_page_reference',
+          visualTemplate: 'source_page_reference',
+          visualData: {
+            type: 'source_page_reference',
+            nodes: ['Queue operation', 'front pointer', 'rear pointer'],
+            caption: 'Page 2: queue operation diagram',
+            imagePath: 'uploads/source-visuals/1/queue.png',
+            sourceVisualId: 42,
+            sourcePage: 2,
+            ocrText: 'enqueue rear dequeue front',
+            nearbyText: 'Queue operation diagram from the uploaded material',
+          },
+        },
+      ],
+    });
+
+    expect(script.slides[0].visual_type).toBe('source_reference');
+    expect(script.slides[0].image_path).toMatch(/queue\.png$/);
+    expect(script.slides[0].source_visual_id).toBe(42);
+    expect(script.slides[0].ocr_text).toContain('enqueue');
   });
 
   it('renders scripts from phase-4 scene fields', () => {

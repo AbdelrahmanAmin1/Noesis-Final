@@ -7,6 +7,7 @@ const { uploadLimiter } = require('../middleware/rateLimit');
 const matSvc = require('../services/material.service');
 const jobs = require('../services/jobs.service');
 const sourceVisualCandidates = require('../services/source-visual-candidates.service');
+const materialTopicMap = require('../services/material-topic-map.service');
 
 const router = express.Router();
 
@@ -41,6 +42,24 @@ router.get('/:id/source-visuals/:candidateId/image', requireAuth, (req, res, nex
     const candidate = sourceVisualCandidates.imagePathForCandidate(req.user.id, materialId, candidateId);
     if (!candidate) return res.status(404).json({ error: 'source_visual_image_not_found' });
     res.sendFile(candidate.imagePath);
+  } catch (e) { next(e); }
+});
+
+router.get('/:id/topic-map', requireAuth, (req, res, next) => {
+  try {
+    const materialId = parseInt(req.params.id, 10);
+    const topicMap = materialTopicMap.getOrBuild(req.user.id, materialId);
+    if (!topicMap) return res.status(404).json({ error: 'material_not_found' });
+    res.json({ topic_map: topicMap });
+  } catch (e) { next(e); }
+});
+
+router.post('/:id/topic-map/refresh', requireAuth, (req, res, next) => {
+  try {
+    const materialId = parseInt(req.params.id, 10);
+    const topicMap = materialTopicMap.refresh(req.user.id, materialId, req.body || {});
+    if (!topicMap) return res.status(404).json({ error: 'material_not_found' });
+    res.json({ topic_map: topicMap });
   } catch (e) { next(e); }
 });
 

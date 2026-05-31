@@ -62,6 +62,16 @@ const DOMAIN_TOPICS = [
         keyConcepts: ['FIFO', 'enqueue', 'dequeue', 'front', 'rear', 'underflow'],
       },
       {
+        normalizedTopic: 'Priority Queue',
+        aliases: ['priority queue', 'priority queues', 'priority-queue'],
+        keyConcepts: ['priority', 'heap', 'min priority', 'max priority', 'enqueue with priority', 'dequeue highest priority'],
+      },
+      {
+        normalizedTopic: 'Deque',
+        aliases: ['deque', 'double ended queue', 'double-ended queue'],
+        keyConcepts: ['front', 'rear', 'insert front', 'insert rear', 'delete front', 'delete rear'],
+      },
+      {
         normalizedTopic: 'Hash Table',
         aliases: ['hash table', 'hash map', 'hashmap', 'hash function', 'bucket', 'collision'],
         keyConcepts: ['hash function', 'bucket', 'key', 'value', 'collision', 'chaining', 'probing', 'load factor', 'rehashing'],

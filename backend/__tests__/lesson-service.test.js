@@ -526,4 +526,42 @@ describe('lesson.service', () => {
     expect(md).not.toContain('[chunk:42]');
     expect(md).not.toContain('source 42');
   });
+
+  it('attaches extracted source images inline to matching lesson sections', () => {
+    const lesson = lessons.normalizeLesson({
+      topic: 'Queue',
+      lessonType: 'data_structure',
+      learningObjectives: ['Explain FIFO', 'Trace enqueue and dequeue'],
+      sections: [
+        {
+          type: 'definition',
+          title: 'Queue FIFO operations',
+          content: 'A queue uses FIFO order: enqueue at the rear and dequeue from the front.',
+        },
+        {
+          type: 'deep_explanation',
+          title: 'Stack contrast',
+          content: 'A stack uses LIFO order with push and pop.',
+        },
+      ],
+    }, {
+      sourceVisualCandidates: [{
+        id: 7,
+        materialId: 3,
+        pageNumber: 2,
+        heading: 'Queue operation diagram',
+        nearbyText: 'enqueue rear dequeue front FIFO',
+        imagePath: 'uploads/source-visuals/3/queue.png',
+        importanceScore: 0.95,
+      }],
+    });
+
+    const queueSection = lesson.sections.find(section => section.title === 'Queue FIFO operations');
+    expect(queueSection.sourceVisuals).toHaveLength(1);
+    expect(queueSection.sourceVisuals[0].explanation).toMatch(/Queue FIFO operations/);
+
+    const md = lessons.lessonToMarkdown(lesson);
+    expect(md).toContain('Queue operation diagram');
+    expect(md).not.toContain('Additional Visuals From the Material');
+  });
 });

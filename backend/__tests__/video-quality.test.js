@@ -103,6 +103,25 @@ describe('scoreVideoScript', () => {
     expect(result.reasons.join(' ')).not.toMatch(/Data-structure videos need/i);
   });
 
+  it('evaluates queue topic-map scripts by queue operations without forcing unrelated complexity', () => {
+    const script = makeFullScript();
+    script.topic = 'Stack / Queue';
+    script.slides.forEach((slide, index) => {
+      slide.bullets = index % 2 === 0 ? ['FIFO order', 'Front pointer'] : ['Enqueue rear', 'Dequeue front'];
+      slide.narration = 'A queue follows FIFO order. Enqueue adds an item at the rear pointer, dequeue removes the item at the front pointer, and the horizontal visual shows the state changing step by step for a beginner learner.';
+      slide.visual = { type: 'queue_operation', nodes: ['front', 'A', 'B', 'rear', 'enqueue', 'dequeue'], edges: [['front', 'A'], ['B', 'rear']] };
+    });
+    script.slides[5].example_code = 'queue.enqueue("A");\nqueue.enqueue("B");\nqueue.dequeue();';
+
+    const result = scoreVideoScript(script, {
+      concept: 'Stack / Queue',
+      topicMap: { topics: [{ name: 'Queue', requiredVisualTypes: ['queue_operation'] }] },
+    });
+
+    expect(result.criteria.find(c => c.name === 'queue_specifics').passed).toBe(true);
+    expect(result.criteria.find(c => c.name === 'ds_complexity').passed).toBe(true);
+  });
+
   it('passes when no bullets are truncated', () => {
     const script = makeFullScript();
     const result = scoreVideoScript(script, { concept: 'Encapsulation' });

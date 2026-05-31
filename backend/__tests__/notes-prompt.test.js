@@ -181,7 +181,7 @@ describe('LESSON_GENERATE prompt', () => {
 });
 
 describe('lesson source visuals', () => {
-  it('renders an important visuals section without exposing OCR wording', () => {
+  it('renders source visuals inline without exposing OCR wording', () => {
     const lessons = require('../services/lesson.service');
     const lesson = lessons.generalMaterialLesson(
       'Bone Classification',
@@ -200,8 +200,8 @@ describe('lesson source visuals', () => {
     }];
 
     const md = lessons.lessonToMarkdown(lesson);
-    expect(md).toContain('## Important Visuals From the Material');
-    expect(md).toContain('Page 4: Bone shape classification diagram');
+    expect(md).toContain('[Source: Page 4 - Bone shape classification diagram]');
+    expect(md).not.toContain('## Important Visuals From the Material');
     expect(md).not.toMatch(/\bOCR\b/i);
   });
 });

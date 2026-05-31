@@ -77,8 +77,11 @@ const SourceVisualSchema = z.object({
   heading: z.string().optional().default(''),
   caption: z.string().optional().default(''),
   nearbyText: z.string().optional().default(''),
+  ocrText: z.string().optional().default(''),
   evidence: z.string().optional().default(''),
   visualTypeGuess: z.string().optional().default(''),
+  materialId: z.union([z.number(), z.string()]).nullable().optional(),
+  explanation: z.string().optional().default(''),
   importanceScore: z.number().optional().default(0),
   imagePath: z.string().nullable().optional(),
   thumbnailPath: z.string().nullable().optional(),
@@ -97,6 +100,7 @@ const SectionSchema = z.object({
     sourceChunkIds: z.array(z.union([z.number(), z.string()])).optional().default([]),
   })).optional().default([]),
   quiz: z.array(z.any()).optional().default([]),
+  sourceVisuals: z.array(SourceVisualSchema).optional().default([]),
 });
 
 const EducationalLessonSchema = z.object({
@@ -1158,6 +1162,7 @@ function normalizeSection(raw, index) {
     diagram: raw && raw.diagram ? diagrams.normalizeDiagram(raw.diagram, type === 'mindmap' ? 'mindmap' : 'flow') : undefined,
     callouts: normalizeCallouts(raw && raw.callouts),
     quiz: normalizeQuiz(raw && raw.quiz),
+    sourceVisuals: normalizeSourceVisuals(raw && raw.sourceVisuals || raw && raw.source_visuals || [], 3),
   };
 }
 
@@ -1170,14 +1175,17 @@ function normalizeSourceVisual(raw) {
   const heading = inlineText(raw.heading || raw.visualTypeGuess || raw.visual_type_guess || 'source visual', 100);
   return {
     id: raw.id || raw.sourceVisualId || raw.source_visual_id || null,
+    materialId: raw.materialId || raw.material_id || null,
     pageNumber: sourcePage != null ? Number(sourcePage) : null,
     sourcePage: sourcePage != null ? Number(sourcePage) : null,
     slideNumber: slideNumber != null ? Number(slideNumber) : null,
     heading,
     caption: inlineText(raw.caption || (heading ? `${label}: ${heading}` : label), 160),
     nearbyText: inlineText(raw.nearbyText || raw.nearby_text || raw.evidence || '', 260),
+    ocrText: inlineText(raw.ocrText || raw.ocr_text || '', 260),
     evidence: inlineText(raw.evidence || raw.nearbyText || raw.nearby_text || '', 260),
     visualTypeGuess: inlineText(raw.visualTypeGuess || raw.visual_type_guess || '', 80),
+    explanation: inlineText(raw.explanation || raw.description || '', 220),
     importanceScore: Number(raw.importanceScore || raw.importance_score || 0),
     imagePath: raw.imagePath || raw.image_path || null,
     thumbnailPath: raw.thumbnailPath || raw.thumbnail_path || null,
@@ -1199,13 +1207,73 @@ function normalizeSourceVisuals(values = [], max = 8) {
   return out;
 }
 
+function visualMatchWords(value) {
+  return [...new Set(String(value || '').toLowerCase()
+    .split(/[^a-z0-9+#]+/)
+    .filter(word => word.length >= 3 && !/^(the|and|for|that|this|with|from|page|slide|source|visual|image|definition)$/.test(word)))];
+}
+
+function sectionMatchText(section) {
+  return [
+    section.title,
+    section.type,
+    section.content,
+    ...(section.cards || []).flatMap(card => [card && card.title, card && card.text]),
+    ...(section.callouts || []).map(callout => callout && callout.text),
+    section.diagram && section.diagram.caption,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function explainSourceVisualForSection(visual, section) {
+  const desc = inlineText(visual.ocrText || visual.nearbyText || visual.evidence || visual.caption || '', 180);
+  if (visual.explanation) return visual.explanation;
+  if (desc) return `This source image supports ${section.title}: ${desc}`;
+  return `This source image supports the section on ${section.title}.`;
+}
+
+function attachSourceVisualsToSections(lesson, sourceVisuals = []) {
+  const sections = (lesson.sections || []).map(section => ({
+    ...section,
+    sourceVisuals: normalizeSourceVisuals(section.sourceVisuals || [], 3),
+  }));
+  const visuals = normalizeSourceVisuals(sourceVisuals, env.SOURCE_VISUALS_MAX_PER_MATERIAL || 8);
+  if (!sections.length || !visuals.length) return { ...lesson, sections, sourceVisuals: visuals };
+  const assigned = new Set(sections.flatMap(section => section.sourceVisuals || []).map(v => String(v.id || `${v.sourcePage}:${v.slideNumber}:${v.heading}`)));
+  const sectionTexts = sections.map(sectionMatchText);
+  for (const visual of visuals) {
+    const visualKey = String(visual.id || `${visual.sourcePage}:${visual.slideNumber}:${visual.heading}`);
+    if (assigned.has(visualKey)) continue;
+    const vText = [visual.heading, visual.caption, visual.nearbyText, visual.ocrText, visual.evidence, visual.visualTypeGuess].filter(Boolean).join(' ');
+    const words = visualMatchWords(vText);
+    if (!words.length) continue;
+    let bestIdx = -1;
+    let bestScore = 0;
+    for (let i = 0; i < sectionTexts.length; i += 1) {
+      const score = words.filter(word => sectionTexts[i].includes(word)).length;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIdx = i;
+      }
+    }
+    if (bestIdx < 0 || bestScore < 1) continue;
+    if ((sections[bestIdx].sourceVisuals || []).length >= 2) continue;
+    sections[bestIdx].sourceVisuals = [
+      ...(sections[bestIdx].sourceVisuals || []),
+      { ...visual, explanation: explainSourceVisualForSection(visual, sections[bestIdx]) },
+    ];
+    assigned.add(visualKey);
+  }
+  return { ...lesson, sections, sourceVisuals: visuals };
+}
+
 function attachSourceVisuals(lesson, opts = {}) {
   const fromLesson = lesson && Array.isArray(lesson.sourceVisuals) ? lesson.sourceVisuals : [];
   const fromOpts = opts.sourceVisualCandidates || opts.sourceVisuals || [];
-  return {
+  const withVisuals = {
     ...lesson,
     sourceVisuals: normalizeSourceVisuals([...fromLesson, ...fromOpts], env.SOURCE_VISUALS_MAX_PER_MATERIAL || 8),
   };
+  return attachSourceVisualsToSections(withVisuals, withVisuals.sourceVisuals);
 }
 
 function ensureRequiredSections(lesson, opts = {}) {
@@ -1256,7 +1324,7 @@ function normalizeLesson(raw, opts = {}) {
   }
   if (!opts.skipEnsureFallback) ensureRequiredSections(lesson, opts);
   lesson.sections = lesson.sections.slice(0, 14);
-  return lesson;
+  return attachSourceVisualsToSections(lesson, lesson.sourceVisuals);
 }
 
 function isCsLessonForQuality(lesson, opts = {}) {
@@ -1462,6 +1530,8 @@ async function generateEducationalLesson(opts = {}) {
       educationalContext: opts.educationalContextPrompt || opts.educationalContext || '',
       sourceOutline: opts.sourceOutline || null,
       sourceFacts: opts.sourceFacts || opts.sourceOutline || null,
+      topicMap: opts.topicMap || opts.sourceTopicPlan && opts.sourceTopicPlan.topicMap || null,
+      sourceTopicPlan: opts.sourceTopicPlan || null,
       groundingTier: opts.groundingTier || 'moderate',
       enrichmentPolicyPrompt: opts.enrichmentPolicyPrompt || '',
     })
@@ -1545,6 +1615,18 @@ function diagramToMermaid(diagram) {
   return lines.join('\n');
 }
 
+function sourceVisualMarkdownKey(v) {
+  return String(v && (v.id || `${v.sourcePage || v.pageNumber || ''}:${v.slideNumber || ''}:${v.heading || ''}`)).toLowerCase();
+}
+
+function sourceVisualMarkdownLine(v) {
+  const label = v.slideNumber != null ? `Slide ${v.slideNumber}` : `Page ${v.sourcePage || v.pageNumber || 1}`;
+  const heading = inlineText(v.heading || v.visualTypeGuess || 'source visual', 100);
+  const desc = inlineText(v.explanation || v.ocrText || v.nearbyText || v.evidence || '', 220);
+  const imgRef = v.imagePath ? ` _(image: ${v.imagePath})_` : '';
+  return `> **[Source: ${label} - ${heading}]**${desc ? ` ${desc}` : ''}${imgRef}`;
+}
+
 function lessonToMarkdown(lessonInput) {
   const sourceOnlyMarkdown = lessonInput && (lessonInput.topicMode === 'material_wide' || lessonInput.sourceRepair);
   const markdownOpts = sourceOnlyMarkdown
@@ -1557,6 +1639,7 @@ function lessonToMarkdown(lessonInput) {
     for (const obj of lesson.learningObjectives) lines.push(`- ${obj}`);
     lines.push('');
   }
+  const inlineVisualKeys = new Set();
   for (const s of lesson.sections) {
     lines.push(`## ${s.title}`);
     if (s.content) lines.push('', s.content, '');
@@ -1578,6 +1661,11 @@ function lessonToMarkdown(lessonInput) {
     }
     for (const callout of s.callouts || []) lines.push(`> **${markdownEscape(callout.type)}:** ${callout.text}`);
     if (s.callouts && s.callouts.length) lines.push('');
+    for (const v of s.sourceVisuals || []) {
+      lines.push(sourceVisualMarkdownLine(v));
+      lines.push('');
+      inlineVisualKeys.add(sourceVisualMarkdownKey(v));
+    }
     for (const q of s.quiz || []) {
       lines.push(`**Question:** ${q.question}`);
       if (q.options && q.options.length) for (const opt of q.options) lines.push(`- ${opt}`);
@@ -1587,14 +1675,62 @@ function lessonToMarkdown(lessonInput) {
     }
   }
   if (lesson.sourceVisuals && lesson.sourceVisuals.length) {
-    lines.push('## Important Visuals From the Material');
-    for (const visual of lesson.sourceVisuals) {
-      const label = visual.slideNumber != null ? `Slide ${visual.slideNumber}` : `Page ${visual.sourcePage || visual.pageNumber || 1}`;
-      const heading = inlineText(visual.heading || visual.visualTypeGuess || 'source visual', 100);
-      const evidence = inlineText(visual.nearbyText || visual.evidence || '', 150);
-      lines.push(`- ${label}: ${heading}${evidence ? ` - ${evidence}` : ''}`);
+    const unmatchedVisuals = lesson.sourceVisuals.filter(v => !inlineVisualKeys.has(sourceVisualMarkdownKey(v)));
+    const sectionTexts = lesson.sections.map(s => [s.title, s.content, ...(s.cards || []).map(c => c.text)].filter(Boolean).join(' ').toLowerCase());
+    const visualInsertions = new Map();
+    for (let vi = unmatchedVisuals.length - 1; vi >= 0; vi--) {
+      const v = unmatchedVisuals[vi];
+      const vText = [v.heading, v.nearbyText, v.ocrText, v.visualTypeGuess].filter(Boolean).join(' ').toLowerCase();
+      const vWords = vText.split(/\s+/).filter(w => w.length >= 3);
+      if (!vWords.length) continue;
+      let bestIdx = -1, bestScore = 0;
+      for (let si = 0; si < sectionTexts.length; si++) {
+        const score = vWords.filter(w => sectionTexts[si].includes(w)).length;
+        if (score > bestScore) { bestScore = score; bestIdx = si; }
+      }
+      if (bestIdx >= 0 && bestScore >= 1) {
+        if (!visualInsertions.has(bestIdx)) visualInsertions.set(bestIdx, []);
+        visualInsertions.get(bestIdx).push(v);
+        unmatchedVisuals.splice(vi, 1);
+      }
     }
-    lines.push('');
+    const insertedSections = new Set();
+    const sectionLines = lines.length;
+    let insertOffset = 0;
+    for (let si = 0; si < lesson.sections.length; si++) {
+      if (!visualInsertions.has(si)) continue;
+      const sectionTitle = lesson.sections[si].title;
+      let pos = -1;
+      for (let li = 0; li < lines.length; li++) {
+        if (lines[li] === `## ${sectionTitle}`) { pos = li; break; }
+      }
+      if (pos < 0) continue;
+      let endPos = pos + 1;
+      while (endPos < lines.length && !lines[endPos].startsWith('## ')) endPos++;
+      const visuals = visualInsertions.get(si);
+      const insertLines = [];
+      for (const v of visuals) {
+        const label = v.slideNumber != null ? `Slide ${v.slideNumber}` : `Page ${v.sourcePage || v.pageNumber || 1}`;
+        const heading = inlineText(v.heading || v.visualTypeGuess || 'source visual', 100);
+        const desc = inlineText(v.ocrText || v.nearbyText || v.evidence || '', 200);
+        const imgRef = v.imagePath ? ` _(image: ${v.imagePath})_` : '';
+        insertLines.push(`> **[Source: ${label} — ${heading}]**${desc ? ` ${desc}` : ''}${imgRef}`);
+        insertLines.push('');
+      }
+      lines.splice(endPos, 0, ...insertLines);
+      insertedSections.add(si);
+    }
+    if (unmatchedVisuals.length) {
+      lines.push('## Additional Visuals From the Material');
+      for (const v of unmatchedVisuals) {
+        const label = v.slideNumber != null ? `Slide ${v.slideNumber}` : `Page ${v.sourcePage || v.pageNumber || 1}`;
+        const heading = inlineText(v.heading || v.visualTypeGuess || 'source visual', 100);
+        const desc = inlineText(v.ocrText || v.nearbyText || v.evidence || '', 200);
+        const imgRef = v.imagePath ? ` _(image: ${v.imagePath})_` : '';
+        lines.push(`> **[Source: ${label} — ${heading}]**${desc ? ` ${desc}` : ''}${imgRef}`);
+      }
+      lines.push('');
+    }
   }
   if (lesson.relatedTopics.length) {
     lines.push('## Related Topics');

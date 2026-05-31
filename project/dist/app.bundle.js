@@ -96,6 +96,16 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
         return req('POST', '/materials', fd);
       },
       remove: (id) => req('DELETE', '/materials/' + id),
+      topicMap: (id) => req('GET', '/materials/' + id + '/topic-map'),
+      refreshTopicMap: (id, b) => req('POST', '/materials/' + id + '/topic-map/refresh', b || {}),
+      sourceVisuals: (id) => req('GET', '/materials/' + id + '/source-visuals'),
+      sourceVisualImageUrl: (id, cid) => BASE + '/materials/' + id + '/source-visuals/' + cid + '/image',
+      sourceVisualImageBlobUrl: async (id, cid) => {
+        const res = await req('GET', '/materials/' + id + '/source-visuals/' + cid + '/image', null, { raw: true });
+        if (!res.ok) throw new Error('source_visual_' + res.status);
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
+      },
     },
 
     notes: {
@@ -164,6 +174,7 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
       createStoryboard: (b) => req('POST', '/videos/storyboard', b),
       updateScene: (id, sceneId, b) => req('PATCH', '/videos/storyboard/' + id + '/scene/' + encodeURIComponent(sceneId), b),
       regenerateScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/regenerate-scene', b),
+      regenerateTopic: (id, b) => req('POST', '/videos/storyboard/' + id + '/regenerate-topic', b),
       fixScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix-scene', b),
       fixStoryboardIssue: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix', b),
       repairStoryboard: (id, b) => req('POST', '/videos/storyboard/' + id + '/repair', b),
@@ -8095,7 +8106,9 @@ const TutorChat = ({
       sessionStorage.setItem('noesis.materialId', String(selectedMaterialId));
       onNav('material');
     }
-  }, "View in material"))), latestTrace && React.createElement("div", {
+  }, "View in material"))), React.createElement(MaterialVisuals, {
+    materialId: selectedMaterialId
+  }), latestTrace && React.createElement("div", {
     style: tc.traceBox
   }, React.createElement(TracePair, {
     label: "Provider",
@@ -8110,6 +8123,77 @@ const TutorChat = ({
     label: "Generation",
     value: latestTrace.generationMs == null ? '-' : `${latestTrace.generationMs} ms`
   }))))));
+};
+const MaterialVisuals = ({
+  materialId
+}) => {
+  const [visuals, setVisuals] = React.useState([]);
+  React.useEffect(() => {
+    let active = true;
+    if (!materialId) {
+      setVisuals([]);
+      return undefined;
+    }
+    (async () => {
+      try {
+        const res = await window.NoesisAPI.materials.sourceVisuals(materialId);
+        const list = (res && res.source_visuals || []).filter(v => v && v.id && v.imagePath);
+        if (active) setVisuals(list.slice(0, 4));
+      } catch (_) {
+        if (active) setVisuals([]);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [materialId]);
+  if (!visuals.length) return null;
+  return React.createElement("div", {
+    style: tc.materialVisuals
+  }, React.createElement("div", {
+    style: tc.materialVisualsLabel
+  }, "From your material"), visuals.map(v => React.createElement(SourceVisualThumb, {
+    key: v.id,
+    materialId: materialId,
+    candidate: v
+  })));
+};
+const SourceVisualThumb = ({
+  materialId,
+  candidate
+}) => {
+  const [url, setUrl] = React.useState('');
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    let active = true;
+    let objUrl = '';
+    (async () => {
+      try {
+        objUrl = await window.NoesisAPI.materials.sourceVisualImageBlobUrl(materialId, candidate.id);
+        if (active) setUrl(objUrl);else URL.revokeObjectURL(objUrl);
+      } catch (_) {
+        if (active) setFailed(true);
+      }
+    })();
+    return () => {
+      active = false;
+      if (objUrl) URL.revokeObjectURL(objUrl);
+    };
+  }, [materialId, candidate.id]);
+  if (failed) return null;
+  const where = candidate.pageNumber != null ? `p.${candidate.pageNumber}` : candidate.slideNumber != null ? `slide ${candidate.slideNumber}` : '';
+  return React.createElement("figure", {
+    style: tc.materialVisualFigure
+  }, url ? React.createElement("img", {
+    src: url,
+    alt: candidate.caption || 'Source visual',
+    style: tc.materialVisualImg,
+    onError: () => setFailed(true)
+  }) : React.createElement("div", {
+    style: tc.materialVisualLoading
+  }, "Loading\u2026"), (candidate.caption || where) && React.createElement("figcaption", {
+    style: tc.materialVisualCaption
+  }, candidate.caption || 'Source visual', where ? ` (${where})` : ''));
 };
 const ChatMessage = ({
   message,
@@ -9083,6 +9167,43 @@ const tc = {
     border: '1px dashed var(--line)',
     borderRadius: 8
   },
+  materialVisuals: {
+    marginTop: 'calc(8px * var(--app-density-scale))',
+    marginBottom: 'calc(12px * var(--app-density-scale))'
+  },
+  materialVisualsLabel: {
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    color: 'var(--fg-3)',
+    marginBottom: 'calc(8px * var(--app-density-scale))'
+  },
+  materialVisualFigure: {
+    margin: '0 0 10px',
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)',
+    padding: 'calc(8px * var(--app-density-scale))'
+  },
+  materialVisualImg: {
+    width: '100%',
+    height: 'auto',
+    display: 'block',
+    borderRadius: 6,
+    background: 'var(--bg-0)'
+  },
+  materialVisualLoading: {
+    padding: 'calc(16px * var(--app-density-scale))',
+    textAlign: 'center',
+    color: 'var(--fg-3)',
+    fontSize: 'calc(11.5px * var(--app-font-scale))'
+  },
+  materialVisualCaption: {
+    margin: '6px 0 0',
+    fontSize: 'calc(11px * var(--app-font-scale))',
+    color: 'var(--fg-3)',
+    lineHeight: 1.4
+  },
   sourceCard: {
     padding: 'calc(12px * var(--app-density-scale))',
     border: '1px solid var(--line)',
@@ -9593,7 +9714,13 @@ const TopicVisual = ({
   if (resolved === 'no_visual') return React.createElement(NoVisualPreview, {
     compact: compact
   });
-  if (['concept_cards', 'classification_table', 'comparison_table', 'source_page_reference', 'source_slide_reference'].includes(resolved)) {
+  if (['source_page_reference', 'source_slide_reference'].includes(resolved)) {
+    return React.createElement(SourceReferencePreview, {
+      data: data,
+      compact: compact
+    });
+  }
+  if (['concept_cards', 'classification_table', 'comparison_table'].includes(resolved)) {
     return React.createElement(MiniMindmap, {
       nodes: nodes.length ? nodes : ['Source concept', 'Supporting detail', 'Review question'],
       compact: compact
@@ -9609,6 +9736,75 @@ const TopicVisual = ({
     visualType: template || data.type || 'missing',
     compact: compact
   });
+};
+const SourceReferencePreview = ({
+  data = {},
+  compact = false
+}) => {
+  const candidateId = data.sourceVisualId || data.source_visual_id;
+  const materialId = data.materialId || data.material_id;
+  const directUrl = data.imageUrl || data.image_url || '';
+  const hasImage = !!(directUrl || data.imagePath || data.image_path);
+  const [url, setUrl] = React.useState(directUrl);
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    if (directUrl || !hasImage || !candidateId || !materialId || !window.NoesisAPI) return undefined;
+    let active = true;
+    let objUrl = '';
+    (async () => {
+      try {
+        objUrl = await window.NoesisAPI.materials.sourceVisualImageBlobUrl(materialId, candidateId);
+        if (active) setUrl(objUrl);else URL.revokeObjectURL(objUrl);
+      } catch (_) {
+        if (active) setFailed(true);
+      }
+    })();
+    return () => {
+      active = false;
+      if (objUrl) URL.revokeObjectURL(objUrl);
+    };
+  }, [candidateId, materialId, directUrl, hasImage]);
+  if (!hasImage || failed) return React.createElement(NoVisualPreview, {
+    compact: compact
+  });
+  const caption = data.caption || data.sourceImageCaption || 'Source visual';
+  return React.createElement("div", {
+    style: {
+      width: '100%',
+      height: compact ? 180 : 230,
+      borderRadius: 12,
+      border: '1px solid rgba(148, 163, 184, 0.45)',
+      background: '#f8fafc',
+      overflow: 'hidden',
+      display: 'grid',
+      gridTemplateRows: '1fr auto'
+    }
+  }, url ? React.createElement("img", {
+    src: url,
+    alt: caption,
+    onError: () => setFailed(true),
+    style: {
+      width: '100%',
+      height: '100%',
+      objectFit: 'contain',
+      minHeight: 0
+    }
+  }) : React.createElement("div", {
+    style: {
+      display: 'grid',
+      placeItems: 'center',
+      color: '#475569',
+      fontSize: compact ? 12 : 14
+    }
+  }, "Loading source visual..."), React.createElement("div", {
+    style: {
+      padding: '6px 10px',
+      color: '#334155',
+      fontSize: compact ? 11 : 12,
+      fontWeight: 700,
+      borderTop: '1px solid rgba(148, 163, 184, 0.35)'
+    }
+  }, caption));
 };
 function visualKey(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9()]+/g, '_').replace(/^_+|_+$/g, '');
@@ -11550,10 +11746,14 @@ const truncate = (value, max = 140) => {
   return text.length > max ? `${text.slice(0, Math.max(0, max - 1)).trim()}...` : text;
 };
 const summarizeStatus = (record, quality) => {
-  if (record && /regenerated/i.test(String(record.status || ''))) return 'Regenerated';
-  if (record && record.status === 'needs_review') return 'Needs review';
-  if (quality && quality.passed === true) return 'Passed';
-  return 'Needs review';
+  const classified = quality && quality.classified || {};
+  const needsInput = safeArray(classified.userActionRequired).length || safeArray(classified.hardBlockers).length;
+  if (record && record.status === 'rendered') return 'Rendered';
+  if (needsInput) return 'Needs user input';
+  if (record && (record.status === 'approved' || record.status === 'rendering' || record.approved_at)) return 'Ready to render';
+  if (quality && (quality.passed === true || !needsInput)) return 'Ready to render';
+  if (record && record.status === 'needs_review') return 'Needs user input';
+  return 'Needs user input';
 };
 const evidenceLabel = (item, index) => {
   const parts = [`Evidence ${index + 1}`];
@@ -11596,6 +11796,33 @@ const targetVisualTypeFromWarning = (code = '') => {
   const match = String(code || '').match(/missing_required_visual:([a-z0-9_]+)/i);
   return match ? match[1] : '';
 };
+const isInternalRepairWarning = (code = '') => /topic:low_confidence|topic:insufficient_key_concepts|topic:insufficient_source_evidence|domain:missing_checkpoint_scene|domain:missing_recap_scene|domain:missing_concrete_example_scene|domain:missing_common_mistake_scene|storyboard:insufficient_visual_variety|grounding:missing_topic_drift_risk|missing_source_evidence|missing_learning_point|page_number_center_visual/.test(String(code || ''));
+const finalWarningsForDisplay = (quality = {}) => {
+  const classified = quality.classified || {};
+  const userAction = [...safeArray(classified.userActionRequired), ...safeArray(classified.hardBlockers)];
+  if (userAction.length) return [...new Set(userAction)];
+  return safeArray(classified.warnings || quality.warnings).filter(w => !isInternalRepairWarning(w));
+};
+const topicMapForRecord = (record = {}, board = {}) => board.topicMap || board.materialUnderstanding && board.materialUnderstanding.topicMap || record.quality && record.quality.topicMap || null;
+const topicSceneCounts = (topics = [], scenes = []) => {
+  const counts = {};
+  for (const topic of topics) counts[topic.id || topic.name] = 0;
+  for (const row of scenes) {
+    const scene = row.scene || row;
+    const key = scene.topicId || scene.topicName;
+    if (key && counts[key] != null) counts[key] += 1;else {
+      const match = topics.find(t => String(scene.topicName || '').toLowerCase() === String(t.name || '').toLowerCase());
+      if (match) counts[match.id || match.name] += 1;
+    }
+  }
+  return counts;
+};
+const topicMapTitle = (topicMap, fallback = '') => {
+  const topics = safeArray(topicMap && topicMap.topics);
+  if (topics.length >= 2) return topicMap.title || topics.slice(0, 4).map(t => t.name || t.topic).filter(Boolean).join(' / ');
+  if (topics.length === 1) return topics[0].name || topics[0].topic || fallback;
+  return fallback;
+};
 const GenerationSummary = ({
   record,
   board,
@@ -11617,8 +11844,13 @@ const GenerationSummary = ({
   const summaryStatus = summarizeStatus(record, quality);
   const reason = grounding.enrichmentReason || (enrichmentUsed ? 'AI simplification was used for clearer beginner examples.' : 'Uploaded material was concrete enough for the storyboard.');
   const sourceFile = diagnostics.sourceFileName || diagnostics.fileName || diagnostics.title || record.source_file || 'Uploaded material';
-  const statusStyle = summaryStatus === 'Passed' ? sr.statusGood : sr.statusNeedsReview;
-  const info = [['Domain', understanding.domain], ['Detected topic', understanding.topic || understanding.normalizedTopic || board.topic || record.topic], ['Confidence', quality.confidence != null ? percent(quality.confidence) : percent(understanding.confidence)], ['Source file', sourceFile], ['Scenes generated', scenes.length], ['Uploaded material coverage', percent(grounding.uploadedMaterialCoverage)], ['AI simplification used', enrichmentUsed ? 'Yes' : 'No'], ['Topic drift risk', grounding.topicDriftRisk || quality.topicDriftRisk || 'Not available']];
+  const statusStyle = summaryStatus === 'Needs user input' ? sr.statusNeedsReview : sr.statusGood;
+  const topicMap = topicMapForRecord(record, board);
+  const topics = safeArray(topicMap && topicMap.topics);
+  const counts = topicSceneCounts(topics, scenes);
+  const displayTopic = topicMapTitle(topicMap, understanding.topic || understanding.normalizedTopic || board.topic || record.topic);
+  const topicWeightTotal = topics.reduce((sum, topic) => sum + Math.max(0, Number(topic.weight || 0)), 0) || topics.length || 1;
+  const info = [['Domain', understanding.domain], ['Detected topic', displayTopic], ['Confidence', quality.confidence != null ? percent(quality.confidence) : percent(understanding.confidence)], ['Source file', sourceFile], ['Scenes generated', scenes.length], ['Uploaded material coverage', percent(grounding.uploadedMaterialCoverage)], ['AI simplification used', enrichmentUsed ? 'Yes' : 'No'], ['Topic drift risk', grounding.topicDriftRisk || quality.topicDriftRisk || 'Not available']];
   const missingVisuals = safeArray(coverage.missing);
   const requiredVisuals = safeArray(coverage.required);
   const presentVisuals = safeArray(coverage.present);
@@ -11637,7 +11869,7 @@ const GenerationSummary = ({
     style: sr.summaryEyebrow
   }, "Generation summary"), React.createElement("h2", {
     style: sr.summaryTitle
-  }, understanding.topic || understanding.normalizedTopic || board.topic || record.topic || 'Detected topic'))), React.createElement("span", {
+  }, displayTopic || 'Detected topic'))), React.createElement("span", {
     style: {
       ...sr.statusPill,
       ...statusStyle
@@ -11662,7 +11894,26 @@ const GenerationSummary = ({
     style: sr.conceptChip
   }, c)) : React.createElement("span", {
     style: sr.muted
-  }, "No concepts reported yet."))), React.createElement("div", {
+  }, "No concepts reported yet."))), topics.length > 0 && React.createElement("div", {
+    style: sr.topicCoverage
+  }, React.createElement("div", {
+    style: sr.summaryLabel
+  }, "Topic coverage"), React.createElement("div", {
+    style: sr.topicCoverageGrid
+  }, topics.map(topic => {
+    const key = topic.id || topic.name;
+    const sceneCount = counts[key] || counts[topic.name] || 0;
+    const weight = Math.max(0, Number(topic.weight || 0));
+    const weightLabel = weight ? ` / ${Math.round(weight / topicWeightTotal * 100)}% source weight` : '';
+    return React.createElement("div", {
+      key: key,
+      style: sr.topicCoverageItem
+    }, React.createElement("div", {
+      style: sr.topicCoverageName
+    }, topic.name), React.createElement("div", {
+      style: sr.metaValue
+    }, sceneCount, " scene", sceneCount === 1 ? '' : 's', weightLabel, safeArray(topic.sourcePageRefs).length ? ` / ${safeArray(topic.sourcePageRefs).map(ref => ref.label || (ref.pageNumber ? `Page ${ref.pageNumber}` : ref.slideNumber ? `Slide ${ref.slideNumber}` : '')).filter(Boolean).slice(0, 2).join(', ')}` : ''));
+  }))), React.createElement("div", {
     style: sr.enrichmentNote
   }, React.createElement(Icon.Sparkle, {
     size: 13
@@ -11691,11 +11942,11 @@ const ApprovalPanel = ({
   const Icon = window.Icon;
   const RotateIcon = Icon.RotateCcw || Icon.ArrowLeft || Icon.Sparkle;
   if (!quality || !quality.classified) return null;
-  const {
-    critical,
-    warnings,
-    info
-  } = quality.classified;
+  const classified = quality.classified || {};
+  const critical = [...new Set([...safeArray(classified.userActionRequired), ...safeArray(classified.hardBlockers)])];
+  const warnings = safeArray(classified.warnings || quality.warnings).filter(w => !critical.includes(w) && !isInternalRepairWarning(w));
+  const info = safeArray(classified.info).filter(w => !isInternalRepairWarning(w));
+  if (!critical.length && !warnings.length && !info.length) return null;
   const details = quality.warningDetails || [];
   const detailMap = {};
   for (const d of details) detailMap[d.code] = d;
@@ -11768,9 +12019,9 @@ const ApprovalPanel = ({
     onClick: onRecheck
   }, React.createElement(RotateIcon, {
     size: 11
-  }), " ", busy === 'recheck' ? 'Checking...' : 'Re-check'), !critical.length && React.createElement("button", {
+  }), " ", busy === 'recheck' ? 'Checking...' : 'Re-check'), React.createElement("button", {
     className: "btn btn-accent",
-    disabled: !!busy,
+    disabled: !!busy || critical.length > 0,
     onClick: onApproveAnyway
   }, React.createElement(Icon.Check, {
     size: 11
@@ -11864,13 +12115,15 @@ const StoryboardReview = ({
       setBusy('');
     }
   };
-  const doFixScene = async (sceneId, fixType, targetVisualType = '') => {
+  const doFixScene = async (sceneId, fixType, targetVisualType = '', sourcePreference = 'auto', sourceVisualId = null) => {
     setBusy('fix-' + sceneId);
     try {
       const d = await window.NoesisAPI.videos.fixScene(id, {
         sceneId,
         fixType,
-        targetVisualType
+        targetVisualType,
+        sourcePreference,
+        sourceVisualId
       });
       setStoryboard(d.storyboard);
       setQualityResult(null);
@@ -11894,12 +12147,28 @@ const StoryboardReview = ({
       setBusy('');
     }
   };
+  const doRegenerateTopic = async topicId => {
+    setBusy('topic-' + topicId);
+    try {
+      const d = await window.NoesisAPI.videos.regenerateTopic(id, {
+        topicId
+      });
+      setStoryboard(d.storyboard);
+      setQualityResult(null);
+      setStatus('Topic section regenerated.');
+    } catch (e) {
+      setStatus('Topic regeneration failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy('');
+    }
+  };
   const doRepairWarnings = async () => {
     setBusy('ai-repair');
     try {
       const d = await window.NoesisAPI.videos.repairStoryboard(id, {
         scope: 'weak_scenes',
-        warningCodes: warnings
+        warningCodes: warnings,
+        sourcePreference: 'auto'
       });
       setStoryboard(d.storyboard);
       setQualityResult(d.quality || null);
@@ -11935,9 +12204,9 @@ const StoryboardReview = ({
       const details = e.data && e.data.details;
       if (details && details.classified) {
         setQualityResult(details);
-        const critical = details.classified.critical || [];
+        const critical = [...safeArray(details.classified.userActionRequired), ...safeArray(details.classified.hardBlockers)];
         const warnings = details.warnings || [];
-        setStatus(critical.length ? 'Critical blockers must be fixed before rendering MP4.' : 'Render needs approval for the remaining warnings: ' + warnings.slice(0, 3).join(' | '));
+        setStatus(critical.length ? 'Storyboard needs user input before rendering MP4.' : 'Render needs approval for the remaining warnings: ' + warnings.slice(0, 3).join(' | '));
       } else {
         setStatus('Render failed: ' + (e.message || 'error'));
       }
@@ -11961,16 +12230,27 @@ const StoryboardReview = ({
   const board = storyboard.storyboard || {};
   const scenes = storyboard.scenes || [];
   const storyboardQuality = storyboard.quality && storyboard.quality.storyboard || {};
-  const warnings = storyboardQuality.warnings || [];
+  const warnings = finalWarningsForDisplay(storyboardQuality);
   const activeQuality = qualityResult || storyboardQuality;
-  const activeCritical = activeQuality && activeQuality.classified && activeQuality.classified.critical ? activeQuality.classified.critical : warnings.filter(isCriticalStoryboardWarning);
+  const activeCritical = activeQuality && activeQuality.classified ? [...safeArray(activeQuality.classified.userActionRequired), ...safeArray(activeQuality.classified.hardBlockers)] : warnings.filter(isCriticalStoryboardWarning);
   const hasCriticalBlockers = activeCritical.length > 0;
   const hasApprovalOverride = !!(storyboard.quality && storyboard.quality.approvalOverride);
-  const canRenderStoryboard = !hasCriticalBlockers && (storyboard.status === 'approved' || storyboard.status === 'rendering' || storyboard.approved_at && hasApprovalOverride);
+  const canRenderStoryboard = storyboard.status === 'approved' || storyboard.status === 'rendering' || storyboard.approved_at && hasApprovalOverride;
   const visualSceneResults = (storyboardQuality.visual && storyboardQuality.visual.scenes || []).reduce((acc, item) => {
     if (item && item.sceneId) acc[item.sceneId] = item;
     return acc;
   }, {});
+  const topicMap = topicMapForRecord(storyboard, board);
+  const topicRows = safeArray(topicMap && topicMap.topics);
+  const topicGroups = topicRows.length ? topicRows.map(topic => ({
+    topic,
+    rows: scenes.filter(row => {
+      const scene = row.scene || row;
+      return String(scene.topicId || '').toLowerCase() === String(topic.id || '').toLowerCase() || String(scene.topicName || '').toLowerCase() === String(topic.name || '').toLowerCase();
+    })
+  })).filter(group => group.rows.length) : [];
+  const groupedSceneIds = new Set(topicGroups.flatMap(group => group.rows.map(row => (row.scene || row).id || row.scene_id)));
+  const ungroupedRows = scenes.filter(row => !groupedSceneIds.has((row.scene || row).id || row.scene_id));
   return React.createElement("div", null, React.createElement(window.Topbar, {
     title: "Storyboard Review",
     crumbs: ['Videos', board.topic || storyboard.topic || 'Storyboard'],
@@ -11990,21 +12270,21 @@ const StoryboardReview = ({
       className: "btn btn-accent",
       disabled: !!busy || !warnings.length,
       onClick: doRepairWarnings,
-      title: warnings.length ? 'Use AI to repair weak storyboard scenes' : 'No storyboard warnings to repair'
+      title: warnings.length ? 'Use AI to repair remaining storyboard warnings' : 'No user-actionable warnings'
     }, React.createElement(Icon.Sparkle, {
       size: 12
-    }), " ", busy === 'ai-repair' ? 'Repairing...' : 'AI repair warnings'), React.createElement("button", {
+    }), " ", busy === 'ai-repair' ? 'Repairing...' : 'Repair warnings'), React.createElement("button", {
       className: "btn btn-ghost",
       disabled: !!busy || hasCriticalBlockers,
       onClick: () => approve(false),
-      title: hasCriticalBlockers ? 'Fix critical blockers before approval' : 'Approve storyboard'
+      title: hasCriticalBlockers ? 'User input is needed before approval' : 'Approve storyboard'
     }, React.createElement(Icon.Check, {
       size: 12
     }), " ", busy === 'approve' ? 'Approving...' : 'Approve'), React.createElement("button", {
       className: "btn btn-accent",
       disabled: !!busy || !canRenderStoryboard,
       onClick: render,
-      title: hasCriticalBlockers ? 'Fix critical blockers before rendering' : 'Render approved storyboard'
+      title: hasCriticalBlockers ? 'User input is needed before rendering' : 'Render approved storyboard'
     }, React.createElement(Icon.Play, {
       size: 12
     }), " ", busy === 'render' ? 'Rendering...' : 'Render MP4'))
@@ -12022,7 +12302,7 @@ const StoryboardReview = ({
     style: sr.statusBox
   }, React.createElement("span", {
     className: "chip chip-accent"
-  }, storyboard.status), React.createElement("span", null, scenes.length, " scenes"), React.createElement("span", null, warnings.length, " warning", warnings.length === 1 ? '' : 's'))), status && React.createElement("div", {
+  }, summarizeStatus(storyboard, storyboardQuality)), React.createElement("span", null, scenes.length, " scenes"), React.createElement("span", null, warnings.length, " issue", warnings.length === 1 ? '' : 's'))), status && React.createElement("div", {
     style: sr.notice
   }, status), qualityResult && React.createElement(ApprovalPanel, {
     quality: qualityResult,
@@ -12036,7 +12316,60 @@ const StoryboardReview = ({
     board: board,
     scenes: scenes,
     warnings: warnings
-  }), React.createElement("div", {
+  }), topicGroups.length > 0 ? React.createElement("div", {
+    style: sr.topicSceneStack
+  }, topicGroups.map(group => React.createElement("section", {
+    key: group.topic.id || group.topic.name,
+    style: sr.topicSection
+  }, React.createElement("div", {
+    style: sr.topicSectionHead
+  }, React.createElement("div", null, React.createElement("div", {
+    style: sr.summaryLabel
+  }, "Topic section"), React.createElement("h2", {
+    style: sr.topicSectionTitle
+  }, group.topic.name)), React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: !!busy,
+    onClick: () => doRegenerateTopic(group.topic.id || group.topic.name)
+  }, React.createElement(RotateIcon, {
+    size: 12
+  }), " ", busy === 'topic-' + (group.topic.id || group.topic.name) ? 'Regenerating...' : 'Regenerate topic')), React.createElement("div", {
+    style: sr.grid
+  }, group.rows.map((row, index) => {
+    const scene = row.scene || row;
+    const absoluteIndex = scenes.findIndex(item => ((item.scene || item).id || item.scene_id) === (scene.id || row.scene_id));
+    return React.createElement(SceneCard, {
+      key: scene.id || row.scene_id,
+      index: absoluteIndex >= 0 ? absoluteIndex : index,
+      scene: scene,
+      visualResult: visualSceneResults[scene.id || row.scene_id],
+      busy: busy === scene.id || busy === 'fix-' + scene.id,
+      onPatch: patchScene,
+      onFix: doFixScene
+    });
+  })))), ungroupedRows.length > 0 && React.createElement("section", {
+    style: sr.topicSection
+  }, React.createElement("div", {
+    style: sr.topicSectionHead
+  }, React.createElement("div", null, React.createElement("div", {
+    style: sr.summaryLabel
+  }, "Shared scenes"), React.createElement("h2", {
+    style: sr.topicSectionTitle
+  }, "Overview and recap"))), React.createElement("div", {
+    style: sr.grid
+  }, ungroupedRows.map((row, index) => {
+    const scene = row.scene || row;
+    const absoluteIndex = scenes.findIndex(item => ((item.scene || item).id || item.scene_id) === (scene.id || row.scene_id));
+    return React.createElement(SceneCard, {
+      key: scene.id || row.scene_id,
+      index: absoluteIndex >= 0 ? absoluteIndex : index,
+      scene: scene,
+      visualResult: visualSceneResults[scene.id || row.scene_id],
+      busy: busy === scene.id || busy === 'fix-' + scene.id,
+      onPatch: patchScene,
+      onFix: doFixScene
+    });
+  })))) : React.createElement("div", {
     style: sr.grid
   }, scenes.map((row, index) => {
     const scene = row.scene || row;
@@ -12097,6 +12430,8 @@ const SceneCard = ({
   } : null);
   const hasVisualPreview = visualType && !['none', 'no_visual'].includes(String(visualType).toLowerCase()) && (nodes.length || edges.length || operations.length || code && code.content);
   const evidence = safeArray(scene.sourceEvidence);
+  const sourceVisualIds = safeArray(scene.sourceVisualIds || (scene.visualPlan && scene.visualPlan.sourceVisualUsed ? [scene.visualPlan.sourceVisualUsed] : []));
+  const repairHistory = safeArray(scene.repairHistory);
   const enrichment = scene.enrichment || {
     used: false
   };
@@ -12132,7 +12467,17 @@ const SceneCard = ({
     onClick: () => onFix(scene.id, 'fix_auto')
   }, React.createElement(Icon.Sparkle, {
     size: 10
-  }), " Fix visual"), React.createElement("button", {
+  }), " Fix visual"), onFix && React.createElement("button", {
+    className: "btn btn-ghost",
+    style: {
+      fontSize: 'calc(11px * var(--app-font-scale))'
+    },
+    disabled: busy,
+    onClick: () => onFix(scene.id, 'regenerate_visual'),
+    title: "Replace this visual with a better one inferred from the scene content"
+  }, React.createElement(Icon.Sparkle, {
+    size: 10
+  }), " Replace visual"), React.createElement("button", {
     className: "btn btn-bare",
     onClick: () => setOpen(v => !v)
   }, open ? 'Close' : 'Edit')), keyIdea && React.createElement("div", {
@@ -12182,7 +12527,7 @@ const SceneCard = ({
     style: sr.visualWarnings
   }, React.createElement(Icon.Target, {
     size: 13
-  }), React.createElement("span", null, split.visual.map(normalizeWarning).join(', ')))), hasVisualPreview && React.createElement(TopicVisual, {
+  }), React.createElement("span", null, split.visual.map(normalizeWarning).join(', ')))), hasVisualPreview && typeof TopicVisual === 'function' && React.createElement(TopicVisual, {
     template: visualType,
     data: visualData,
     code: code,
@@ -12229,6 +12574,14 @@ const SceneCard = ({
   }, truncate(item.quote || item.text || item.excerpt || '', 220)))) : React.createElement("div", {
     style: sr.metaValue
   }, "No source evidence attached."), React.createElement("div", {
+    style: sr.metaLabel
+  }, "Source visuals used"), React.createElement("div", {
+    style: sr.metaValue
+  }, sourceVisualIds.length ? sourceVisualIds.slice(0, 6).join(', ') : 'No source visual attached.'), React.createElement("div", {
+    style: sr.metaLabel
+  }, "Auto-repair history"), React.createElement("div", {
+    style: sr.metaValue
+  }, repairHistory.length ? repairHistory.map(item => cleanValue(item.action || item.type || item, '')).filter(Boolean).join(', ') : 'No automatic repair recorded.'), React.createElement("div", {
     style: sr.metaLabel
   }, "AI simplification"), enrichment.used ? React.createElement("div", {
     style: sr.evidenceItem
@@ -12500,6 +12853,33 @@ const sr = {
     fontSize: 'calc(12px * var(--app-font-scale))',
     lineHeight: 1.45
   },
+  topicCoverage: {
+    marginTop: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(10px * var(--app-density-scale))',
+    borderRadius: 8,
+    border: '1px solid var(--line)',
+    background: 'var(--bg-2)'
+  },
+  topicCoverageGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gap: 'calc(8px * var(--app-density-scale))'
+  },
+  topicCoverageItem: {
+    minWidth: 0,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-0)',
+    padding: '8px 9px'
+  },
+  topicCoverageName: {
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    color: 'var(--fg-0)',
+    fontWeight: 700,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word',
+    marginBottom: 'calc(3px * var(--app-density-scale))'
+  },
   warnText: {
     color: 'var(--warn)',
     fontSize: 'calc(12px * var(--app-font-scale))',
@@ -12521,6 +12901,30 @@ const sr = {
     color: 'var(--warn)',
     fontSize: 'calc(12px * var(--app-font-scale))',
     lineHeight: 1.45
+  },
+  topicSceneStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'calc(16px * var(--app-density-scale))'
+  },
+  topicSection: {
+    borderTop: '1px solid var(--line)',
+    paddingTop: 'calc(14px * var(--app-density-scale))'
+  },
+  topicSectionHead: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 'calc(12px * var(--app-density-scale))',
+    marginBottom: 'calc(10px * var(--app-density-scale))'
+  },
+  topicSectionTitle: {
+    margin: 0,
+    color: 'var(--fg-0)',
+    fontSize: 'calc(19px * var(--app-font-scale))',
+    fontWeight: 600,
+    overflowWrap: 'anywhere',
+    wordBreak: 'break-word'
   },
   grid: {
     display: 'grid',
@@ -13315,6 +13719,8 @@ const LessonRenderer = ({
   const sections = parsed.sections || [];
   const startHere = parsed.startHere || parsed.learningPath && parsed.learningPath.startHere || parsed.prerequisites && parsed.prerequisites.length && `Review ${parsed.prerequisites[0]} first`;
   const byType = type => sections.filter(s => s.type === type);
+  const usedSourceVisuals = new Set(sections.flatMap(section => section.sourceVisuals || []).map(v => String(v && (v.id || `${v.pageNumber || v.sourcePage || ''}:${v.slideNumber || ''}:${v.heading || ''}`))));
+  const remainingSourceVisuals = (parsed.sourceVisuals || []).filter(v => !usedSourceVisuals.has(String(v && (v.id || `${v.pageNumber || v.sourcePage || ''}:${v.slideNumber || ''}:${v.heading || ''}`))));
   return React.createElement("article", {
     style: lr.page
   }, React.createElement("header", {
@@ -13345,10 +13751,16 @@ const LessonRenderer = ({
   }, parsed.prerequisites.slice(0, 5).map(t => React.createElement("span", {
     key: t,
     style: lr.chip
-  }, t)))), sections.map((section, i) => React.createElement(LessonSection, {
-    key: `${section.type}-${i}`,
+  }, t)))), sections.map((section, i) => React.createElement(React.Fragment, {
+    key: `${section.type}-${i}`
+  }, React.createElement(LessonSection, {
     section: section
-  })), parsed.relatedTopics && parsed.relatedTopics.length > 0 && React.createElement("section", {
+  }), React.createElement(SourceVisuals, {
+    visuals: section.sourceVisuals,
+    inline: true
+  }))), React.createElement(SourceVisuals, {
+    visuals: remainingSourceVisuals
+  }), parsed.relatedTopics && parsed.relatedTopics.length > 0 && React.createElement("section", {
     style: lr.band
   }, React.createElement("div", {
     style: lr.sectionLabel
@@ -13358,6 +13770,59 @@ const LessonRenderer = ({
     key: t,
     style: lr.chip
   }, t)))));
+};
+const SourceVisuals = ({
+  visuals,
+  inline = false
+}) => {
+  const list = (visuals || []).filter(v => v && v.id && v.materialId && v.imagePath);
+  if (!list.length) return null;
+  return React.createElement("section", {
+    style: lr.band
+  }, React.createElement("div", {
+    style: lr.sectionLabel
+  }, inline ? 'Source visual' : 'From your material'), React.createElement("div", {
+    style: lr.sourceGrid
+  }, list.slice(0, inline ? 2 : 6).map(v => React.createElement(SourceImage, {
+    key: v.id,
+    candidate: v
+  }))));
+};
+const SourceImage = ({
+  candidate
+}) => {
+  const [url, setUrl] = React.useState('');
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    let active = true;
+    let objUrl = '';
+    (async () => {
+      try {
+        objUrl = await window.NoesisAPI.materials.sourceVisualImageBlobUrl(candidate.materialId, candidate.id);
+        if (active) setUrl(objUrl);else URL.revokeObjectURL(objUrl);
+      } catch (_) {
+        if (active) setFailed(true);
+      }
+    })();
+    return () => {
+      active = false;
+      if (objUrl) URL.revokeObjectURL(objUrl);
+    };
+  }, [candidate.materialId, candidate.id]);
+  if (failed) return null;
+  const where = candidate.pageNumber != null ? `p.${candidate.pageNumber}` : candidate.slideNumber != null ? `slide ${candidate.slideNumber}` : '';
+  return React.createElement("figure", {
+    style: lr.sourceFigure
+  }, url ? React.createElement("img", {
+    src: url,
+    alt: candidate.caption || 'Source visual',
+    style: lr.sourceImg,
+    onError: () => setFailed(true)
+  }) : React.createElement("div", {
+    style: lr.sourceLoading
+  }, "Loading source visual\u2026"), (candidate.caption || candidate.explanation || where) && React.createElement("figcaption", {
+    style: lr.caption
+  }, candidate.explanation || candidate.caption || 'Source visual', where ? ` (${where})` : ''));
 };
 function parseLesson(value) {
   if (!value) return null;
@@ -14420,6 +14885,32 @@ const lr = {
     margin: '8px 0 0',
     fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-3)'
+  },
+  sourceGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: 'calc(12px * var(--app-density-scale))',
+    marginTop: 'calc(10px * var(--app-density-scale))'
+  },
+  sourceFigure: {
+    margin: 0,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)',
+    padding: 'calc(10px * var(--app-density-scale))'
+  },
+  sourceImg: {
+    width: '100%',
+    height: 'auto',
+    display: 'block',
+    borderRadius: 6,
+    background: 'var(--bg-0)'
+  },
+  sourceLoading: {
+    padding: 'calc(22px * var(--app-density-scale))',
+    textAlign: 'center',
+    color: 'var(--fg-3)',
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   callouts: {
     display: 'flex',

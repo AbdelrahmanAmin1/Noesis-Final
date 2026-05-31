@@ -61,11 +61,39 @@ async function extractStructured(filePath, mimeOrExt, opts = {}) {
   };
 }
 
+function extractEmbeddedImages(pdfBuffer, maxImages = 12) {
+  const images = [];
+  const MAX_IMG_BYTES = 5 * 1024 * 1024;
+  try {
+    let i = 0;
+    const len = pdfBuffer.length;
+    while (i < len - 3 && images.length < maxImages) {
+      if (pdfBuffer[i] === 0xFF && pdfBuffer[i + 1] === 0xD8 && pdfBuffer[i + 2] === 0xFF) {
+        const end = Math.min(i + MAX_IMG_BYTES, len);
+        let j = i + 3;
+        let found = false;
+        while (j < end - 1) {
+          if (pdfBuffer[j] === 0xFF && pdfBuffer[j + 1] === 0xD9) { j += 2; found = true; break; }
+          j++;
+        }
+        if (found && j - i > 4000) {
+          images.push({ buffer: pdfBuffer.slice(i, j), mime: 'image/jpeg', name: `embedded-${images.length + 1}.jpg`, offset: i });
+        }
+        i = found ? j : i + 3;
+      } else {
+        i++;
+      }
+    }
+  } catch (_) {}
+  return images;
+}
+
 async function extractPdfStructure(filePath, opts = {}) {
   const pdfParse = require('pdf-parse');
   const pages = [];
   let pageNumber = 0;
-  const data = await pdfParse(fs.readFileSync(filePath), {
+  const pdfBuffer = fs.readFileSync(filePath);
+  const data = await pdfParse(pdfBuffer, {
     pagerender: async (pageData) => {
       pageNumber += 1;
       const content = await pageData.getTextContent();
@@ -83,15 +111,27 @@ async function extractPdfStructure(filePath, opts = {}) {
   if (!pages.length && data.text) {
     pages.push({ pageNumber: 1, slideNumber: null, heading: headingFromText(data.text), text: cleanText(data.text), sourceKind: opts.fromOcrPdf ? 'ocr' : 'text' });
   }
+  const embeddedImages = extractEmbeddedImages(pdfBuffer);
+  const visualSources = embeddedImages.map((img, idx) => ({
+    pageNumber: Math.max(1, Math.min(
+      pages.length || data.numpages || 1,
+      Math.floor((Number(img.offset || 0) / Math.max(1, pdfBuffer.length)) * (pages.length || data.numpages || 1)) + 1,
+    )),
+    slideNumber: null,
+    buffer: img.buffer,
+    mime: img.mime,
+    name: img.name,
+  }));
   return {
     type: 'pdf',
     text: cleanText(pages.map(p => `Page ${p.pageNumber}\n${p.text}`).filter(Boolean).join('\n\n') || data.text || ''),
     pageCount: data.numpages || pages.length || 1,
     pages,
-    visualSources: [],
+    visualSources,
     diagnostics: {
       pdfPages: data.numpages || pages.length || 1,
       fromOcrPdf: !!opts.fromOcrPdf,
+      embeddedImages: visualSources.length,
     },
   };
 }

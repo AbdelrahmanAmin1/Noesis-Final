@@ -103,10 +103,10 @@ router.patch('/storyboard/:id/scene/:sceneId', requireAuth, (req, res, next) => 
 
 router.post('/storyboard/:id/regenerate-scene', requireAuth, async (req, res, next) => {
   try {
-    const { scene_id, instructions, fixType, targetVisualType } = req.body || {};
+    const { scene_id, instructions, fixType, targetVisualType, sourcePreference, sourceVisualId } = req.body || {};
     if (!scene_id) throw new HttpError(400, 'missing_scene_id');
     if (fixType) {
-      const out = storyboardSvc.fixScene(req.user.id, parseInt(req.params.id, 10), scene_id, fixType, { targetVisualType });
+      const out = storyboardSvc.fixScene(req.user.id, parseInt(req.params.id, 10), scene_id, fixType, { targetVisualType, sourcePreference, sourceVisualId });
       if (!out) throw new HttpError(404, 'storyboard_not_found');
       return res.json({ storyboard: out });
     }
@@ -119,12 +119,23 @@ router.post('/storyboard/:id/regenerate-scene', requireAuth, async (req, res, ne
   } catch (e) { next(e); }
 });
 
+router.post('/storyboard/:id/regenerate-topic', requireAuth, (req, res, next) => {
+  try {
+    const { topicId, topic_id } = req.body || {};
+    const targetTopicId = topicId || topic_id;
+    if (!targetTopicId) throw new HttpError(400, 'missing_topic_id');
+    const out = storyboardSvc.regenerateTopicSection(req.user.id, parseInt(req.params.id, 10), targetTopicId);
+    if (!out) throw new HttpError(404, 'storyboard_not_found');
+    res.json({ storyboard: out });
+  } catch (e) { next(e); }
+});
+
 router.post('/storyboard/:id/fix-scene', requireAuth, (req, res, next) => {
   try {
-    const { sceneId, fixType, targetVisualType } = req.body || {};
+    const { sceneId, fixType, targetVisualType, sourcePreference, sourceVisualId } = req.body || {};
     if (!sceneId) throw new HttpError(400, 'missing_scene_id');
     if (!fixType) throw new HttpError(400, 'missing_fix_type');
-    const out = storyboardSvc.fixScene(req.user.id, parseInt(req.params.id, 10), sceneId, fixType, { targetVisualType });
+    const out = storyboardSvc.fixScene(req.user.id, parseInt(req.params.id, 10), sceneId, fixType, { targetVisualType, sourcePreference, sourceVisualId });
     if (!out) throw new HttpError(404, 'storyboard_not_found');
     res.json({ storyboard: out });
   } catch (e) { next(e); }
@@ -140,8 +151,27 @@ router.post('/storyboard/:id/fix', requireAuth, (req, res, next) => {
 
 router.post('/storyboard/:id/repair', requireAuth, async (req, res, next) => {
   try {
-    const out = await storyboardRepairSvc.repairStoryboard(req.user.id, parseInt(req.params.id, 10), req.body || {});
+    const storyboardId = parseInt(req.params.id, 10);
+    let out = await storyboardRepairSvc.repairStoryboard(req.user.id, storyboardId, req.body || {});
     if (!out) throw new HttpError(404, 'storyboard_not_found');
+    const repairedIds = out.repair && Array.isArray(out.repair.repairedSceneIds) ? out.repair.repairedSceneIds : [];
+    const warnings = out.quality && Array.isArray(out.quality.warnings) ? out.quality.warnings : [];
+    const shouldRunDeterministic = !repairedIds.length || warnings.some(w => /missing_checkpoint_scene|missing_recap_scene|missing_concrete_example_scene|missing_required_visual|page_number_center_visual|missing_source_evidence/.test(String(w)));
+    if (shouldRunDeterministic) {
+      const ready = storyboardSvc.ensureStoryboardReady(req.user.id, storyboardId, { passes: 3 });
+      if (ready) {
+        out = {
+          storyboard: ready.board,
+          quality: ready.quality,
+          repair: {
+            ...(out.repair || {}),
+            deterministicFallback: true,
+            repaired: ready.repaired,
+            unresolved: ready.unresolved,
+          },
+        };
+      }
+    }
     res.json(out);
   } catch (e) { next(e); }
 });

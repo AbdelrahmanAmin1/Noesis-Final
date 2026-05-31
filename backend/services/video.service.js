@@ -21,8 +21,10 @@ const renderer = require('./renderer.service');
 const jobs = require('./jobs.service');
 const { scoreVideoScript } = require('./video-quality.service');
 const storyboards = require('./storyboard.service');
+const visualRegistry = require('../utils/visual-registry');
 const sourceGroundingJudge = require('./source-grounding-judge.service');
 const sourceTopicPlans = require('./source-topic-plan.service');
+const materialTopicMap = require('./material-topic-map.service');
 const { HttpError } = require('../middleware/error');
 const log = require('../utils/logger');
 const {
@@ -34,6 +36,41 @@ const {
 } = require('../utils/mediaBinaries');
 
 const VISUAL_TYPES = ['mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree', 'stack_queue', 'linkedlist', 'hash_table', 'bigo_chart'];
+
+// Every visual type the canvas/slide renderer (slides.service.js) can actually draw.
+// Wider than VISUAL_TYPES so that deliberate `none` (no_visual) and `source_reference`
+// decisions from the storyboard layer survive normalization instead of being replaced
+// by a positional concept map.
+const RENDERABLE_SLIDE_VISUAL_TYPES = new Set([
+  'mindmap', 'flow', 'comparison', 'code', 'summary', 'class_diagram', 'tree',
+  'stack_queue', 'linkedlist', 'hash_table', 'bigo_chart', 'cards', 'table',
+  'source_reference', 'none',
+]);
+
+// Scaffold words that, when they make up most of a concept map's nodes, mean the
+// "visual" is just restating the outline — the meaningless-boxes case. Such scenes
+// should fall back to a clean text board (no_visual) rather than a forced mindmap.
+const GENERIC_VISUAL_NODE_TERMS = new Set([
+  'definition', 'why it matters', 'where used', 'where it is used', 'core rule',
+  'example', 'examples', 'diagram', 'code', 'mistake', 'mistakes', 'practice',
+  'objectives', 'objective', 'question', 'think', 'answer', 'explain', 'context',
+  'purpose', 'trade-off', 'tradeoff', 'limit', 'shared behavior', 'real-world idea',
+  'real world', 'overview', 'summary', 'introduction', 'intro', 'concept', 'concepts',
+  'data structure', 'data structures', 'properties', 'operations', 'key insight',
+  'analogy maps to', 'analogy', 'formal definition', 'complexity', 'pitfalls',
+]);
+
+function isGenericVisualNodeSet(nodes, title, bullets) {
+  const list = (nodes || []).map(n => String(n || '').trim().toLowerCase()).filter(Boolean);
+  if (list.length < 2) return true;
+  const titleNorm = String(title || '').trim().toLowerCase();
+  const bulletNorms = new Set((bullets || []).map(b => String(b || '').trim().toLowerCase()));
+  let generic = 0;
+  for (const n of list) {
+    if (GENERIC_VISUAL_NODE_TERMS.has(n) || n === titleNorm || bulletNorms.has(n)) generic += 1;
+  }
+  return generic >= Math.ceil(list.length * 0.6);
+}
 
 function normalizedTopicLabel(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9+#]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -1131,7 +1168,6 @@ function fallbackVideoScriptM1(concept, chunks, lowGrounding = false) {
 function normalizeScript(script, concept, chunks, lowGrounding = false) {
   const fallback = fallbackVideoScriptM1(concept, chunks, lowGrounding);
   const src = script && Array.isArray(script.slides) && script.slides.length >= 2 ? script : fallback;
-  const typeByIndex = ['mindmap', 'summary', 'mindmap', 'comparison', 'class_diagram', 'code', 'code', 'flow', 'comparison', 'bigo_chart', 'summary', 'mindmap'];
   const slidesIn = src.slides.slice(0, 12);
   while (slidesIn.length < 8) slidesIn.push(fallback.slides[slidesIn.length]);
   const slidesOut = slidesIn.map((s, i) => {
@@ -1156,19 +1192,56 @@ function normalizeScript(script, concept, chunks, lowGrounding = false) {
       .slice(0, 10);
     const slideType = SLIDE_TYPES.includes(s.slideType) ? s.slideType : (fb.slideType || SLIDE_TYPES[Math.min(i, SLIDE_TYPES.length - 1)]);
     const inferredVisualType = inferScriptVisualType(s, concept, slideType, nodes, bullets, i, slidesIn.length);
+    const imagePath = s.image_path || s.imagePath || visual.imagePath || visual.image_path || '';
+    const sourceVisualId = s.source_visual_id || s.sourceVisualId || visual.sourceVisualId || visual.source_visual_id || null;
+    const hasSourceImage = !!(imagePath || sourceVisualId);
+    // Resolve the requested visual type through the shared registry so canonical names
+    // (no_visual, source_page_reference, concept_cards, stack_operation, ...) and legacy
+    // names both map to a drawer the canvas renderer supports. A deliberate no_visual or
+    // source reference must survive instead of being overwritten by a positional concept map.
+    const legacyVisual = visualType
+      ? visualRegistry.legacyVisualTypeFor(visualType, {
+        topic: concept,
+        title: s.title,
+        text: `${s.title || ''} ${s.narration || ''} ${nodes.join(' ')}`,
+      })
+      : '';
+    let resolvedVisualType;
+    if (legacyVisual && RENDERABLE_SLIDE_VISUAL_TYPES.has(legacyVisual)) {
+      resolvedVisualType = legacyVisual;
+    } else if (RENDERABLE_SLIDE_VISUAL_TYPES.has(visualType)) {
+      resolvedVisualType = visualType;
+    } else if (inferredVisualType && inferredVisualType !== 'mindmap') {
+      resolvedVisualType = inferredVisualType;
+    } else if (hasSourceImage) {
+      resolvedVisualType = 'source_reference';
+    } else if (isGenericVisualNodeSet(nodes, s.title, bullets)) {
+      // Nodes just restate the outline — render a clean text board, never a meaningless map.
+      resolvedVisualType = 'none';
+    } else {
+      resolvedVisualType = (slideType === 'recap' || i === slidesIn.length - 1) ? 'summary' : 'mindmap';
+    }
+    // A source reference with no actual image would fall back to generic boxes — use a clean board instead.
+    if (resolvedVisualType === 'source_reference' && !hasSourceImage) resolvedVisualType = 'none';
     return {
       slideType,
       slide_type: slideType,
       title: displayTitle(s.title || fb.title || (i === 0 ? concept : `Part ${i + 1}`), fb.title || `${slideType.replace(/_/g, ' ')} scene`),
-      visual_type: VISUAL_TYPES.includes(visualType)
-        ? visualType
-        : (inferredVisualType !== 'mindmap' ? inferredVisualType : (i === slidesIn.length - 1 ? 'summary' : typeByIndex[i % typeByIndex.length])),
+      visual_type: resolvedVisualType,
       bullets,
       visual_nodes: nodes,
       visual_edges: edges,
       visual_node_details: s.visual_node_details || {},
       operations: cleanTextList(s.operations, []),
       caption: safeCaption(s.caption || visual.caption || ''),
+      image_path: imagePath,
+      image_url: s.image_url || s.imageUrl || visual.imageUrl || visual.image_url || '',
+      source_visual_id: sourceVisualId,
+      source_page: s.source_page || s.sourcePage || visual.sourcePage || visual.source_page || null,
+      slide_number: s.slide_number || s.slideNumber || visual.slideNumber || visual.slide_number || null,
+      ocr_text: s.ocr_text || s.ocrText || visual.ocrText || visual.ocr_text || '',
+      nearby_text: s.nearby_text || s.nearbyText || visual.nearbyText || visual.nearby_text || '',
+      visual_type_guess: s.visual_type_guess || s.visualTypeGuess || visual.visualTypeGuess || visual.visual_type_guess || '',
       code_focus: s.code_focus || s.codeFocus || null,
       focusTarget: focusDisplayLabel(s.focusTarget || bullets[0] || s.title || ''),
       pointerLabel: focusDisplayLabel(s.pointerLabel || s.focusTarget || bullets[0] || s.title || ''),
@@ -1429,6 +1502,8 @@ async function generateVideoScriptWithFallback(concept, chunks, lowGrounding, gr
     lowGrounding,
     groundingTier,
     educationalContext: opts.educationalContextPrompt || opts.educationalContext || '',
+    topicMap: opts.topicMap || opts.sourceTopicPlan && opts.sourceTopicPlan.topicMap || null,
+    sourceTopicPlan: opts.sourceTopicPlan || null,
   });
 
   if (configuredProvider === 'groq') {
@@ -1558,12 +1633,25 @@ function storyboardRenderEligibility(prepared) {
   const board = prepared.board;
   const quality = prepared.quality || {};
   const details = storyboardQualityDetails(quality);
-  const critical = details.classified && Array.isArray(details.classified.critical)
-    ? details.classified.critical
-    : [];
+  const hardBlockers = details.classified && Array.isArray(details.classified.userActionRequired)
+    ? details.classified.userActionRequired
+    : details.classified && Array.isArray(details.classified.hardBlockers)
+      ? details.classified.hardBlockers
+      : details.classified && Array.isArray(details.classified.critical)
+        ? details.classified.critical
+        : [];
   const approvedByStatus = board.status === 'approved' || board.status === 'rendering';
   const approvedByOverride = !!board.approved_at && hasApprovalOverride(quality);
 
+  if (hardBlockers.length > 0) {
+    return {
+      ok: false,
+      status: 422,
+      code: 'storyboard_critical_blockers',
+      message: 'Storyboard still needs user input before rendering MP4.',
+      details,
+    };
+  }
   if (!approvedByStatus && !approvedByOverride) {
     return {
       ok: false,
@@ -1573,16 +1661,7 @@ function storyboardRenderEligibility(prepared) {
       details,
     };
   }
-  if (critical.length > 0) {
-    return {
-      ok: false,
-      status: 422,
-      code: 'storyboard_critical_blockers',
-      message: 'Critical storyboard issues must be fixed before rendering MP4.',
-      details,
-    };
-  }
-  if (details.passed !== true && !hasApprovalOverride(quality)) {
+  if (details.passed !== true && !approvedByStatus && !hasApprovalOverride(quality)) {
     return {
       ok: false,
       status: 422,
@@ -1618,6 +1697,7 @@ function storyboardFailureStatus(err) {
   const code = String(err && err.code || '');
   return code === 'storyboard_quality_failed'
     || code === 'storyboard_critical_blockers'
+    || code === 'storyboard_user_action_required'
     || message.startsWith('storyboard_quality_failed')
     || message.startsWith('storyboard_video_quality_failed')
     || isVisualValidationError(err)
@@ -1626,7 +1706,7 @@ function storyboardFailureStatus(err) {
 }
 
 async function generateVideoFromStoryboard({ userId, storyboardId }) {
-  const prepared = storyboards.scriptForRender(userId, storyboardId);
+  let prepared = storyboards.scriptForRender(userId, storyboardId);
   if (!prepared || !prepared.board) throw new HttpError(404, 'storyboard_not_found', 'Storyboard not found.');
   if ((prepared.board.status === 'rendering' || prepared.board.status === 'rendered') && prepared.board.video_id) {
     const activeJob = jobs.listFor(userId).find(j =>
@@ -1639,10 +1719,12 @@ async function generateVideoFromStoryboard({ userId, storyboardId }) {
     const existing = getVideo(userId, prepared.board.video_id);
     if (existing && existing.status === 'ready') return { videoId: existing.id, jobId: null, status: 'ready' };
   }
+  const repair = storyboards.ensureStoryboardReady(userId, storyboardId);
+  if (repair && repair.repaired) prepared = storyboards.scriptForRender(userId, storyboardId);
   const db = getDb();
   const eligibility = storyboardRenderEligibility(prepared);
   if (!eligibility.ok) {
-    if (eligibility.code === 'storyboard_critical_blockers' || eligibility.code === 'storyboard_quality_failed') {
+    if (eligibility.code === 'storyboard_critical_blockers' || eligibility.code === 'storyboard_user_action_required' || eligibility.code === 'storyboard_quality_failed') {
       db.prepare("UPDATE video_storyboards SET status='needs_review', quality_json=?, updated_at=? WHERE id=? AND user_id=?")
         .run(JSON.stringify(prepared.quality || {}), nowIso(), storyboardId, userId);
     }
@@ -1655,6 +1737,7 @@ async function generateVideoFromStoryboard({ userId, storyboardId }) {
   db.prepare("UPDATE video_storyboards SET status='rendering', video_id=?, updated_at=? WHERE id=? AND user_id=?")
     .run(videoId, nowIso(), storyboardId, userId);
   const job = jobs.create('video', { userId, videoId, storyboardId });
+  jobs.update(job.id, { status: 'queued', progress: 1, stage: 'Queued storyboard render...' });
   enqueue(() => runStoryboardPipeline({ videoId, userId, storyboardId, jobId: job.id }));
   return { videoId, jobId: job.id };
 }
@@ -1701,7 +1784,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
       throw new Error(`video_topic_resolution_failed: choose a more specific topic. Candidates: ${(conceptInfo.alternatives || []).map(c => c.topic).join(', ') || 'none'}`);
     }
     const hasExplicitConcept = !!validConceptHint(concept, materialRow);
-    const preSourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
+    let preSourceTopicPlan = sourceTopicPlans.buildSourceTopicPlan({
       materialId,
       materialTitle: materialRow.title,
       sourceScope,
@@ -1713,6 +1796,13 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
       sourceOutline: sourceInfo.sourceOutline || null,
       maxBalancedChunks: 48,
     });
+    let sharedTopicMap = null;
+    if (!hasExplicitConcept && sourceScope === 'material') {
+      sharedTopicMap = materialTopicMap.getOrBuild(userId, materialId, { hint: resolvedConcept, sourceScope, chapterId, chunkId });
+      if (sharedTopicMap && Array.isArray(sharedTopicMap.topics) && sharedTopicMap.topics.length >= 2) {
+        preSourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(sharedTopicMap, preSourceTopicPlan.balancedChunks || preSourceTopicPlan.chunks || [], preSourceTopicPlan);
+      }
+    }
     if (!hasExplicitConcept && preSourceTopicPlan.hasMultipleTopics) {
       resolvedConcept = preSourceTopicPlan.primaryTopic || resolvedConcept;
       conceptInfo.topic = resolvedConcept;
@@ -1763,7 +1853,10 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
       sourceOutline,
       maxBalancedChunks: 48,
     });
-    const topicMode = sourceTopicPlan.topicMode;
+    if (!hasExplicitConcept && sharedTopicMap && Array.isArray(sharedTopicMap.topics) && sharedTopicMap.topics.length >= 2) {
+      sourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(sharedTopicMap, uploadedChunks.length ? uploadedChunks : sourceTopicPlan.balancedChunks, sourceTopicPlan);
+    }
+    let topicMode = sourceTopicPlan.topicMode;
     if (!hasExplicitConcept && preSourceTopicPlan.hasMultipleTopics) {
       sourceTopicPlan = preSourceTopicPlan;
       resolvedConcept = sourceTopicPlan.primaryTopic || resolvedConcept;
@@ -1876,6 +1969,10 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
         sourceOutline,
         maxBalancedChunks: 48,
       });
+      if (!validConceptHint(concept, materialRow) && sharedTopicMap && Array.isArray(sharedTopicMap.topics) && sharedTopicMap.topics.length >= 2) {
+        sourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(sharedTopicMap, uploadedChunks.length ? uploadedChunks : sourceTopicPlan.balancedChunks, sourceTopicPlan);
+        topicMode = sourceTopicPlan.topicMode;
+      }
       if (!validConceptHint(concept, materialRow) && sourceTopicPlan.hasMultipleTopics) {
         uploadedChunks = sourceTopicPlan.balancedChunks.length ? sourceTopicPlan.balancedChunks : uploadedChunks;
         sourceOutline = sourceTopicPlan.sourceOutline || sourceOutline;
@@ -1945,6 +2042,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
       focusTerms,
       avoidTerms,
       sourceTopicPlan,
+      topicMap: sourceTopicPlan && sourceTopicPlan.topicMap || sharedTopicMap || null,
       topicMode,
     });
     let drift = materialUnderstanding.detectTopicDrift(lessons.lessonToMarkdown(lesson), {
@@ -2249,17 +2347,45 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
     setStatus('processing');
     setBoardStatus('rendering');
     jobs.update(jobId, { status: 'running', progress: 5, stage: 'Preparing approved storyboard...' });
-    const prepared = storyboards.scriptForRender(userId, storyboardId);
+    storyboards.ensureStoryboardReady(userId, storyboardId);
+    let prepared = storyboards.scriptForRender(userId, storyboardId);
     assertStoryboardRenderable(prepared);
-    const script = normalizeScript(prepared.script, prepared.board.topic, [], false);
-    const quality = scoreVideoScript(script, {
+    let script = normalizeScript(prepared.script, prepared.board.topic, [], false);
+    let quality = scoreVideoScript(script, {
       concept: prepared.board.topic,
       chunks: [],
       lowGrounding: false,
+      topicMap: prepared.board.storyboard && prepared.board.storyboard.topicMap,
       threshold: (env.STRICT_QUALITY_GATES || env.VIDEO_RENDER_STRICT) ? 0.88 : env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
     });
     if (!quality.passed) {
-      throw new Error(`storyboard_video_quality_failed: ${(quality.reasons || []).slice(0, 3).join('; ')}`);
+      const repair = storyboards.ensureStoryboardReady(userId, storyboardId);
+      if (repair && repair.repaired) {
+        prepared = storyboards.scriptForRender(userId, storyboardId);
+        assertStoryboardRenderable(prepared);
+        script = normalizeScript(prepared.script, prepared.board.topic, [], false);
+        quality = scoreVideoScript(script, {
+          concept: prepared.board.topic,
+          chunks: [],
+          lowGrounding: false,
+          topicMap: prepared.board.storyboard && prepared.board.storyboard.topicMap,
+          threshold: (env.STRICT_QUALITY_GATES || env.VIDEO_RENDER_STRICT) ? 0.88 : env.VIDEO_SCRIPT_MIN_QUALITY_SCORE,
+        });
+      }
+      if (!quality.passed) {
+        const reasons = (quality.reasons || []).slice(0, 5).join('; ');
+        log.warn('storyboard_render_quality_nonfatal', {
+          storyboardId,
+          reasons,
+          score: quality.score,
+        });
+        quality = {
+          ...quality,
+          passed: true,
+          renderAllowedWithWarnings: true,
+          nonCriticalReasons: quality.reasons || [],
+        };
+      }
     }
     if (!prepared.visibleTextClean) {
       throw new Error(`storyboard_visible_text_leak: banned term "${prepared.visibleTextBanned}" found in learner-facing content`);

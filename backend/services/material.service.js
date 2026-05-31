@@ -19,6 +19,7 @@ const { parseJsonSafe } = require('../utils/jsonSafe');
 const topicResolver = require('./topic-resolver.service');
 const gamification = require('./gamification.service');
 const sourceVisualCandidates = require('./source-visual-candidates.service');
+const materialTopicMap = require('./material-topic-map.service');
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -313,6 +314,11 @@ async function processMaterial(materialId, jobId) {
       sourcePages: (mergedExtraction.pages || []).length,
       sourceVisualCandidates: visualCandidates.length,
     });
+    try {
+      materialTopicMap.refresh(m.user_id, materialId, { hint: m.title, limit: 120 });
+    } catch (e) {
+      log.warn('material_topic_map_failed', e.message || e);
+    }
     setStatus('processing', 60);
     if (jobId) jobs.update(jobId, { progress: 60 });
 

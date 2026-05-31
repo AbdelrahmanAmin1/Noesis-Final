@@ -12,13 +12,63 @@ const TopicVisual = ({ template = 'learning_map', data = {}, code = null, compac
   if (resolved === 'big_o_growth') return <BigOVisual compact={compact} />;
   if (resolved === 'code_walkthrough' || code) return <CodeVisual code={code} compact={compact} />;
   if (resolved === 'no_visual') return <NoVisualPreview compact={compact} />;
-  if (['concept_cards', 'classification_table', 'comparison_table', 'source_page_reference', 'source_slide_reference'].includes(resolved)) {
+  if (['source_page_reference', 'source_slide_reference'].includes(resolved)) {
+    return <SourceReferencePreview data={data} compact={compact} />;
+  }
+  if (['concept_cards', 'classification_table', 'comparison_table'].includes(resolved)) {
     return <MiniMindmap nodes={nodes.length ? nodes : ['Source concept', 'Supporting detail', 'Review question']} compact={compact} />;
   }
   if (['concept_map', 'learning_objectives', 'summary_path', 'process_flow', 'comparison_contrast'].includes(resolved)) {
     return <MiniMindmap nodes={nodes.length ? nodes : ['Start', 'Prerequisites', 'Core idea', 'Example', 'Practice']} compact={compact} />;
   }
   return <UnsupportedTopicVisual visualType={template || data.type || 'missing'} compact={compact} />;
+};
+
+const SourceReferencePreview = ({ data = {}, compact = false }) => {
+  const candidateId = data.sourceVisualId || data.source_visual_id;
+  const materialId = data.materialId || data.material_id;
+  const directUrl = data.imageUrl || data.image_url || '';
+  const hasImage = !!(directUrl || data.imagePath || data.image_path);
+  const [url, setUrl] = React.useState(directUrl);
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    if (directUrl || !hasImage || !candidateId || !materialId || !window.NoesisAPI) return undefined;
+    let active = true;
+    let objUrl = '';
+    (async () => {
+      try {
+        objUrl = await window.NoesisAPI.materials.sourceVisualImageBlobUrl(materialId, candidateId);
+        if (active) setUrl(objUrl); else URL.revokeObjectURL(objUrl);
+      } catch (_) {
+        if (active) setFailed(true);
+      }
+    })();
+    return () => {
+      active = false;
+      if (objUrl) URL.revokeObjectURL(objUrl);
+    };
+  }, [candidateId, materialId, directUrl, hasImage]);
+  if (!hasImage || failed) return <NoVisualPreview compact={compact} />;
+  const caption = data.caption || data.sourceImageCaption || 'Source visual';
+  return (
+    <div style={{
+      width: '100%',
+      height: compact ? 180 : 230,
+      borderRadius: 12,
+      border: '1px solid rgba(148, 163, 184, 0.45)',
+      background: '#f8fafc',
+      overflow: 'hidden',
+      display: 'grid',
+      gridTemplateRows: '1fr auto',
+    }}>
+      {url
+        ? <img src={url} alt={caption} onError={() => setFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'contain', minHeight: 0 }} />
+        : <div style={{ display: 'grid', placeItems: 'center', color: '#475569', fontSize: compact ? 12 : 14 }}>Loading source visual...</div>}
+      <div style={{ padding: '6px 10px', color: '#334155', fontSize: compact ? 11 : 12, fontWeight: 700, borderTop: '1px solid rgba(148, 163, 184, 0.35)' }}>
+        {caption}
+      </div>
+    </div>
+  );
 };
 
 function visualKey(value) {

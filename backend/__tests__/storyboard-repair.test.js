@@ -65,7 +65,7 @@ function insertMaterial(db, userId, title = 'Trees') {
   const visualId = db.prepare(`INSERT INTO source_visual_candidates
     (material_id, page_number, slide_number, image_path, thumbnail_path, heading, nearby_text, ocr_text, visual_type_guess, importance_score, metadata_json)
     VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(materialId, 1, null, null, null, 'Tree hierarchy diagram', chunks[0].text, '', 'tree_diagram', 0.92, '{}').lastInsertRowid;
+    .run(materialId, 1, null, `uploads/source-visuals/${materialId}/tree.png`, null, 'Tree hierarchy diagram', chunks[0].text, '', 'tree_diagram', 0.92, '{}').lastInsertRowid;
   return { materialId, visualId };
 }
 
@@ -251,11 +251,12 @@ describe.sequential('storyboard AI repair', () => {
 
     const out = await repair.repairStoryboard(user.lastInsertRowid, storyboardId, { scope: 'weak_scenes' });
 
-    expect(out.repair.repairedSceneIds).toEqual([]);
+    expect(out.repair.repairedSceneIds).toContain('scene-1');
     expect(out.repair.decisions.some(d => d.reason === 'source_grounding_judge_rejected')).toBe(true);
+    expect(out.repair.decisions.some(d => d.action === 'deterministic_fallback')).toBe(true);
     const row = db.prepare('SELECT storyboard_json, quality_json FROM video_storyboards WHERE id=?').get(storyboardId);
     expect(row.storyboard_json).not.toMatch(/head pointer|node\.next/i);
-    expect(row.quality_json).not.toMatch(/"repair"/);
+    expect(row.storyboard_json).toMatch(/tree_visual|root node|child node/i);
   });
 
   it('accepts a source visual candidate repair and stores repair trace', async () => {

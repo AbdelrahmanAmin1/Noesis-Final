@@ -247,7 +247,7 @@ function sourceVisualPayload(candidate) {
   const heading = candidate.heading || candidate.visualTypeGuess || 'source visual';
   return {
     type: slideNumber != null ? 'source_slide_reference' : 'source_page_reference',
-    nodes: [label, heading].filter(Boolean),
+    nodes: [heading].filter(Boolean),
     edges: [],
     details: {},
     operations: [],
@@ -257,6 +257,9 @@ function sourceVisualPayload(candidate) {
     sourceVisualId: candidate.id || null,
     sourcePage,
     slideNumber,
+    ocrText: candidate.ocrText || null,
+    nearbyText: candidate.nearbyText || null,
+    visualTypeGuess: candidate.visualTypeGuess || null,
   };
 }
 
@@ -418,6 +421,9 @@ function sanitizePatch(scene, rawPatch, context) {
   if (sourceRef) {
     const candidate = sourceVisualId != null ? maps.byId.get(String(sourceVisualId)) : null;
     if (!candidate) return { ok: false, reason: 'source_visual_candidate_not_found' };
+    if (!(candidate.imagePath || candidate.thumbnailPath || candidate.imageUrl)) {
+      return { ok: false, reason: 'source_visual_candidate_has_no_image' };
+    }
     visualData = sourceVisualPayload(candidate);
   } else if (hasImagePath) {
     const candidate = maps.paths.get(String(mergedVisualData.imagePath || mergedVisualData.image_path || mergedVisualData.imageUrl || mergedVisualData.image_url));
@@ -465,16 +471,29 @@ function mergedScene(scene, patch) {
   };
 }
 
+function warningSeverity(code) {
+  const { CRITICAL_PATTERNS, INFO_PATTERNS } = storyboardSvc;
+  if (CRITICAL_PATTERNS && CRITICAL_PATTERNS.some(p => p.test(code))) return 2;
+  if (INFO_PATTERNS && INFO_PATTERNS.some(p => p.test(code))) return 0;
+  return 1;
+}
+
 function sceneImproved(beforeQuality, afterQuality, sceneId) {
   const beforeScene = sceneVisualResult(beforeQuality, sceneId);
   const afterScene = sceneVisualResult(afterQuality, sceneId);
-  const beforeWarnings = asArray(beforeQuality.warnings).filter(w => String(w).startsWith(`${sceneId}:`)).length +
-    asArray(beforeScene && beforeScene.warnings).length;
-  const afterWarnings = asArray(afterQuality.warnings).filter(w => String(w).startsWith(`${sceneId}:`)).length +
-    asArray(afterScene && afterScene.warnings).length;
-  if (afterWarnings < beforeWarnings) return true;
+  const beforeAll = asArray(beforeQuality.warnings).filter(w => String(w).startsWith(`${sceneId}:`))
+    .concat(asArray(beforeScene && beforeScene.warnings));
+  const afterAll = asArray(afterQuality.warnings).filter(w => String(w).startsWith(`${sceneId}:`))
+    .concat(asArray(afterScene && afterScene.warnings));
+  if (afterAll.length < beforeAll.length) return true;
   if (beforeScene && beforeScene.passed === false && afterScene && afterScene.passed === true) return true;
   if (asArray(afterQuality.warnings).length < asArray(beforeQuality.warnings).length) return true;
+  const beforeCritical = beforeAll.filter(w => warningSeverity(w) === 2).length;
+  const afterCritical = afterAll.filter(w => warningSeverity(w) === 2).length;
+  if (beforeCritical > 0 && afterCritical < beforeCritical) return true;
+  const beforeScore = beforeAll.reduce((s, w) => s + warningSeverity(w), 0);
+  const afterScore = afterAll.reduce((s, w) => s + warningSeverity(w), 0);
+  if (afterScore < beforeScore) return true;
   return false;
 }
 
@@ -717,9 +736,36 @@ async function repairStoryboard(userId, id, payload = {}) {
   repairTrace.afterWarnings = asArray(workingQuality.warnings);
 
   if (!accepted.length) {
+    let fallbackBoard = null;
+    let fallbackQuality = beforeQuality;
+    const sourcePreference = String(payload.sourcePreference || payload.source_preference || 'auto');
+    for (const sceneId of targetIds) {
+      try {
+        fallbackBoard = storyboardSvc.fixScene(userId, id, sceneId, 'fix_auto', {
+          sourcePreference,
+          sourceVisualId: payload.sourceVisualId || payload.source_visual_id,
+          targetVisualType: payload.targetVisualType || payload.visualType || '',
+        });
+        fallbackQuality = storyboardSvc.storyboardQuality(fallbackBoard.storyboard);
+        repairTrace.repairedSceneIds.push(sceneId);
+        repairTrace.decisions.push({ sceneId, action: 'deterministic_fallback', reason: 'AI repair produced no accepted patch.' });
+        repairTrace.sceneTraces[sceneId] = {
+          reason: 'Deterministic fallback replaced the weak visual.',
+          beforeWarnings: context.targetSceneMap.get(sceneId) || [],
+          afterWarnings: sceneWarningCodesFromQuality(fallbackQuality, sceneId),
+        };
+        if (asArray(fallbackQuality.warnings).length < beforeWarnings.length) break;
+      } catch (err) {
+        repairTrace.skippedSceneIds.push(sceneId);
+        repairTrace.decisions.push({ sceneId, action: 'fallback_skipped', reason: err && err.code || err && err.message || 'fallback_failed' });
+      }
+    }
+    repairTrace.repairedSceneIds = [...new Set(repairTrace.repairedSceneIds)];
+    repairTrace.skippedSceneIds = [...new Set(repairTrace.skippedSceneIds)];
+    repairTrace.afterWarnings = asArray(fallbackQuality.warnings);
     return {
-      storyboard: board,
-      quality: qualityForResponse(beforeQuality),
+      storyboard: fallbackBoard || board,
+      quality: qualityForResponse(fallbackQuality),
       repair: repairTrace,
     };
   }

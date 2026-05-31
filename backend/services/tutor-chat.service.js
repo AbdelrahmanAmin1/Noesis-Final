@@ -13,6 +13,7 @@ const sourceVisualCandidates = require('./source-visual-candidates.service');
 const sourceGroundingJudge = require('./source-grounding-judge.service');
 const sourceTopicPlans = require('./source-topic-plan.service');
 const materialUnderstanding = require('./material-understanding.service');
+const materialTopicMap = require('./material-topic-map.service');
 
 const CHAT_ACTIONS = {
   explain_deeper: {
@@ -638,7 +639,7 @@ async function sendMessage(userId, payload = {}) {
       domainInfo,
     })
     : null;
-  const sourceTopicPlan = conversation.material_id
+  let sourceTopicPlan = conversation.material_id
     ? sourceTopicPlans.buildSourceTopicPlan({
       materialId: conversation.material_id,
       materialTitle: material && material.title,
@@ -651,6 +652,12 @@ async function sendMessage(userId, payload = {}) {
       maxBalancedChunks: 24,
     })
     : null;
+  if (conversation.material_id && sourceTopicPlan && sourceTopicPlan.topicMode === 'material_wide') {
+    const topicMap = materialTopicMap.getOrBuild(userId, conversation.material_id, { hint: message, sourceScope: 'material' });
+    if (topicMap && Array.isArray(topicMap.topics) && topicMap.topics.length >= 2) {
+      sourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(topicMap, uploadedChunks, sourceTopicPlan);
+    }
+  }
   const grounding = groundingSummary(tier, sources);
 
   storeMessage(db, conversation.id, 'user', message);

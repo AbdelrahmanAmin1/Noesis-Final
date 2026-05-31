@@ -5,6 +5,9 @@ const LessonRenderer = ({ lesson, markdown }) => {
   const sections = parsed.sections || [];
   const startHere = parsed.startHere || parsed.learningPath && parsed.learningPath.startHere || parsed.prerequisites && parsed.prerequisites.length && `Review ${parsed.prerequisites[0]} first`;
   const byType = (type) => sections.filter(s => s.type === type);
+  const usedSourceVisuals = new Set(sections.flatMap(section => section.sourceVisuals || [])
+    .map(v => String(v && (v.id || `${v.pageNumber || v.sourcePage || ''}:${v.slideNumber || ''}:${v.heading || ''}`))));
+  const remainingSourceVisuals = (parsed.sourceVisuals || []).filter(v => !usedSourceVisuals.has(String(v && (v.id || `${v.pageNumber || v.sourcePage || ''}:${v.slideNumber || ''}:${v.heading || ''}`))));
 
   return (
     <article style={lr.page}>
@@ -38,8 +41,13 @@ const LessonRenderer = ({ lesson, markdown }) => {
       )}
 
       {sections.map((section, i) => (
-        <LessonSection key={`${section.type}-${i}`} section={section} />
+        <React.Fragment key={`${section.type}-${i}`}>
+          <LessonSection section={section} />
+          <SourceVisuals visuals={section.sourceVisuals} inline />
+        </React.Fragment>
       ))}
+
+      <SourceVisuals visuals={remainingSourceVisuals} />
 
       {parsed.relatedTopics && parsed.relatedTopics.length > 0 && (
         <section style={lr.band}>
@@ -50,6 +58,51 @@ const LessonRenderer = ({ lesson, markdown }) => {
         </section>
       )}
     </article>
+  );
+};
+
+// Real diagrams/figures detected in the uploaded material. Only candidates that actually
+// have an image are shown; text-only references are skipped here so notes never display an
+// empty or meaningless visual placeholder.
+const SourceVisuals = ({ visuals, inline = false }) => {
+  const list = (visuals || []).filter(v => v && v.id && v.materialId && v.imagePath);
+  if (!list.length) return null;
+  return (
+    <section style={lr.band}>
+      <div style={lr.sectionLabel}>{inline ? 'Source visual' : 'From your material'}</div>
+      <div style={lr.sourceGrid}>
+        {list.slice(0, inline ? 2 : 6).map(v => <SourceImage key={v.id} candidate={v} />)}
+      </div>
+    </section>
+  );
+};
+
+const SourceImage = ({ candidate }) => {
+  const [url, setUrl] = React.useState('');
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    let active = true;
+    let objUrl = '';
+    (async () => {
+      try {
+        objUrl = await window.NoesisAPI.materials.sourceVisualImageBlobUrl(candidate.materialId, candidate.id);
+        if (active) setUrl(objUrl); else URL.revokeObjectURL(objUrl);
+      } catch (_) { if (active) setFailed(true); }
+    })();
+    return () => { active = false; if (objUrl) URL.revokeObjectURL(objUrl); };
+  }, [candidate.materialId, candidate.id]);
+  if (failed) return null;
+  const where = candidate.pageNumber != null ? `p.${candidate.pageNumber}`
+    : (candidate.slideNumber != null ? `slide ${candidate.slideNumber}` : '');
+  return (
+    <figure style={lr.sourceFigure}>
+      {url
+        ? <img src={url} alt={candidate.caption || 'Source visual'} style={lr.sourceImg} onError={() => setFailed(true)} />
+        : <div style={lr.sourceLoading}>Loading source visual…</div>}
+      {(candidate.caption || candidate.explanation || where) && (
+        <figcaption style={lr.caption}>{candidate.explanation || candidate.caption || 'Source visual'}{where ? ` (${where})` : ''}</figcaption>
+      )}
+    </figure>
   );
 };
 
@@ -520,6 +573,10 @@ const lr = {
   flowRoot: { padding: '8px 12px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-0)', fontSize: 'calc(12px * var(--app-font-scale))', maxWidth: 180, overflowWrap: 'anywhere', wordBreak: 'break-word' },
   flowNode: { padding: '8px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-0)', fontSize: 'calc(12px * var(--app-font-scale))', maxWidth: 180, overflowWrap: 'anywhere', wordBreak: 'break-word' },
   caption: { margin: '8px 0 0', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  sourceGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'calc(12px * var(--app-density-scale))', marginTop: 'calc(10px * var(--app-density-scale))' },
+  sourceFigure: { margin: 0, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(10px * var(--app-density-scale))' },
+  sourceImg: { width: '100%', height: 'auto', display: 'block', borderRadius: 6, background: 'var(--bg-0)' },
+  sourceLoading: { padding: 'calc(22px * var(--app-density-scale))', textAlign: 'center', color: 'var(--fg-3)', fontSize: 'calc(12px * var(--app-font-scale))' },
   callouts: { display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
   callout: { borderLeft: '3px solid var(--accent)', background: 'var(--bg-1)', padding: '9px 11px', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.5 },
   sourceBadges: { display: 'inline-flex', gap: 'calc(5px * var(--app-density-scale))', flexWrap: 'wrap', marginLeft: 8, verticalAlign: 'middle' },

@@ -16,6 +16,7 @@ const domainDetection = require('../services/domain-detection.service');
 const materialUnderstanding = require('../services/material-understanding.service');
 const sourceGroundingJudge = require('../services/source-grounding-judge.service');
 const sourceTopicPlans = require('../services/source-topic-plan.service');
+const materialTopicMap = require('../services/material-topic-map.service');
 const srs = require('../services/srs.service');
 const log = require('../utils/logger');
 const gamification = require('../services/gamification.service');
@@ -449,10 +450,18 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       sourceOutline: sourceUnderstanding.sourceOutline || null,
       maxBalancedChunks: 48,
     });
-    const topicMode = sourceTopicPlan.topicMode;
-    if (topicMode === 'material_wide' && sourceTopicPlan.primaryTopic) {
-      topicQuery = sourceTopicPlan.primaryTopic;
-      sourceUnderstanding = { ...sourceUnderstanding, topic: topicQuery, normalizedTopic: topicQuery, sourceOutline: sourceTopicPlan.sourceOutline, sourceTopicPlan };
+    let topicMode = sourceTopicPlan.topicMode;
+    if (topicMode === 'material_wide') {
+      const topicMap = materialTopicMap.getOrBuild(req.user.id, material_id, { hint: topicQuery, sourceScope: scope.sourceScope, chapterId: scope.chapterId, chunkId: scope.chunkId });
+      if (topicMap && Array.isArray(topicMap.topics) && topicMap.topics.length >= 2) {
+        sourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(topicMap, sourceTopicPlan.balancedChunks || sourceTopicPlan.chunks || [], sourceTopicPlan);
+        topicQuery = sourceTopicPlan.primaryTopic;
+        sourceUnderstanding = { ...sourceUnderstanding, topic: topicQuery, normalizedTopic: topicQuery, sourceOutline: sourceTopicPlan.sourceOutline, sourceTopicPlan, topicMap };
+        topicMode = sourceTopicPlan.topicMode;
+      } else if (sourceTopicPlan.primaryTopic) {
+        topicQuery = sourceTopicPlan.primaryTopic;
+        sourceUnderstanding = { ...sourceUnderstanding, topic: topicQuery, normalizedTopic: topicQuery, sourceOutline: sourceTopicPlan.sourceOutline, sourceTopicPlan };
+      }
     }
     let preVerifier = sourceGroundingJudge.judge({
       feature: 'flashcards',
@@ -491,6 +500,15 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         sourceOutline: sourceUnderstanding.sourceOutline || null,
         maxBalancedChunks: 48,
       });
+      if (topicMode === 'material_wide') {
+        const topicMap = materialTopicMap.getOrBuild(req.user.id, material_id, { hint: topicQuery, sourceScope: scope.sourceScope, chapterId: scope.chapterId, chunkId: scope.chunkId });
+        if (topicMap && Array.isArray(topicMap.topics) && topicMap.topics.length >= 2) {
+          sourceTopicPlan = materialTopicMap.sourceTopicPlanForMap(topicMap, sourceTopicPlan.balancedChunks || sourceTopicPlan.chunks || [], sourceTopicPlan);
+          topicQuery = sourceTopicPlan.primaryTopic;
+          sourceUnderstanding = { ...sourceUnderstanding, topic: topicQuery, normalizedTopic: topicQuery, sourceOutline: sourceTopicPlan.sourceOutline, sourceTopicPlan, topicMap };
+          topicMode = sourceTopicPlan.topicMode;
+        }
+      }
       preVerifier = sourceGroundingJudge.judge({
         feature: 'flashcards',
         stage: 'pre_generation_retry',

@@ -16,6 +16,9 @@ Uploaded source excerpts:
 Source facts extracted from uploaded material:
 {{SOURCE_FACTS_BLOCK}}
 
+Material topic map:
+{{TOPIC_MAP_BLOCK}}
+
 {{EDUCATIONAL_CONTEXT_BLOCK}}
 
 Curated local knowledge:
@@ -60,6 +63,8 @@ Return ONLY valid JSON with this exact shape:
 
 Required content:
 - Include hook, definition, deep_explanation, common_mistakes, checkpoint, recap, and next_steps sections.
+- If the topic map contains multiple topics, preserve topic-map order and allocate sections across all major topics. Do not collapse the lesson to only the first or primary topic.
+- Do not open sections with "The uploaded material is about". Teach directly from the concept, operation, process, or example.
 - Include diagram/code sections only when they genuinely help the uploaded material.
 - Include code and line-by-line code explanation only when the topic is programming, OOP, Data Structures, or Algorithms.
 - If a visual helps, include a semantic diagram spec suited to the subject. OOP needs UML/class relationship diagrams. Data structures need operation or memory-style diagrams. Non-CS subjects may use concept maps, process flows, comparisons, timelines, or no diagram when cards/tables are clearer.

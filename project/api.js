@@ -90,6 +90,16 @@
         return req('POST', '/materials', fd);
       },
       remove: (id) => req('DELETE', '/materials/' + id),
+      topicMap: (id) => req('GET', '/materials/' + id + '/topic-map'),
+      refreshTopicMap: (id, b) => req('POST', '/materials/' + id + '/topic-map/refresh', b || {}),
+      sourceVisuals: (id) => req('GET', '/materials/' + id + '/source-visuals'),
+      sourceVisualImageUrl: (id, cid) => BASE + '/materials/' + id + '/source-visuals/' + cid + '/image',
+      sourceVisualImageBlobUrl: async (id, cid) => {
+        const res = await req('GET', '/materials/' + id + '/source-visuals/' + cid + '/image', null, { raw: true });
+        if (!res.ok) throw new Error('source_visual_' + res.status);
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
+      },
     },
 
     notes: {
@@ -158,6 +168,7 @@
       createStoryboard: (b) => req('POST', '/videos/storyboard', b),
       updateScene: (id, sceneId, b) => req('PATCH', '/videos/storyboard/' + id + '/scene/' + encodeURIComponent(sceneId), b),
       regenerateScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/regenerate-scene', b),
+      regenerateTopic: (id, b) => req('POST', '/videos/storyboard/' + id + '/regenerate-topic', b),
       fixScene: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix-scene', b),
       fixStoryboardIssue: (id, b) => req('POST', '/videos/storyboard/' + id + '/fix', b),
       repairStoryboard: (id, b) => req('POST', '/videos/storyboard/' + id + '/repair', b),

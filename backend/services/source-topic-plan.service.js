@@ -15,6 +15,7 @@ function key(value) {
 function isGeneric(value) {
   const text = clean(value);
   if (!text || /^\d+$/.test(text)) return true;
+  if (/^((info\s+)?material concepts?|computer science|cs|data structures?|object[-\s]?oriented programming|oop|algorithms?)$/i.test(text)) return true;
   return topicResolver.isGenericTopic(text) ||
     (materialUnderstanding._internals && materialUnderstanding._internals.isGenericGeneralLabel
       ? materialUnderstanding._internals.isGenericGeneralLabel(text)
@@ -33,6 +34,55 @@ function unique(items, max = 50) {
     if (out.length >= max) break;
   }
   return out;
+}
+
+const EXTRA_DS_TOPICS = [
+  {
+    normalizedTopic: 'Priority Queue',
+    aliases: ['priority queue', 'priority queues', 'priority-queue'],
+    keyConcepts: ['priority', 'heap', 'min priority', 'max priority', 'enqueue with priority', 'dequeue highest priority'],
+  },
+  {
+    normalizedTopic: 'Deque',
+    aliases: ['deque', 'double ended queue', 'double-ended queue', 'double ended queues', 'double-ended queues'],
+    keyConcepts: ['front', 'rear', 'insert front', 'insert rear', 'delete front', 'delete rear'],
+  },
+];
+
+function allDomainTopicDefs() {
+  return [
+    ...(materialUnderstanding.DOMAIN_TOPICS || []).flatMap(family => family.topics || []),
+    ...EXTRA_DS_TOPICS,
+  ];
+}
+
+function termRegex(term) {
+  const escaped = key(term).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  return escaped ? new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'gi') : null;
+}
+
+function countTermHits(source, term) {
+  const re = termRegex(term);
+  if (!re) return 0;
+  return (source.match(re) || []).length;
+}
+
+function compactEvidenceForTopic(topic, chunks = []) {
+  const terms = [topic.normalizedTopic, ...(topic.aliases || []), ...(topic.keyConcepts || [])].map(key).filter(Boolean);
+  for (const chunk of chunks || []) {
+    const text = [
+      chunk.heading,
+      chunk.chapter_title,
+      chunk.section_title,
+      chunk.slide_title,
+      chunk.text,
+    ].filter(Boolean).join(' ');
+    const lower = key(text);
+    if (terms.some(term => term.length >= 3 && lower.includes(term))) {
+      return clean(text, 260);
+    }
+  }
+  return '';
 }
 
 function scopedChunks(materialId, opts = {}) {
@@ -103,16 +153,88 @@ function bundleFromOutline(outline = {}, chunks = []) {
   return bundle;
 }
 
+function knownTopicBundleFromChunks(chunks = [], outline = {}, existingBundle = []) {
+  const existingKeys = new Set((existingBundle || []).map(item => key(item && item.topic)).filter(Boolean));
+  const source = [
+    outline.mainTopic,
+    outline.topic,
+    ...(outline.keyConcepts || []),
+    ...(outline.meaningfulSections || []).map(section => [section.title, ...(section.terms || [])].join(' ')),
+    ...chunks.map(chunk => [
+      chunk.heading,
+      chunk.chapter_title,
+      chunk.section_title,
+      chunk.slide_title,
+      chunk.text,
+      chunk.keywords_json,
+    ].filter(Boolean).join(' ')),
+  ].join('\n').toLowerCase();
+  const rows = [];
+  for (const topic of allDomainTopicDefs()) {
+    const normalizedTopic = clean(topic && topic.normalizedTopic);
+    const topicKey = key(normalizedTopic);
+    if (!topicKey || isGeneric(normalizedTopic) || existingKeys.has(topicKey)) continue;
+    const plural = /s$/i.test(normalizedTopic) ? '' : `${normalizedTopic}s`;
+    const exactTerms = unique([normalizedTopic, plural, ...((topic && topic.aliases) || [])], 10);
+    const aliases = unique([...exactTerms, ...((topic && topic.keyConcepts) || [])], 14);
+    const exactHits = countTermHits(source, normalizedTopic);
+    const aliasHits = exactTerms.reduce((sum, term) => sum + countTermHits(source, term), 0);
+    const operationHits = ((topic && topic.keyConcepts) || []).reduce((sum, term) => sum + countTermHits(source, term), 0);
+    const score = exactHits * 3 + aliasHits + Math.min(operationHits, 6);
+    const chunkIds = chunkIdsForBundleItem({ topic: normalizedTopic, terms: aliases }, chunks);
+    if (aliasHits < 1) continue;
+    if (score < 2 && chunkIds.length < 2) continue;
+    rows.push({
+      topic: normalizedTopic,
+      terms: aliases,
+      chunkIds,
+      evidence: compactEvidenceForTopic(topic, chunks),
+      sourcePages: [...new Set((chunks || [])
+        .filter(chunk => chunkIds.includes(chunk.id))
+        .map(chunk => chunk.source_page || chunk.slide_number)
+        .filter(Boolean))],
+      score,
+    });
+  }
+  const hasPriorityQueue = rows.some(item => key(item.topic) === 'priority queue');
+  return rows
+    .filter(item => !(hasPriorityQueue && key(item.topic) === 'heap'))
+    .sort((a, b) => b.score - a.score || a.topic.localeCompare(b.topic))
+    .slice(0, 8);
+}
+
+function mergeTopicBundles(primary = [], discovered = [], max = 8) {
+  const seen = new Set();
+  const out = [];
+  for (const item of [...(primary || []), ...(discovered || [])]) {
+    const topic = clean(item && item.topic);
+    const k = key(topic);
+    if (!k || seen.has(k) || isGeneric(topic)) continue;
+    seen.add(k);
+    out.push({
+      ...item,
+      topic,
+      terms: unique([topic, ...((item && item.terms) || [])], 14),
+      chunkIds: Array.isArray(item && item.chunkIds) ? item.chunkIds : [],
+      evidence: clean(item && item.evidence || '', 260),
+      sourcePages: Array.isArray(item && item.sourcePages) ? [...new Set(item.sourcePages)].filter(Boolean) : [],
+      sourceLabel: sourceLabelForItem(item),
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 function knownTopicsInSource(chunks = [], outline = {}, bundle = []) {
   const source = [
     outline.mainTopic,
     outline.topic,
     ...(outline.keyConcepts || []),
     ...bundle.flatMap(item => [item.topic, ...(item.terms || [])]),
-    ...chunks.map(chunk => [chunk.heading, chunk.chapter_title, chunk.section_title, chunk.slide_title].filter(Boolean).join(' ')),
+    ...chunks.map(chunk => [chunk.heading, chunk.chapter_title, chunk.section_title, chunk.slide_title, chunk.text].filter(Boolean).join(' ')),
   ].join('\n').toLowerCase();
   const allowed = [];
-  for (const family of materialUnderstanding.DOMAIN_TOPICS || []) {
+  for (const family of [{ topics: allDomainTopicDefs() }]) {
     for (const topic of family.topics || []) {
       const labels = [topic.normalizedTopic, ...(topic.aliases || [])];
       if (labels.some(label => {
@@ -125,8 +247,7 @@ function knownTopicsInSource(chunks = [], outline = {}, bundle = []) {
 }
 
 function allKnownTopics() {
-  return unique((materialUnderstanding.DOMAIN_TOPICS || [])
-    .flatMap(family => (family.topics || []).map(topic => topic.normalizedTopic)), 100);
+  return unique(allDomainTopicDefs().map(topic => topic.normalizedTopic), 100);
 }
 
 function pickPrimaryTopic({ topicMode, explicitTopic, requestedTopic, materialTitle, outline, bundle, chunks }) {
@@ -184,7 +305,11 @@ function buildSourceTopicPlan(opts = {}) {
     scopeTitle: opts.scopeTitle,
     domainInfo: opts.domainInfo,
   });
-  const topicBundle = bundleFromOutline(sourceOutline, chunks);
+  const outlineBundle = bundleFromOutline(sourceOutline, chunks);
+  const discoveredBundle = csDomain ? knownTopicBundleFromChunks(chunks, sourceOutline, outlineBundle) : [];
+  const topicBundle = topicMode === 'material_wide'
+    ? mergeTopicBundles(outlineBundle, discoveredBundle, 8)
+    : outlineBundle;
   const primaryTopic = pickPrimaryTopic({
     topicMode,
     explicitTopic,
@@ -236,11 +361,19 @@ function formatSourceTopicPlanForPrompt(plan = {}) {
     const evidence = item.evidence ? ` Evidence: ${item.evidence}` : '';
     return `${index + 1}. ${item.topic}${terms ? ` (${terms})` : ''}.${evidence}`;
   });
+  const topicNames = topics.length >= 2 ? topics.map(t => t.replace(/^\d+\.\s*/, '').split(' (')[0].trim()).filter(Boolean) : [];
+  const multiTopicInstruction = topics.length >= 2
+    ? [
+      '- IMPORTANT: This material covers multiple topics. Distribute your output evenly across ALL listed topics. Do not focus only on the first or primary topic — every topic in the list must receive comparable coverage.',
+      `- MANDATORY: Create at least 1-2 dedicated scenes/sections for EACH of these topics: ${topicNames.join(', ')}. If you cover only one topic, the output will be rejected and regenerated.`,
+    ].join('\n')
+    : '';
   return [
     'Source topic plan:',
     `- Mode: ${plan.topicMode || 'focused'}`,
     `- Primary source topic: ${plan.primaryTopic}`,
     topics.length ? '- Material-wide topics to cover:\n' + topics.join('\n') : '',
+    multiTopicInstruction,
     plan.allowedTopics && plan.allowedTopics.length ? `- Allowed source topics: ${plan.allowedTopics.slice(0, 12).join(', ')}` : '',
     plan.blockedTopics && plan.blockedTopics.length ? `- Do not drift into unsupported neighboring topics such as: ${plan.blockedTopics.slice(0, 10).join(', ')}` : '',
   ].filter(Boolean).join('\n');
@@ -253,6 +386,8 @@ module.exports = {
   _internals: {
     balancedChunksForBundle,
     bundleFromOutline,
+    knownTopicBundleFromChunks,
+    mergeTopicBundles,
     scopedChunks,
   },
 };
