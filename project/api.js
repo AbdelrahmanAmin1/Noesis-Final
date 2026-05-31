@@ -183,6 +183,12 @@
         const blob = await res.blob();
         return URL.createObjectURL(blob);
       },
+      captionsBlobUrl: async (id) => {
+        const res = await req('GET', '/videos/' + id + '/captions.vtt', null, { raw: true });
+        if (!res.ok) throw new Error('video_captions_' + res.status);
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
+      },
     },
 
     study: {

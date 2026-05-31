@@ -66,6 +66,7 @@ function migrate() {
   ensureColumn(db, 'videos', 'lesson_json', 'TEXT');
   ensureColumn(db, 'videos', 'storyboard_json', 'TEXT');
   ensureColumn(db, 'videos', 'quality_json', 'TEXT');
+  ensureColumn(db, 'videos', 'subtitle_path', 'TEXT');
   ensureColumnFromMigration(db, 'videos', 'resolved_concept', '002_add_video_resolved_concept.sql');
   ensureColumn(db, 'user_prefs', 'study_profile_json', 'TEXT');
   ensureColumn(db, 'tutor_sessions', 'status', "TEXT NOT NULL DEFAULT 'ready'");

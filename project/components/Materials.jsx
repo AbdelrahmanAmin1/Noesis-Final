@@ -195,7 +195,20 @@ const MaterialDetail = ({ onNav }) => {
   React.useEffect(() => {
     return () => {
       if (video && video.file && video.file.startsWith('blob:')) URL.revokeObjectURL(video.file);
+      if (video && video.captions && video.captions.startsWith('blob:')) URL.revokeObjectURL(video.captions);
     };
+  }, [video]);
+
+  React.useEffect(() => {
+    if (!video || !video.id || video.status !== 'ready' || video.captions) return;
+    let active = true;
+    window.NoesisAPI.videos.captionsBlobUrl(video.id)
+      .then(captions => {
+        if (active) setVideo(current => current && current.id === video.id ? { ...current, captions } : current);
+        else URL.revokeObjectURL(captions);
+      })
+      .catch(() => {});
+    return () => { active = false; };
   }, [video]);
 
   React.useEffect(() => {
@@ -409,7 +422,9 @@ const MaterialDetail = ({ onNav }) => {
             </button>
             {genStatus && <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', padding: '4px 4px 0' }}>{genStatus}</div>}
             {video && video.status === 'ready' && (
-              <video src={video.file} controls crossOrigin="use-credentials" style={{ width: '100%', marginTop: 'calc(8px * var(--app-density-scale))', borderRadius: 'var(--r-sm)' }}/>
+              <video src={video.file} controls crossOrigin="use-credentials" style={{ width: '100%', marginTop: 'calc(8px * var(--app-density-scale))', borderRadius: 'var(--r-sm)' }}>
+                {video.captions && <track kind="captions" src={video.captions} srcLang="en" label="English"/>}
+              </video>
             )}
           </div>
 

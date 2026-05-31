@@ -321,6 +321,13 @@ const StoryboardReview = ({ onNav }) => {
     load().catch(e => setStatus(e.message || 'Failed to load storyboard'));
   }, [load]);
 
+  React.useEffect(() => {
+    return () => {
+      if (video && video.file && video.file.startsWith('blob:')) URL.revokeObjectURL(video.file);
+      if (video && video.captions && video.captions.startsWith('blob:')) URL.revokeObjectURL(video.captions);
+    };
+  }, [video]);
+
   const patchScene = async (scene, patch) => {
     setBusy(scene.id);
     try {
@@ -451,8 +458,11 @@ const StoryboardReview = ({ onNav }) => {
           onProgress: j => setStatus(j.stage || `Rendering ${j.progress || 0}%...`),
         });
       }
-      const file = await window.NoesisAPI.videos.fileBlobUrl(r.video_id);
-      setVideo({ id: r.video_id, file });
+      const [file, captions] = await Promise.all([
+        window.NoesisAPI.videos.fileBlobUrl(r.video_id),
+        window.NoesisAPI.videos.captionsBlobUrl(r.video_id).catch(() => null),
+      ]);
+      setVideo({ id: r.video_id, file, captions });
       setStatus('Video ready.');
     } catch (e) {
       const details = e.data && e.data.details;
@@ -592,7 +602,9 @@ const StoryboardReview = ({ onNav }) => {
         {video && (
           <section style={sr.videoBox}>
             <div style={sr.cardTitle}>Rendered video</div>
-            <video src={video.file} controls crossOrigin="use-credentials" style={{ width: '100%', borderRadius: 8, marginTop: 'calc(10px * var(--app-density-scale))' }}/>
+            <video src={video.file} controls crossOrigin="use-credentials" style={{ width: '100%', borderRadius: 8, marginTop: 'calc(10px * var(--app-density-scale))' }}>
+              {video.captions && <track kind="captions" src={video.captions} srcLang="en" label="English"/>}
+            </video>
           </section>
         )}
       </main>

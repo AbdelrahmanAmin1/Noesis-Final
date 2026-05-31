@@ -1,7 +1,10 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { storyboardQuality, scriptFromStoryboard, classifyWarnings, _internals } = require('../services/storyboard.service');
 const visualRegistry = require('../utils/visual-registry');
+const env = require('../config/env');
 
 describe('storyboard.service', () => {
   function understanding(overrides = {}) {
@@ -192,6 +195,48 @@ describe('storyboard.service', () => {
     expect(stackScene.visualType).toBe('stack_operation');
     expect(stackScene.visualElements.type).toBe('stack_operation');
     expect(stackScene.sourceVisualIds).toContain(10);
+  });
+
+  it('attaches estimated PDF images to storyboard scenes with an honest extracted-material caption', () => {
+    const imagePath = path.join(env.UPLOAD_DIR, 'storyboard-estimated-source-test.jpg');
+    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+    fs.writeFileSync(imagePath, Buffer.from('storyboard source image fixture'));
+    try {
+      const scenes = _internals.attachSourceVisualsToScenes([{
+        id: 'scene-tree',
+        type: 'diagram',
+        title: 'Tree insertion',
+        sceneTitle: 'Tree insertion',
+        narration: 'Insert the value by tracing from the root to the correct child position.',
+        learningPoint: 'Tree insertion follows the child path.',
+        visualType: 'tree_visual',
+        visualTemplate: 'tree_visual',
+        visualData: { type: 'tree_visual', nodes: ['root', 'child', 'leaf'] },
+      }], [{
+        id: 77,
+        sourcePage: 61,
+        heading: 'Insertion operation',
+        nearbyText: 'tree insertion root child path',
+        imagePath,
+        importanceScore: 0.91,
+        associationMethod: 'pdf_byte_offset_estimate',
+        associationConfidence: 0.25,
+      }]);
+
+      expect(scenes[0].visualType).toBe('source_page_reference');
+      expect(scenes[0].sourceVisualId).toBe(77);
+      expect(scenes[0].visualData.imagePath).toBe(imagePath);
+      expect(scenes[0].visualData.sourcePage).toBeNull();
+      expect(scenes[0].visualData.caption).toBe('Extracted material visual: Insertion operation');
+      expect(scenes[0].visualPlan).toMatchObject({
+        compositionMode: 'source_only',
+        primaryVisual: 'source_image',
+        secondaryVisual: null,
+        layoutTemplate: 'source_main',
+      });
+    } finally {
+      try { fs.unlinkSync(imagePath); } catch (_) {}
+    }
   });
 
   it('rejects page-number source references without a real image', () => {

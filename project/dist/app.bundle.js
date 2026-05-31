@@ -189,6 +189,12 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
         const blob = await res.blob();
         return URL.createObjectURL(blob);
       },
+      captionsBlobUrl: async (id) => {
+        const res = await req('GET', '/videos/' + id + '/captions.vtt', null, { raw: true });
+        if (!res.ok) throw new Error('video_captions_' + res.status);
+        const blob = await res.blob();
+        return URL.createObjectURL(blob);
+      },
     },
 
     study: {
@@ -4698,6 +4704,20 @@ const MaterialDetail = ({
   React.useEffect(() => {
     return () => {
       if (video && video.file && video.file.startsWith('blob:')) URL.revokeObjectURL(video.file);
+      if (video && video.captions && video.captions.startsWith('blob:')) URL.revokeObjectURL(video.captions);
+    };
+  }, [video]);
+  React.useEffect(() => {
+    if (!video || !video.id || video.status !== 'ready' || video.captions) return;
+    let active = true;
+    window.NoesisAPI.videos.captionsBlobUrl(video.id).then(captions => {
+      if (active) setVideo(current => current && current.id === video.id ? {
+        ...current,
+        captions
+      } : current);else URL.revokeObjectURL(captions);
+    }).catch(() => {});
+    return () => {
+      active = false;
     };
   }, [video]);
   React.useEffect(() => {
@@ -5078,7 +5098,12 @@ const MaterialDetail = ({
       marginTop: 'calc(8px * var(--app-density-scale))',
       borderRadius: 'var(--r-sm)'
     }
-  })), React.createElement("div", {
+  }, video.captions && React.createElement("track", {
+    kind: "captions",
+    src: video.captions,
+    srcLang: "en",
+    label: "English"
+  }))), React.createElement("div", {
     style: mds.railBlock
   }, React.createElement("div", {
     style: mds.railHead
@@ -12066,6 +12091,12 @@ const StoryboardReview = ({
   React.useEffect(() => {
     load().catch(e => setStatus(e.message || 'Failed to load storyboard'));
   }, [load]);
+  React.useEffect(() => {
+    return () => {
+      if (video && video.file && video.file.startsWith('blob:')) URL.revokeObjectURL(video.file);
+      if (video && video.captions && video.captions.startsWith('blob:')) URL.revokeObjectURL(video.captions);
+    };
+  }, [video]);
   const patchScene = async (scene, patch) => {
     setBusy(scene.id);
     try {
@@ -12194,10 +12225,11 @@ const StoryboardReview = ({
           onProgress: j => setStatus(j.stage || `Rendering ${j.progress || 0}%...`)
         });
       }
-      const file = await window.NoesisAPI.videos.fileBlobUrl(r.video_id);
+      const [file, captions] = await Promise.all([window.NoesisAPI.videos.fileBlobUrl(r.video_id), window.NoesisAPI.videos.captionsBlobUrl(r.video_id).catch(() => null)]);
       setVideo({
         id: r.video_id,
-        file
+        file,
+        captions
       });
       setStatus('Video ready.');
     } catch (e) {
@@ -12395,7 +12427,12 @@ const StoryboardReview = ({
       borderRadius: 8,
       marginTop: 'calc(10px * var(--app-density-scale))'
     }
-  }))));
+  }, video.captions && React.createElement("track", {
+    kind: "captions",
+    src: video.captions,
+    srcLang: "en",
+    label: "English"
+  })))));
 };
 const SceneCard = ({
   scene,

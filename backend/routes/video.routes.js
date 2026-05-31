@@ -230,4 +230,17 @@ router.get('/:id/file', requireAuth, (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+router.get('/:id/captions.vtt', requireAuth, (req, res, next) => {
+  try {
+    const v = videoSvc.getVideo(req.user.id, parseInt(req.params.id, 10));
+    if (!v || !v.subtitle_path || !fs.existsSync(v.subtitle_path)) throw new HttpError(404, 'captions_not_found');
+    if (/(^|[\\/])\.\.([\\/]|$)/.test(String(v.subtitle_path))) throw new HttpError(403, 'forbidden_path');
+    const videosDir = path.resolve(env.UPLOAD_DIR, 'videos');
+    const resolved = path.resolve(v.subtitle_path);
+    if (!resolved.startsWith(videosDir + path.sep)) throw new HttpError(403, 'forbidden_path');
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    fs.createReadStream(resolved).pipe(res);
+  } catch (e) { next(e); }
+});
+
 module.exports = router;

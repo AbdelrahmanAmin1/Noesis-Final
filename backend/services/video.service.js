@@ -26,6 +26,7 @@ const sourceGroundingJudge = require('./source-grounding-judge.service');
 const sourceTopicPlans = require('./source-topic-plan.service');
 const materialTopicMap = require('./material-topic-map.service');
 const renderVisualAssets = require('./render-visual-assets.service');
+const captions = require('./captions.service');
 const { HttpError } = require('../middleware/error');
 const log = require('../utils/logger');
 const {
@@ -2219,6 +2220,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
     fs.mkdirSync(workDir, { recursive: true });
     const segPaths = [];
     const audioPaths = [];
+    const captionEntries = [];
 
     for (let i = 0; i < script.slides.length; i++) {
       const s = script.slides[i];
@@ -2243,11 +2245,12 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
         await tts._internals.synthSilence(s.narration, audioFile);
       }
       audioPaths.push(audioFile);
+      const audioInfo = await probeMedia(audioFile);
+      const audioDuration = mediaDuration(audioInfo) || s.durationTargetSec || 18;
+      captionEntries.push({ narration: stripChunkRefs(s.narration), durationSec: audioDuration });
       jobs.update(jobId, { stage: `Rendering slide ${i + 1} of ${script.slides.length}...` });
       let usedAnimatedFrames = false;
       try {
-        const audioInfo = await probeMedia(audioFile);
-        const audioDuration = mediaDuration(audioInfo) || s.durationTargetSec || 18;
         const framesDir = path.join(workDir, `frames_${i}`);
         const frameRate = 6;
         const frameCount = Math.max(18, Math.min(180, Math.ceil(audioDuration * frameRate) + 2));
@@ -2290,6 +2293,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
     fs.writeFileSync(listFile, segPaths.map(p => `file '${concatListPath(p)}'`).join('\n'));
     const audioManifest = path.join(workDir, 'audio_manifest.json');
     fs.writeFileSync(audioManifest, JSON.stringify({ audio: audioPaths }, null, 2));
+    const subtitlePath = captions.writeWebVtt(captionEntries, path.join(workDir, 'captions.en.vtt'));
     const finalPath = path.join(env.UPLOAD_DIR, 'videos', `${videoId}.mp4`);
     jobs.update(jobId, { progress: 90, stage: 'Merging narration and visuals...' });
     const finalArgs = [
@@ -2319,7 +2323,7 @@ async function runPipeline({ videoId, userId, materialId, concept, jobId, source
     if (!hasStream(mediaInfo, 'audio')) throw new Error('video_render_failed: no audio stream in output');
     const duration = mediaDuration(mediaInfo);
 
-    setStatus('ready', { output_path: finalPath, slides_dir: workDir, audio_path: audioManifest, duration_s: duration });
+    setStatus('ready', { output_path: finalPath, slides_dir: workDir, audio_path: audioManifest, subtitle_path: subtitlePath, duration_s: duration });
     jobs.update(jobId, { status: 'completed', progress: 100, stage: 'Video ready.', result: { videoId, output_path: finalPath, duration_s: duration } });
   } catch (e) {
     log.error('video_pipeline', e.message || e);
@@ -2423,6 +2427,7 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
     fs.mkdirSync(workDir, { recursive: true });
     const segPaths = [];
     const audioPaths = [];
+    const captionEntries = [];
     const remotionReady = renderer.remotionStatus();
     const forceRemotion = env.VIDEO_RENDERER_EXPLICIT && env.VIDEO_RENDERER === 'remotion';
     const forceCanvas = env.VIDEO_RENDERER_EXPLICIT && env.VIDEO_RENDERER === 'canvas';
@@ -2456,11 +2461,12 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
         await tts._internals.synthSilence(s.narration, audioFile);
       }
       audioPaths.push(audioFile);
+      const audioInfo = await probeMedia(audioFile);
+      const audioDuration = mediaDuration(audioInfo) || s.durationTargetSec || 18;
+      captionEntries.push({ narration: stripChunkRefs(s.narration), durationSec: audioDuration });
       jobs.update(jobId, { stage: `Rendering approved scene ${i + 1} of ${script.slides.length}...` });
       let usedAnimatedFrames = false;
       try {
-        const audioInfo = await probeMedia(audioFile);
-        const audioDuration = mediaDuration(audioInfo) || s.durationTargetSec || 18;
         if (useRemotion) {
           const visualMp4 = path.join(workDir, `remotion_scene_${i}.mp4`);
           await renderer.renderRemotionScene({
@@ -2540,6 +2546,7 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
     fs.writeFileSync(listFile, segPaths.map(p => `file '${concatListPath(p)}'`).join('\n'));
     const audioManifest = path.join(workDir, 'audio_manifest.json');
     fs.writeFileSync(audioManifest, JSON.stringify({ audio: audioPaths }, null, 2));
+    const subtitlePath = captions.writeWebVtt(captionEntries, path.join(workDir, 'captions.en.vtt'));
     const finalPath = path.join(env.UPLOAD_DIR, 'videos', `${videoId}.mp4`);
     jobs.update(jobId, { progress: 92, stage: 'Merging approved storyboard video...' });
     const finalArgs = [
@@ -2566,7 +2573,7 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
     if (!hasStream(mediaInfo, 'video')) throw new Error('video_render_failed: no video stream in output');
     if (!hasStream(mediaInfo, 'audio')) throw new Error('video_render_failed: no audio stream in output');
     const duration = mediaDuration(mediaInfo);
-    setStatus('ready', { output_path: finalPath, slides_dir: workDir, audio_path: audioManifest, duration_s: duration });
+    setStatus('ready', { output_path: finalPath, slides_dir: workDir, audio_path: audioManifest, subtitle_path: subtitlePath, duration_s: duration });
     setBoardStatus('rendered', { rendered_at: nowIso(), video_id: videoId });
     jobs.update(jobId, { status: 'completed', progress: 100, stage: 'Approved storyboard video ready.', result: { videoId, output_path: finalPath, duration_s: duration } });
   } catch (e) {

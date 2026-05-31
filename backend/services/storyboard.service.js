@@ -17,6 +17,7 @@ const { scoreVideoScript } = require('./video-quality.service');
 const renderer = require('./renderer.service');
 const visualRegistry = require('../utils/visual-registry');
 const codeWindow = require('../utils/code-window');
+const visualComposition = require('../utils/visual-composition');
 const sourceVisualCandidates = require('./source-visual-candidates.service');
 const renderVisualAssets = require('./render-visual-assets.service');
 const sourceGroundingJudge = require('./source-grounding-judge.service');
@@ -2659,15 +2660,19 @@ function candidateHasUsableSourceImage(candidate) {
   const classification = String(candidate.classification || candidate.visualTypeGuess || '').toLowerCase();
   if (classification === 'decorative') return false;
   if (Number(candidate.importanceScore || 0) < 0.4) return false;
-  if (candidate.associationConfidence != null && Number(candidate.associationConfidence) < 0.5) return false;
-  return renderVisualAssets.basicAssetCheck(candidate, { lookupDb: false }).valid;
+  return renderVisualAssets.basicAssetCheck(candidate, {
+    lookupDb: false,
+    requireTrustedAssociation: false,
+  }).valid;
 }
 
 function sourceVisualPayload(candidate) {
   if (!candidate) return {};
-  const sourcePage = candidate.sourcePage ?? candidate.pageNumber ?? null;
-  const slideNumber = candidate.slideNumber ?? null;
-  const label = slideNumber != null ? `Slide ${slideNumber}` : `Page ${sourcePage || 1}`;
+  const associationConfidence = candidate.associationConfidence == null ? 1 : Number(candidate.associationConfidence);
+  const trustedAssociation = associationConfidence >= 0.5;
+  const sourcePage = trustedAssociation ? candidate.sourcePage ?? candidate.pageNumber ?? null : null;
+  const slideNumber = trustedAssociation ? candidate.slideNumber ?? null : null;
+  const label = slideNumber != null ? `Slide ${slideNumber}` : sourcePage != null ? `Page ${sourcePage}` : 'Extracted material visual';
   const heading = candidate.heading || candidate.visualTypeGuess || 'source visual';
   const ocrText = String(candidate.ocrText || '').trim();
   const nearbyText = String(candidate.nearbyText || '').trim();
@@ -2680,7 +2685,7 @@ function sourceVisualPayload(candidate) {
     edges: [],
     details: {},
     operations: [],
-    caption: candidate.caption || `${label}: ${heading}`,
+    caption: trustedAssociation && candidate.caption ? candidate.caption : `${label}: ${heading}`,
     imagePath: candidate.imagePath || candidate.thumbnailPath || null,
     imageUrl: candidate.imageUrl || null,
     sourceVisualId: candidate.id || null,
@@ -2691,6 +2696,7 @@ function sourceVisualPayload(candidate) {
     nearbyText: nearbyText || null,
     imageDescription: imageDescription ? imageDescription.slice(0, 500) : null,
     visualTypeGuess: candidate.visualTypeGuess || null,
+    associationConfidence,
   };
 }
 
@@ -2795,7 +2801,11 @@ function sourceVisualPatchForScene(userId, board, scene, opts = {}) {
     candidate.visualTypeGuess,
   ].filter(Boolean).join(' ')) || '';
   const targetLabel = targetType ? targetType.replace(/_/g, ' ') : 'source visual';
-  const sourceLabel = payload.slideNumber != null ? `Slide ${payload.slideNumber}` : `Page ${payload.sourcePage || 1}`;
+  const sourceLabel = payload.slideNumber != null
+    ? `Slide ${payload.slideNumber}`
+    : payload.sourcePage != null
+      ? `Page ${payload.sourcePage}`
+      : 'Extracted material visual';
   const caption = payload.caption || `${sourceLabel}: ${candidate.heading || targetLabel}`;
   const nodes = [...new Set([targetLabel, ...(payload.nodes || [])].filter(item => item && !labelIsPageOnly(item)))].slice(0, 6);
   const visualData = {
@@ -2809,6 +2819,13 @@ function sourceVisualPatchForScene(userId, board, scene, opts = {}) {
     visualType: visualData.type,
     visualData,
     visualElements: visualData,
+    visualPlan: {
+      ...(scene.visualPlan || {}),
+      ...visualComposition.normalizeCompositionPlan(scene.visualPlan, { hasSourceImage: true }),
+      sourceVisualUsed: visualData.sourceVisualId,
+      fallbackGeneratedVisual: false,
+      reason: 'Show the matching extracted material image as the main scene visual.',
+    },
     sourceVisualId: visualData.sourceVisualId,
     visualPurpose: `Use the extracted material image to explain ${targetLabel} directly from the source.`,
     visualRationale: 'A real uploaded visual is more useful here than a generic generated diagram.',
@@ -2831,10 +2848,15 @@ function sourceVisualPatchForScene(userId, board, scene, opts = {}) {
 }
 
 function attachSourceVisualsToScenes(scenes = [], candidates = []) {
-  const concrete = (candidates || []).filter(candidateHasSourceImage);
+  const concrete = (candidates || []).filter(candidateHasUsableSourceImage);
   if (!concrete.length) return scenes;
   const used = new Set();
   function candidateKey(c) { return c.id || `${c.sourcePage}:${c.slideNumber}:${c.heading}`; }
+  for (const scene of scenes || []) {
+    const data = scene.visualElements || scene.visualData || {};
+    const sourceVisualId = data.sourceVisualId || data.source_visual_id || scene.sourceVisualId;
+    if (sourceVisualId != null) used.add(sourceVisualId);
+  }
   function sceneKeywords(scene) {
     return [scene.sceneTitle, scene.title, scene.narration, scene.learningPoint]
       .filter(Boolean).join(' ').toLowerCase();
@@ -2856,39 +2878,7 @@ function attachSourceVisualsToScenes(scenes = [], candidates = []) {
   function applyCandidate(scene, candidate) {
     used.add(candidateKey(candidate));
     const payload = sourceVisualPayload(candidate);
-    const resolved = visualResolutionForScene(scene, scene.topicName || scene.title || '');
-    const currentType = resolved.supported ? resolved.canonical : String(scene.visualTemplate || scene.visualType || '');
-    const explicitSourceRef = ['source_page_reference', 'source_slide_reference', 'source_reference'].includes(currentType);
-    const keepDeterministicVisual = !explicitSourceRef && (CS_VISUAL_TYPES.has(currentType) || ['code_walkthrough', 'process_flow', 'comparison_contrast'].includes(currentType));
-    if (keepDeterministicVisual) {
-      const visualData = {
-        ...(scene.visualData || {}),
-        sourceVisualId: payload.sourceVisualId,
-        sourcePage: payload.sourcePage,
-        slideNumber: payload.slideNumber,
-        sourceImagePath: payload.imagePath,
-        sourceImageUrl: payload.imageUrl,
-        sourceImageCaption: payload.caption,
-        sourceImageReason: `Reference image for ${scene.topicName || scene.title || 'this scene'}.`,
-      };
-      return withFreshSceneQuality({
-        ...scene,
-        visualData,
-        visualElements: { ...(scene.visualElements || {}), ...visualData },
-        sourceVisualId: payload.sourceVisualId,
-        sourceVisualIds: [...new Set([...(scene.sourceVisualIds || []), payload.sourceVisualId].filter(Boolean))],
-        visualPlan: {
-          ...(scene.visualPlan || {}),
-          sourceVisualUsed: payload.sourceVisualId,
-          fallbackGeneratedVisual: false,
-          reason: scene.visualPlan && scene.visualPlan.reason || `Use a deterministic ${String(currentType).replace(/_/g, ' ')} visual and cite the matching source image.`,
-        },
-        repairHistory: [
-          ...(scene.repairHistory || []),
-          { action: 'attach_source_visual_metadata', sourceVisualId: payload.sourceVisualId, at: nowIso() },
-        ],
-      }, scene.topicName || scene.title || '');
-    }
+    const composition = visualComposition.normalizeCompositionPlan(scene.visualPlan, { hasSourceImage: true });
     return {
       ...scene,
       visualTemplate: payload.type,
@@ -2897,10 +2887,31 @@ function attachSourceVisualsToScenes(scenes = [], candidates = []) {
       visualElements: { ...(scene.visualElements || {}), ...payload },
       sourceVisualId: payload.sourceVisualId,
       sourceVisualIds: [...new Set([...(scene.sourceVisualIds || []), payload.sourceVisualId].filter(Boolean))],
+      visualPlan: {
+        ...(scene.visualPlan || {}),
+        ...composition,
+        sourceVisualUsed: payload.sourceVisualId,
+        fallbackGeneratedVisual: false,
+        reason: `Show the matching extracted material image as the main scene visual.`,
+      },
+      repairHistory: [
+        ...(scene.repairHistory || []),
+        { action: 'promote_source_visual', sourceVisualId: payload.sourceVisualId, at: nowIso() },
+      ],
     };
   }
   const out = scenes.map((scene) => {
-    if (sceneHasSourceImage(scene)) return scene;
+    if (sceneHasSourceImage(scene)) {
+      return {
+        ...scene,
+        visualPlan: {
+          ...(scene.visualPlan || {}),
+          ...visualComposition.normalizeCompositionPlan(scene.visualPlan, { hasSourceImage: true }),
+          sourceVisualUsed: scene.sourceVisualId || scene.visualData && scene.visualData.sourceVisualId || null,
+          fallbackGeneratedVisual: false,
+        },
+      };
+    }
     const template = String(scene.visualTemplate || scene.visualType || scene.visualElements && scene.visualElements.type || '').toLowerCase();
     const explicitSourceRef = template === 'source_page_reference' || template === 'source_slide_reference' || template === 'source_reference';
     const isGenerated = CS_VISUAL_TYPES.has(template) || ['diagram', 'mindmap', 'flow', 'classification_table', 'comparison_table', 'concept_cards', 'process_flow', 'flowchart', 'summary', 'cards', 'table', 'concept_map', 'comparison'].includes(template);
@@ -3666,16 +3677,23 @@ function getStoryboard(userId, id) {
   const out = hydrate(row);
   if (out.storyboard) {
     const displayTopic = storyboardDisplayTitle(out.storyboard, out.topic || out.storyboard.topic);
+    const sourceVisuals = sourceVisualsForBoard(userId, out);
     out.storyboard = {
       ...out.storyboard,
       topic: displayTopic,
-      scenes: (out.storyboard.scenes || []).map(scene => withFreshSceneQuality(scene, displayTopic)),
+      scenes: attachSourceVisualsToScenes(out.storyboard.scenes || [], sourceVisuals)
+        .map(scene => withFreshSceneQuality(scene, displayTopic)),
     };
     out.topic = displayTopic;
     out.quality = { ...out.quality, storyboard: classifiedQuality(storyboardQuality(out.storyboard)) };
   }
+  const hydratedScenes = new Map((out.storyboard && out.storyboard.scenes || []).map(scene => [scene.id, scene]));
   out.scenes = db.prepare('SELECT * FROM video_storyboard_scenes WHERE storyboard_id=? ORDER BY scene_order').all(id)
-    .map(scene => ({ ...scene, scene: withFreshSceneQuality(parseJson(scene.scene_json, {}), out.storyboard && out.storyboard.topic) }));
+    .map(scene => ({
+      ...scene,
+      scene: hydratedScenes.get(scene.scene_id)
+        || withFreshSceneQuality(parseJson(scene.scene_json, {}), out.storyboard && out.storyboard.topic),
+    }));
   return out;
 }
 
@@ -4307,6 +4325,11 @@ function repairStoryboardForRender(userId, id) {
   const sourceChunks = chunksForStoryboardBoard(board);
   const sourceVisuals = sourceVisualsForBoard(userId, board);
   let changed = false;
+  const sourceAttached = attachSourceVisualsToScenes(storyboard.scenes || [], sourceVisuals);
+  if (JSON.stringify(sourceAttached) !== JSON.stringify(storyboard.scenes || [])) {
+    storyboard.scenes = sourceAttached;
+    changed = true;
+  }
 
   const plan = understanding.sourceTopicPlan || storyboard.sourceTopicPlan || {};
   if (plan.topicMode === 'material_wide' && Array.isArray(plan.topicBundle) && plan.topicBundle.length >= 2) {
@@ -4588,5 +4611,6 @@ module.exports = {
     storyboardDisplayTitle,
     sanitizeNarrationText,
     sceneHasPageNumberCenterVisual,
+    attachSourceVisualsToScenes,
   },
 };

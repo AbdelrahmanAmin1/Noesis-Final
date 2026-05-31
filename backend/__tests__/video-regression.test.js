@@ -81,4 +81,30 @@ describe('demo-quality video regression set', () => {
       try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
     }
   });
+
+  it('does not paint generated animation overlays over source-only extracted images', async () => {
+    const { createCanvas } = require('canvas');
+    const sourcePath = path.join(os.tmpdir(), `noesis_source_visual_${Date.now()}.png`);
+    const dir = path.join(os.tmpdir(), `noesis_source_frames_${Date.now()}`);
+    const canvas = createCanvas(160, 100);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#dbeafe';
+    ctx.fillRect(0, 0, 160, 100);
+    ctx.fillStyle = '#1d4ed8';
+    ctx.fillRect(40, 20, 80, 60);
+    fs.writeFileSync(sourcePath, canvas.toBuffer('image/png'));
+    try {
+      const frames = await slides.renderAnimatedFrames({
+        title: 'Extracted material visual',
+        visual_type: 'source_reference',
+        image_path: sourcePath,
+        composition_mode: 'source_only',
+      }, dir, 4, 'frame');
+      expect(frames.length).toBe(4);
+      expect(fileHash(frames[0])).toBe(fileHash(frames[frames.length - 1]));
+    } finally {
+      try { fs.unlinkSync(sourcePath); } catch (_) {}
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+    }
+  });
 });

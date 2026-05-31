@@ -6,6 +6,7 @@ const { pathToFileURL } = require('url');
 const env = require('../config/env');
 const { getDb } = require('../config/db');
 const log = require('../utils/logger');
+const visualComposition = require('../utils/visual-composition');
 
 const MIME_BY_EXT = {
   '.gif': 'image/gif',
@@ -366,21 +367,35 @@ function isSourceReference(slide = {}, scene = {}) {
   return SOURCE_REFERENCE_TYPES.has(clean(slide.visual_type || slide.visualType).toLowerCase())
     || SOURCE_REFERENCE_TYPES.has(clean(scene.visualType || scene.visualTemplate || data.type).toLowerCase())
     || !!(slide.image_path || slide.imagePath || slide.image_url || slide.imageUrl || data.imagePath || data.image_path || data.imageUrl || data.image_url)
-    || !!(plan.useSourceImage || plan.sourceVisualId || (scene.sourceVisualIds || []).length);
+    || !!(data.sourceImagePath || data.source_image_path || data.sourceImageUrl || data.source_image_url)
+    || !!(scene.sourceVisualId || plan.useSourceImage || plan.sourceVisualId || (scene.sourceVisualIds || []).length);
 }
 
 function sceneWithResolvedImage(scene = {}, resolved) {
   const data = scene.visualElements || scene.visualData || {};
+  const sourceType = data.slideNumber != null || data.slide_number != null
+    ? 'source_slide_reference'
+    : 'source_page_reference';
   const nextData = {
     ...data,
+    type: sourceType,
     imagePath: resolved.absolutePath,
     imageUrl: resolved.browserSrc,
     sourceVisualId: resolved.sourceVisualId || data.sourceVisualId || null,
   };
+  const composition = visualComposition.normalizeCompositionPlan(scene.visualPlan, { hasSourceImage: true });
   return {
     ...scene,
+    visualType: sourceType,
+    visualTemplate: sourceType,
     visualData: nextData,
     visualElements: { ...nextData },
+    visualPlan: {
+      ...(scene.visualPlan || {}),
+      ...composition,
+      sourceVisualUsed: resolved.sourceVisualId || data.sourceVisualId || null,
+      fallbackGeneratedVisual: false,
+    },
   };
 }
 
@@ -404,6 +419,12 @@ function sceneWithFallback(scene = {}, fallback, warning) {
     visualTemplate: fallback.sceneType,
     visualData: nextData,
     visualElements: { ...nextData },
+    visualPlan: {
+      ...(scene.visualPlan || {}),
+      ...visualComposition.normalizeCompositionPlan(scene.visualPlan),
+      sourceVisualUsed: null,
+      fallbackGeneratedVisual: true,
+    },
     sourceVisualId: null,
     renderAssetWarning: warning,
     repairHistory: [
@@ -434,13 +455,21 @@ async function preflightScriptAssets(script = {}, opts = {}) {
     const scene = scenes[index] || {};
     if (!isSourceReference(slide, scene)) continue;
     const sourceInput = sourceInputFor(slide, scene);
-    const resolved = await resolveRenderVisualAsset(sourceInput, { materialId: opts.materialId });
+    const resolved = await resolveRenderVisualAsset(sourceInput, {
+      materialId: opts.materialId,
+      requireTrustedAssociation: false,
+    });
     if (resolved.valid) {
+      const composition = visualComposition.normalizeCompositionPlan(scene.visualPlan, { hasSourceImage: true });
       slides[index] = {
         ...slide,
+        visual_type: 'source_reference',
         image_path: resolved.absolutePath,
         image_url: resolved.browserSrc,
         source_visual_id: resolved.sourceVisualId || slide.source_visual_id || null,
+        composition_mode: composition.compositionMode,
+        layout_template: composition.layoutTemplate,
+        composition_regions: composition.regions,
       };
       if (scenes[index]) scenes[index] = sceneWithResolvedImage(scene, resolved);
       log.info('render_visual_asset', {
@@ -454,6 +483,10 @@ async function preflightScriptAssets(script = {}, opts = {}) {
         valid: true,
         fallback: false,
         dimensions: `${resolved.width}x${resolved.height}`,
+        compositionMode: composition.compositionMode,
+        layoutTemplate: composition.layoutTemplate,
+        regions: composition.regions,
+        collisionDetected: composition.collisionDetected,
       });
       continue;
     }
@@ -483,6 +516,9 @@ async function preflightScriptAssets(script = {}, opts = {}) {
         ])].slice(0, 6)
         : fallback.nodes,
       caption: 'Generated visual fallback from the source topic.',
+      composition_mode: 'generated_only',
+      layout_template: 'generated_main',
+      composition_regions: visualComposition.LAYOUT_TEMPLATES.generated_main,
     };
     if (scenes[index]) scenes[index] = sceneWithFallback(scene, fallback, warning);
     log.warn('render_visual_asset', warning);
@@ -507,5 +543,6 @@ module.exports = {
     mimeTypeFor,
     removeImageFields,
     resolveLocalFilePath,
+    sceneWithResolvedImage,
   },
 };

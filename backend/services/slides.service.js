@@ -1141,6 +1141,11 @@ function drawAnimationOverlay(ctx, slide, layout, visual, progress = 1) {
   return drawPointer(ctx, { x: r.x + r.w - 90, y: r.y + 82 }, { x: r.x + r.w / 2, y: r.y + r.h / 2 }, label, pulse);
 }
 
+function shouldDrawAnimationOverlay(slide = {}, visual = {}) {
+  const compositionMode = slide.composition_mode || slide.compositionMode || '';
+  return visual.type !== 'source_reference' && compositionMode !== 'source_only';
+}
+
 async function renderWithCanvas(slide, outPath, options = {}) {
   const c = loadCanvas();
   if (!c) return false;
@@ -1162,7 +1167,7 @@ async function renderWithCanvas(slide, outPath, options = {}) {
   drawHeader(ctx, slide, layout);
   drawBullets(ctx, bullets, layout.bullets);
   drawVisual(ctx, slide, visual, bullets, layout.visual);
-  if (options.animationProgress != null) {
+  if (options.animationProgress != null && shouldDrawAnimationOverlay(slide, visual)) {
     drawAnimationOverlay(ctx, slide, layout, visual, options.animationProgress);
   }
 
@@ -1209,5 +1214,6 @@ module.exports = {
     normalizeVisibleText,
     loadCanvas,
     drawAnimationOverlay,
+    shouldDrawAnimationOverlay,
   },
 };

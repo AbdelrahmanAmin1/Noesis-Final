@@ -81,6 +81,40 @@ describe('render visual asset preflight', () => {
     expect(resolved.reasonIfInvalid).toBe('source_image_page_association_untrusted');
   });
 
+  it('renders dimension-validated extracted images even when their PDF page association is estimated', async () => {
+    const result = await renderVisualAssets.preflightScriptAssets({
+      slides: [{
+        title: 'Extracted material visual',
+        narration: 'Use the extracted diagram from the uploaded material.',
+        visual_type: 'source_reference',
+        image_path: pngPath,
+      }],
+    }, {
+      scenes: [{
+        id: 'scene-estimated-pdf-image',
+        visualType: 'source_page_reference',
+        visualData: {
+          type: 'source_page_reference',
+          imagePath: pngPath,
+          associationMethod: 'pdf_byte_offset_estimate',
+          associationConfidence: 0.25,
+        },
+      }],
+    });
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.script.slides[0].visual_type).toBe('source_reference');
+    expect(result.script.slides[0].image_url).toMatch(/^data:image\/png;base64,/);
+    expect(result.scenes[0].visualData.imageUrl).toMatch(/^data:image\/png;base64,/);
+    expect(result.scenes[0].visualPlan).toMatchObject({
+      compositionMode: 'source_only',
+      primaryVisual: 'source_image',
+      secondaryVisual: null,
+      layoutTemplate: 'source_main',
+      fallbackGeneratedVisual: false,
+    });
+  });
+
   it('replaces unreadable tree source images with a meaningful generated tree visual before render', async () => {
     const result = await renderVisualAssets.preflightScriptAssets({
       topic: 'Trees and Binary Search Trees',
@@ -110,6 +144,11 @@ describe('render visual asset preflight', () => {
     expect(result.script.slides[0].image_path).toBeUndefined();
     expect(result.scenes[0].visualType).toBe('tree_visual');
     expect(result.scenes[0].visualData.nodes).toEqual(expect.arrayContaining(['root', 'insertion path']));
+    expect(result.scenes[0].visualPlan).toMatchObject({
+      compositionMode: 'generated_only',
+      primaryVisual: 'generated_visual',
+      fallbackGeneratedVisual: true,
+    });
   });
 
   it('keeps valid source images and removes embedded data URIs from persisted script copies', async () => {
@@ -125,7 +164,42 @@ describe('render visual asset preflight', () => {
     expect(result.warnings).toHaveLength(0);
     expect(result.script.slides[0].image_url).toMatch(/^data:image\/png;base64,/);
     expect(result.scenes[0].visualData.imageUrl).toMatch(/^data:image\/png;base64,/);
+    expect(result.script.slides[0]).toMatchObject({
+      composition_mode: 'source_only',
+      layout_template: 'source_main',
+    });
     expect(renderVisualAssets.stripEmbeddedBrowserAssets(result.script).slides[0].image_url).toBe('');
+  });
+
+  it('promotes hidden source image metadata on deterministic scenes into the visible source-reference visual', async () => {
+    const result = await renderVisualAssets.preflightScriptAssets({
+      slides: [{
+        title: 'Queue operation',
+        narration: 'Use the extracted queue figure to trace enqueue and dequeue.',
+        visual_type: 'stack_queue',
+        visual_nodes: ['front', 'rear', 'enqueue', 'dequeue'],
+      }],
+    }, {
+      scenes: [{
+        id: 'scene-queue-source',
+        visualType: 'queue_operation',
+        visualTemplate: 'queue_operation',
+        visualData: {
+          type: 'queue_operation',
+          nodes: ['front', 'rear', 'enqueue', 'dequeue'],
+          sourceImagePath: pngPath,
+          sourceVisualId: 17,
+          sourcePage: 4,
+        },
+      }],
+    });
+
+    expect(result.warnings).toHaveLength(0);
+    expect(result.script.slides[0].visual_type).toBe('source_reference');
+    expect(result.script.slides[0].image_url).toMatch(/^data:image\/png;base64,/);
+    expect(result.scenes[0].visualType).toBe('source_page_reference');
+    expect(result.scenes[0].visualData.type).toBe('source_page_reference');
+    expect(result.scenes[0].visualData.imageUrl).toMatch(/^data:image\/png;base64,/);
   });
 
   it('keeps a browser-side failed-image guard in the Remotion template', () => {
