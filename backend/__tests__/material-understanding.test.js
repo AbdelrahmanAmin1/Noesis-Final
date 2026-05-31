@@ -287,6 +287,14 @@ describe('material-understanding.service', () => {
     expect(dataStructureHits).toEqual(expect.arrayContaining(['linked list', 'tree', 'binary search tree', 'bst', 'hash table', 'heap', 'graph', 'array']));
   });
 
+  it('detects database and network lectures without routing them through data structures', () => {
+    const database = domainDetection.classifyText('Database normalization uses primary keys, foreign keys, SQL SELECT statements, and ACID transactions.');
+    const networks = domainDetection.classifyText('The OSI model, TCP/IP, DNS resolution, packets, routers, and routing tables explain network communication.');
+
+    expect(database.domain).toBe('databases');
+    expect(networks.domain).toBe('networks');
+  });
+
   it('detects focused topic drift across multi-topic source outlines', () => {
     const outline = understanding.buildSourceOutline([
       { id: 10, idx: 0, chapter_title: 'Trees', heading: 'Tree Introduction', text: 'Trees have a root node, edges, parent child relationships, and leaves.' },

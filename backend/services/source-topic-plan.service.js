@@ -12,6 +12,10 @@ function key(value) {
   return clean(value).toLowerCase().replace(/[^a-z0-9+#]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+function searchKey(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9+#]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 function isGeneric(value) {
   const text = clean(value);
   if (!text || /^\d+$/.test(text)) return true;
@@ -64,7 +68,7 @@ function termRegex(term) {
 function countTermHits(source, term) {
   const re = termRegex(term);
   if (!re) return 0;
-  return (source.match(re) || []).length;
+  return (searchKey(source).match(re) || []).length;
 }
 
 function compactEvidenceForTopic(topic, chunks = []) {
@@ -77,7 +81,7 @@ function compactEvidenceForTopic(topic, chunks = []) {
       chunk.slide_title,
       chunk.text,
     ].filter(Boolean).join(' ');
-    const lower = key(text);
+    const lower = searchKey(text);
     if (terms.some(term => term.length >= 3 && lower.includes(term))) {
       return clean(text, 260);
     }
@@ -110,7 +114,7 @@ function chunkIdsForBundleItem(item, chunks) {
   const terms = [item && item.topic, ...((item && item.terms) || [])].map(key).filter(Boolean);
   const found = [];
   for (const chunk of chunks || []) {
-    const text = key([chunk.heading, chunk.chapter_title, chunk.section_title, chunk.slide_title, chunk.text].filter(Boolean).join(' '));
+    const text = searchKey([chunk.heading, chunk.chapter_title, chunk.section_title, chunk.slide_title, chunk.text].filter(Boolean).join(' '));
     if (terms.some(term => term.length >= 3 && text.includes(term))) found.push(chunk.id);
   }
   return found.filter(Number.isInteger);
@@ -306,7 +310,7 @@ function buildSourceTopicPlan(opts = {}) {
     domainInfo: opts.domainInfo,
   });
   const outlineBundle = bundleFromOutline(sourceOutline, chunks);
-  const discoveredBundle = csDomain ? knownTopicBundleFromChunks(chunks, sourceOutline, outlineBundle) : [];
+  const discoveredBundle = knownTopicBundleFromChunks(chunks, sourceOutline, outlineBundle);
   const topicBundle = topicMode === 'material_wide'
     ? mergeTopicBundles(outlineBundle, discoveredBundle, 8)
     : outlineBundle;
@@ -324,7 +328,7 @@ function buildSourceTopicPlan(opts = {}) {
     sourceOutline.mainTopic,
     sourceOutline.topic,
     ...topicBundle.flatMap(item => [item.topic, ...(item.terms || [])]),
-    ...(csDomain ? knownTopicsInSource(chunks, sourceOutline, topicBundle) : []),
+    ...knownTopicsInSource(chunks, sourceOutline, topicBundle),
   ], 40);
   const blockedTopics = csDomain
     ? allKnownTopics().filter(topic => !allowedTopics.some(allowed => key(allowed) === key(topic)))

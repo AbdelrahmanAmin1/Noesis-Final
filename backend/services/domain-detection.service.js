@@ -51,6 +51,30 @@ const SOCIAL_SCIENCE_SIGNALS = [
   'law', 'democracy', 'public opinion', 'identity',
 ];
 
+const DATABASE_SIGNALS = [
+  'database', 'databases', 'erd', 'entity relationship', 'normalization', 'normal form',
+  'sql', 'select statement', 'transaction', 'transactions', 'acid properties',
+  'primary key', 'foreign key', 'candidate key', 'commit', 'rollback',
+];
+
+const NETWORK_SIGNALS = [
+  'network', 'networks', 'osi model', 'tcp/ip', 'tcp ip', 'dns', 'domain name system',
+  'routing', 'router', 'packet', 'network layer', 'transport layer', 'tcp handshake',
+];
+
+const CYBERSECURITY_SIGNALS = [
+  'cybersecurity', 'cyber security', 'encryption', 'decryption', 'authentication',
+  'authorization', 'phishing', 'malware', 'firewall', 'vulnerability', 'exploit',
+  'least privilege', 'defense in depth',
+];
+
+const SOFTWARE_ENGINEERING_SIGNALS = [
+  'software engineering', 'requirements engineering', 'functional requirements',
+  'non functional requirements', 'software design', 'software architecture',
+  'unit testing', 'integration testing', 'system testing', 'software deployment',
+  'continuous integration', 'continuous deployment', 'release management',
+];
+
 function normalize(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9+#().]+/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -97,6 +121,10 @@ function classifyText(text) {
   const science = countSignals(text, SCIENCE_SIGNALS);
   const humanities = countSignals(text, HUMANITIES_SIGNALS);
   const socialScience = countSignals(text, SOCIAL_SCIENCE_SIGNALS);
+  const databases = countSignals(text, DATABASE_SIGNALS);
+  const networks = countSignals(text, NETWORK_SIGNALS);
+  const cybersecurity = countSignals(text, CYBERSECURITY_SIGNALS);
+  const softwareEngineering = countSignals(text, SOFTWARE_ENGINEERING_SIGNALS);
   const csRaw = countSignals(text, CS_SIGNALS);
   const cs = [
     ...csRaw.filter(signal => !AMBIGUOUS_CS_TERMS.has(signal)),
@@ -109,6 +137,10 @@ function classifyText(text) {
     { domain: 'science', evidence: [...new Set(science)] },
     { domain: 'humanities', evidence: [...new Set(humanities)] },
     { domain: 'social_science', evidence: [...new Set(socialScience)] },
+    { domain: 'databases', evidence: [...new Set(databases)] },
+    { domain: 'networks', evidence: [...new Set(networks)] },
+    { domain: 'cybersecurity', evidence: [...new Set(cybersecurity)] },
+    { domain: 'software_engineering', evidence: [...new Set(softwareEngineering)] },
   ].sort((a, b) => b.evidence.length - a.evidence.length);
   const bestNonCs = candidates[0] || { domain: 'general', evidence: [] };
   const nonCsCount = bestNonCs.evidence.length;
@@ -184,6 +216,10 @@ module.exports = {
     SCIENCE_SIGNALS,
     HUMANITIES_SIGNALS,
     SOCIAL_SCIENCE_SIGNALS,
+    DATABASE_SIGNALS,
+    NETWORK_SIGNALS,
+    CYBERSECURITY_SIGNALS,
+    SOFTWARE_ENGINEERING_SIGNALS,
     CS_SIGNALS,
     DATA_STRUCTURE_SIGNALS,
   },

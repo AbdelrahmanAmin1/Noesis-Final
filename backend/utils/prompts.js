@@ -307,7 +307,7 @@ Source excerpts:
 {{EDUCATIONAL_CONTEXT_BLOCK}}
 
 Output STRICT JSON only:
-{"slides":[{"title":"...","visual_type":"mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|hash_table|bigo_chart","bullets":["...","..."],"visual_nodes":["Node","LinkedList","head","next"],"visual_edges":[["head","Node"]],"callouts":["..."],"example_code":"...","narration":"..."}]}
+{"slides":[{"title":"...","visual_type":"mindmap|flow|comparison|table|cards|source_reference|none|code|summary|class_diagram|tree|stack_queue|linkedlist|hash_table|bigo_chart","bullets":["...","..."],"visual_nodes":["Node","LinkedList","head","next"],"visual_edges":[["head","Node"]],"callouts":["..."],"example_code":"...","narration":"..."}]}
 
 Rules:
 - Produce 8-12 slides. Every slide MUST have deep narration (4-8 sentences for teaching slides, 2-4 for title/quiz/recap).
@@ -356,7 +356,7 @@ Output STRICT JSON only:
       "bullets": ["...", "..."],
       "narration": "...",
       "visual": {
-        "type": "mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart",
+        "type": "mindmap|flow|comparison|table|cards|source_reference|none|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart",
         "description": "...",
         "nodes": ["...", "..."],
         "edges": [["...", "..."]]

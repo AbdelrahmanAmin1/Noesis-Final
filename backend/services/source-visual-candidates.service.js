@@ -195,6 +195,7 @@ function insertSourcePages(db, materialId, pages = []) {
 
 function asCandidateRow(row) {
   if (!row) return null;
+  const metadata = parseJson(row.metadata_json, {});
   return {
     id: row.id,
     materialId: row.material_id,
@@ -207,9 +208,13 @@ function asCandidateRow(row) {
     nearbyText: row.nearby_text || '',
     ocrText: row.ocr_text || '',
     visualTypeGuess: row.visual_type_guess || '',
-    classification: parseJson(row.metadata_json, {}).classification || row.visual_type_guess || '',
+    classification: metadata.classification || row.visual_type_guess || '',
     importanceScore: Number(row.importance_score || 0),
-    metadata: parseJson(row.metadata_json, {}),
+    associationMethod: metadata.associationMethod || '',
+    associationConfidence: metadata.associationConfidence == null
+      ? (/^embedded-\d+\.(?:jpe?g|png|webp|gif)$/i.test(metadata.name || '') ? 0.25 : 1)
+      : Number(metadata.associationConfidence),
+    metadata,
     type: row.slide_number != null ? 'source_slide_reference' : 'source_page_reference',
     caption: captionFor(row),
     evidence: clean(row.nearby_text || row.ocr_text || '', 260),
@@ -271,7 +276,15 @@ function persistForMaterial(materialId, extraction = {}, opts = {}) {
         ocrText,
         guess,
         score,
-        JSON.stringify({ entryName: visual.entryName || '', mime: visual.mime || '', name: visual.name || '', classification: classified.classification, pageAssociation: key })
+        JSON.stringify({
+          entryName: visual.entryName || '',
+          mime: visual.mime || '',
+          name: visual.name || '',
+          classification: classified.classification,
+          pageAssociation: key,
+          associationMethod: visual.associationMethod || (visual.slideNumber != null ? 'pptx_slide_relationship' : 'direct_source'),
+          associationConfidence: visual.associationConfidence == null ? 1 : Number(visual.associationConfidence),
+        })
       );
       rows.push({ id: info.lastInsertRowid, key });
       if (rows.length >= max) break;

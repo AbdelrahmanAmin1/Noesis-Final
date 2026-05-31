@@ -39,7 +39,7 @@ Output STRICT JSON only:
       "bullets": ["...", "..."],
       "narration": "...",
       "visual": {
-        "type": "mindmap|flow|comparison|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart",
+        "type": "mindmap|flow|comparison|table|cards|source_reference|none|code|summary|class_diagram|tree|stack_queue|linkedlist|bigo_chart",
         "description": "...",
         "nodes": ["...", "..."],
         "edges": [["...", "..."]]

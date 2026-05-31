@@ -28,7 +28,7 @@ const DOMAIN_TOPICS = [
       },
       {
         normalizedTopic: 'Polymorphism',
-        aliases: ['polymorphism', 'dynamic dispatch', 'late binding', 'runtime dispatch'],
+        aliases: ['polymorphism', 'dynamic dispatch', 'late binding', 'runtime dispatch', 'method overriding'],
         keyConcepts: ['superclass reference', 'subclass object', 'overriding', 'dynamic dispatch', 'runtime binding', 'interface', 'abstract class'],
       },
       {
@@ -130,6 +130,116 @@ const DOMAIN_TOPICS = [
         normalizedTopic: 'Greedy Algorithms',
         aliases: ['greedy', 'greedy algorithm', 'local optimum', 'greedy choice'],
         keyConcepts: ['greedy choice', 'local optimum', 'global optimum', 'exchange argument', 'feasible choice'],
+      },
+    ],
+  },
+  {
+    domain: 'Databases',
+    topics: [
+      {
+        normalizedTopic: 'ERD',
+        aliases: ['erd', 'entity relationship diagram', 'entity relationship model'],
+        keyConcepts: ['entity', 'relationship', 'attribute', 'cardinality'],
+      },
+      {
+        normalizedTopic: 'Normalization',
+        aliases: ['normalization', 'normal forms', 'first normal form', 'second normal form', 'third normal form', '1nf', '2nf', '3nf'],
+        keyConcepts: ['functional dependency', 'redundancy', 'update anomaly', 'insert anomaly', 'delete anomaly'],
+      },
+      {
+        normalizedTopic: 'SQL',
+        aliases: ['sql', 'sql select statement', 'select statement', 'structured query language'],
+        keyConcepts: ['select', 'from', 'where', 'join', 'group by', 'query'],
+      },
+      {
+        normalizedTopic: 'Transactions',
+        aliases: ['transaction', 'transactions', 'acid properties', 'commit', 'rollback'],
+        keyConcepts: ['atomicity', 'consistency', 'isolation', 'durability', 'commit', 'rollback'],
+      },
+      {
+        normalizedTopic: 'Database Keys',
+        aliases: ['database keys', 'primary key', 'foreign key', 'candidate key', 'composite key'],
+        keyConcepts: ['primary key', 'foreign key', 'unique identifier', 'reference', 'candidate key'],
+      },
+    ],
+  },
+  {
+    domain: 'Networks',
+    topics: [
+      {
+        normalizedTopic: 'OSI Model',
+        aliases: ['osi', 'osi model', 'network layers', 'open systems interconnection'],
+        keyConcepts: ['physical layer', 'data link layer', 'network layer', 'transport layer', 'session layer', 'presentation layer', 'application layer'],
+      },
+      {
+        normalizedTopic: 'TCP/IP',
+        aliases: ['tcp/ip', 'tcp ip', 'internet protocol suite'],
+        keyConcepts: ['transport layer', 'internet layer', 'application layer', 'network access layer'],
+      },
+      {
+        normalizedTopic: 'DNS',
+        aliases: ['dns', 'domain name system', 'dns resolution', 'dns resolution process'],
+        keyConcepts: ['domain name', 'resolver', 'dns query', 'ip address'],
+      },
+      {
+        normalizedTopic: 'Routing',
+        aliases: ['routing', 'router', 'route selection'],
+        keyConcepts: ['router', 'packet', 'route', 'next hop', 'routing table'],
+      },
+      {
+        normalizedTopic: 'TCP',
+        aliases: ['tcp', 'tcp handshake', 'tcp three way handshake', 'three way handshake'],
+        keyConcepts: ['syn', 'syn ack', 'ack', 'connection establishment'],
+      },
+    ],
+  },
+  {
+    domain: 'Cybersecurity',
+    topics: [
+      {
+        normalizedTopic: 'Encryption',
+        aliases: ['encryption', 'encrypt', 'decryption', 'cipher'],
+        keyConcepts: ['plaintext', 'ciphertext', 'key', 'symmetric encryption', 'asymmetric encryption'],
+      },
+      {
+        normalizedTopic: 'Authentication',
+        aliases: ['authentication', 'authenticate', 'identity verification', 'multi factor authentication'],
+        keyConcepts: ['credential', 'password', 'token', 'multi factor authentication', 'authorization'],
+      },
+      {
+        normalizedTopic: 'Attacks',
+        aliases: ['security attacks', 'cyber attacks', 'attack', 'threats'],
+        keyConcepts: ['phishing', 'malware', 'social engineering', 'vulnerability', 'exploit'],
+      },
+      {
+        normalizedTopic: 'Defenses',
+        aliases: ['security defenses', 'defense in depth', 'mitigation', 'controls'],
+        keyConcepts: ['firewall', 'patching', 'monitoring', 'least privilege', 'backup'],
+      },
+    ],
+  },
+  {
+    domain: 'Software Engineering',
+    topics: [
+      {
+        normalizedTopic: 'Requirements',
+        aliases: ['requirements', 'requirements engineering', 'functional requirements', 'non functional requirements'],
+        keyConcepts: ['stakeholder', 'use case', 'acceptance criteria', 'functional requirement', 'non functional requirement'],
+      },
+      {
+        normalizedTopic: 'Design',
+        aliases: ['software design', 'system design', 'architecture design'],
+        keyConcepts: ['architecture', 'component', 'interface', 'design pattern', 'tradeoff'],
+      },
+      {
+        normalizedTopic: 'Testing',
+        aliases: ['software testing', 'unit testing', 'integration testing', 'system testing'],
+        keyConcepts: ['test case', 'unit test', 'integration test', 'system test', 'regression test'],
+      },
+      {
+        normalizedTopic: 'Deployment',
+        aliases: ['deployment', 'software deployment', 'release', 'continuous deployment'],
+        keyConcepts: ['release', 'environment', 'rollback', 'monitoring', 'continuous integration'],
       },
     ],
   },

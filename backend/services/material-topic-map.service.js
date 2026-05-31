@@ -42,58 +42,45 @@ function unique(values = [], max = 50) {
   return out;
 }
 
-const KNOWN_TOPIC_RULES = [
-  {
-    name: 'Stack',
-    terms: ['stack', 'LIFO', 'push', 'pop', 'top', 'underflow', 'overflow'],
-    re: /\b(stacks?|lifo|push(?:\(\))?|pop(?:\(\))?|peek(?:\(\))?|top pointer|stack underflow|stack overflow)\b/i,
-  },
-  {
-    name: 'Queue',
-    terms: ['queue', 'FIFO', 'enqueue', 'dequeue', 'front', 'rear', 'circular queue'],
-    re: /\b(queues?|fifo|enqueue(?:\(\))?|dequeue(?:\(\))?|front pointer|rear pointer|circular queue|priority queue)\b/i,
-  },
-  {
-    name: 'Linked List',
-    terms: ['linked list', 'node', 'head', 'next pointer', 'insert', 'delete'],
-    re: /\b(linked\s+lists?|singly\s+linked|doubly\s+linked|head pointer|next pointer)\b/i,
-  },
-  {
-    name: 'Tree',
-    terms: ['tree', 'root', 'child', 'traversal', 'binary tree', 'heap'],
-    re: /\b(trees?|binary\s+tree|bst|heap|root node|child node|tree traversal)\b/i,
-  },
-  {
-    name: 'Graph',
-    terms: ['graph', 'vertex', 'edge', 'adjacency', 'BFS', 'DFS'],
-    re: /\b(graphs?|vertices|vertex|edges?|adjacency|bfs|dfs)\b/i,
-  },
-  {
-    name: 'Hash Table',
-    terms: ['hash table', 'hash function', 'bucket', 'collision', 'load factor'],
-    re: /\b(hash\s+tables?|hash\s+maps?|hash function|bucket|collision|load factor)\b/i,
-  },
-  {
-    name: 'Classes and Objects',
-    terms: ['class', 'object', 'method', 'field', 'constructor'],
-    re: /\b(classes?|objects?|constructors?|methods?|fields?)\b/i,
-  },
-  {
-    name: 'Inheritance',
-    terms: ['inheritance', 'extends', 'superclass', 'subclass'],
-    re: /\b(inheritance|extends|superclass|subclass|base class|derived class)\b/i,
-  },
-  {
-    name: 'Polymorphism',
-    terms: ['polymorphism', 'override', 'runtime dispatch', 'interface'],
-    re: /\b(polymorphism|overrid(?:e|ing)|runtime dispatch|dynamic dispatch|interfaces?)\b/i,
-  },
-  {
-    name: 'Complexity',
-    terms: ['complexity', 'Big O', 'time complexity', 'space complexity'],
-    re: /\b(big[-\s]?o|complexity|o\([^)]+\)|time complexity|space complexity)\b/i,
-  },
-];
+function taxonomyTopicRules() {
+  return (materialUnderstanding.DOMAIN_TOPICS || []).flatMap(family =>
+    (family.topics || []).map(topic => ({
+      name: topic.normalizedTopic,
+      domain: family.domain,
+      aliases: unique([topic.normalizedTopic, ...((topic && topic.aliases) || [])], 18),
+      keyConcepts: unique((topic && topic.keyConcepts) || [], 18),
+    }))
+  );
+}
+
+function hasKeyPhrase(source, phrase) {
+  const hay = ` ${key(source)} `;
+  const needle = key(phrase);
+  return !!needle && hay.includes(` ${needle} `);
+}
+
+function canonicalTopicForHeading(value) {
+  const original = clean(value, 120);
+  if (!original) return '';
+  const source = key(original);
+  let best = null;
+  for (const rule of taxonomyTopicRules()) {
+    for (const label of rule.aliases || []) {
+      const normalizedLabel = key(label);
+      if (!normalizedLabel || !hasKeyPhrase(source, normalizedLabel)) continue;
+      const score = normalizedLabel.split(' ').length * 100 + normalizedLabel.length;
+      if (!best || score > best.score) best = { name: rule.name, score };
+    }
+  }
+  if (best) return best.name;
+  const parentMatch = source.match(/\b(?:operation|process|statement|method)\s+(?:in|for|of)\s+(.+)$/);
+  if (!parentMatch) return original;
+  const parent = clean(parentMatch[1], 80);
+  for (const rule of taxonomyTopicRules()) {
+    if ((rule.aliases || []).some(label => hasKeyPhrase(parent, label))) return rule.name;
+  }
+  return original;
+}
 
 function mergeTopicBundles(...bundles) {
   const merged = [];
@@ -113,13 +100,7 @@ function mergeTopicBundles(...bundles) {
 
 function normalizeTopicBundleItem(item = {}) {
   const original = clean(item && (item.topic || item.name), 120);
-  const lower = key(original);
-  let canonical = original;
-  if (/\bstack\b/.test(lower) && /\b(push|pop|peek|operation|underflow|overflow|lifo)\b/.test(lower)) canonical = 'Stack';
-  else if (/\bqueue\b/.test(lower) && /\b(enqueue|dequeue|operation|front|rear|fifo|circular)\b/.test(lower)) canonical = 'Queue';
-  else if (/\blinked\s+list\b/.test(lower) && /\b(insert|delete|operation|node|traversal)\b/.test(lower)) canonical = 'Linked List';
-  else if (/\bhash\b/.test(lower) && /\b(operation|function|bucket|collision|table|map)\b/.test(lower)) canonical = 'Hash Table';
-  else if (/\btree\b/.test(lower) && /\b(operation|traversal|root|child|binary|bst|heap)\b/.test(lower)) canonical = 'Tree';
+  const canonical = canonicalTopicForHeading(original) || original;
   return {
     ...item,
     topic: canonical,
@@ -130,27 +111,29 @@ function normalizeTopicBundleItem(item = {}) {
 
 function derivedTopicsFromChunks(chunks = [], domain = '') {
   const matches = [];
-  for (const rule of KNOWN_TOPIC_RULES) {
+  for (const rule of taxonomyTopicRules()) {
     const chunkIds = [];
     let firstIdx = Number.MAX_SAFE_INTEGER;
     let score = 0;
     for (const chunk of chunks || []) {
       const text = chunkText(chunk);
-      if (!rule.re.test(text)) continue;
+      const aliasHits = (rule.aliases || []).filter(term => hasKeyPhrase(text, term));
+      const conceptHits = (rule.keyConcepts || []).filter(term => hasKeyPhrase(text, term));
+      if (!aliasHits.length) continue;
       chunkIds.push(chunk.id);
       firstIdx = Math.min(firstIdx, Number(chunk.idx || chunk.id || 0));
-      const hay = key(text);
-      score += rule.terms.filter(term => hay.includes(key(term))).length || 1;
+      score += aliasHits.length * 3 + Math.min(conceptHits.length, 6);
     }
     if (!chunkIds.length) continue;
-    const csBoost = /data structures?|algorithm|object oriented|oop|programming/i.test(String(domain || '')) ? 1 : 0;
-    if (score + csBoost < 2) continue;
+    const domainBoost = key(rule.domain) === key(domain) ? 1 : 0;
+    if (score + domainBoost < 3) continue;
+    const terms = unique([rule.name, ...(rule.aliases || []), ...(rule.keyConcepts || [])], 18);
     matches.push({
       topic: rule.name,
       name: rule.name,
-      terms: rule.terms,
+      terms,
       chunkIds: unique(chunkIds.map(String), 40).map(Number),
-      evidence: rule.terms.slice(0, 4).join(', '),
+      evidence: terms.slice(0, 4).join(', '),
       orderHint: firstIdx,
       score,
     });
@@ -281,6 +264,15 @@ function requiredVisualTypesForTopic(topic, domain) {
   }
   if (/algorithm|complexity|big o|big-o|sorting|searching/.test(`${key(domain)} ${text}`)) {
     required.push(/complexity|big o|big-o|o\(/.test(text) ? 'big_o_growth' : 'process_flow');
+  }
+  if (/erd|entity relationship|database key|primary key|foreign key/.test(text)) {
+    required.push('comparison_table');
+  }
+  if (/normalization|transaction|dns|routing|tcp|authentication|encryption|deployment/.test(text)) {
+    required.push('process_flow');
+  }
+  if (/osi model|tcp ip|requirements|testing|defenses|attacks/.test(text)) {
+    required.push('concept_cards');
   }
   if (/code|program|java|python|function|method|operation/.test(text) && !required.includes('code_walkthrough')) {
     required.push('code_walkthrough');
@@ -607,6 +599,7 @@ module.exports = {
   _internals: {
     buildTopicMap,
     buildTopicMapFromPartsForTest,
+    canonicalTopicForHeading,
     derivedTopicsFromChunks,
     operationsForTopic,
     requiredVisualTypesForTopic,

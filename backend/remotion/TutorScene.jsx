@@ -1,5 +1,5 @@
 import React from 'react';
-import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, continueRender, delayRender, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import visualRegistry from '../utils/visual-registry.js';
 import codeWindow from '../utils/code-window.js';
 
@@ -98,8 +98,8 @@ const getVisualData = (scene = {}, slide = {}) => {
 const mediaSrc = (value) => {
   const text = String(value || '');
   if (!text) return '';
-  if (/^https?:\/\//i.test(text) || /^file:\/\//i.test(text)) return text;
-  return `file:///${text.replace(/\\/g, '/')}`;
+  if (/^(?:https?:|file:|data:|blob:)/i.test(text)) return text;
+  return encodeURI(`file:///${text.replace(/\\/g, '/')}`);
 };
 
 function asList(value) {
@@ -579,6 +579,45 @@ const TableVisual = ({ frame, scene, slide }) => {
   );
 };
 
+const SafeSourceImage = ({ src, fallback }) => {
+  const [handle] = React.useState(() => delayRender('Loading validated source visual'));
+  const [failed, setFailed] = React.useState(false);
+  const completed = React.useRef(false);
+  const finish = React.useCallback(() => {
+    if (completed.current) return;
+    completed.current = true;
+    continueRender(handle);
+  }, [handle]);
+
+  React.useEffect(() => {
+    const timeout = setTimeout(() => {
+      setFailed(true);
+      finish();
+    }, 5000);
+    return () => {
+      clearTimeout(timeout);
+      finish();
+    };
+  }, [finish]);
+
+  if (!src || failed) return fallback;
+  return (
+    <img
+      src={src}
+      alt=""
+      onLoad={(event) => {
+        if (!event.currentTarget.naturalWidth || !event.currentTarget.naturalHeight) setFailed(true);
+        finish();
+      }}
+      onError={() => {
+        setFailed(true);
+        finish();
+      }}
+      style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+    />
+  );
+};
+
 const SourceReferenceVisual = ({ frame, scene, slide }) => {
   const data = getVisualData(scene, slide);
   const src = mediaSrc(data.imageUrl || data.imagePath);
@@ -587,7 +626,7 @@ const SourceReferenceVisual = ({ frame, scene, slide }) => {
       <div style={{ height: '100%', boxSizing: 'border-box', border: `1px solid ${theme.line}`, borderRadius: 18, background: '#111827', padding: 22, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ color: theme.text, fontSize: 24, fontWeight: 850, textAlign: 'center' }}>{safeLabel(data.caption || scene.sceneTitle || slide.title || 'Source visual', 90)}</div>
         <div style={{ flex: 1, minHeight: 0, borderRadius: 14, overflow: 'hidden', background: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <img src={src} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+          <SafeSourceImage src={src} fallback={<CardsVisual frame={frame} scene={scene} slide={slide} />} />
         </div>
       </div>
     );

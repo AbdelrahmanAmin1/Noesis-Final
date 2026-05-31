@@ -18,6 +18,7 @@ const renderer = require('./renderer.service');
 const visualRegistry = require('../utils/visual-registry');
 const codeWindow = require('../utils/code-window');
 const sourceVisualCandidates = require('./source-visual-candidates.service');
+const renderVisualAssets = require('./render-visual-assets.service');
 const sourceGroundingJudge = require('./source-grounding-judge.service');
 const sourceTopicPlans = require('./source-topic-plan.service');
 const materialTopicMap = require('./material-topic-map.service');
@@ -1996,6 +1997,7 @@ function directNarrationFallback(scene = {}, topic = '') {
   }
   const inferred = inferVisualTypeFromTopic(text) || scene.visualType || scene.visualTemplate || '';
   const label = scene.topicName || scene.sceneTitle || scene.title || topic || 'This idea';
+  const takeaway = scene.learningPoint || scene.studentFacingGoal || scene.teachingGoal || scene.viewerTakeaway || '';
   if (String(inferred).includes('stack') || /\bstack|lifo|push|pop|top\b/i.test(text)) {
     return 'Stack operations use LIFO order: push adds a value on top, pop removes the top value, and underflow happens when the stack is empty.';
   }
@@ -2009,9 +2011,13 @@ function directNarrationFallback(scene = {}, topic = '') {
     return 'Tree operations follow parent and child links, so the visual should show the root, the path taken, and the node that changes.';
   }
   if (String(inferred).includes('class') || /class|object|inheritance|polymorphism|encapsulation/i.test(text)) {
-    return 'Use the class and object labels to show which data is owned, which method runs, and how the relationship changes the result.';
+    return takeaway
+      ? `${label}: ${String(takeaway).replace(/[.!?]+$/, '')}.`
+      : 'Classes define reusable structure, while objects hold concrete state and run the methods that shape their behavior.';
   }
-  return `${label} is the focus here. Name the rule, point to the visual label that supports it, and finish with the mistake a learner should avoid.`;
+  return takeaway
+    ? `${label}: ${String(takeaway).replace(/[.!?]+$/, '')}.`
+    : `${label} connects the source-backed ideas shown in this scene.`;
 }
 
 function sanitizeNarrationText(value, scene = {}, topic = '') {
@@ -2648,6 +2654,15 @@ function candidateHasSourceImage(candidate) {
   return !!(candidate && (candidate.imagePath || candidate.thumbnailPath || candidate.imageUrl));
 }
 
+function candidateHasUsableSourceImage(candidate) {
+  if (!candidateHasSourceImage(candidate)) return false;
+  const classification = String(candidate.classification || candidate.visualTypeGuess || '').toLowerCase();
+  if (classification === 'decorative') return false;
+  if (Number(candidate.importanceScore || 0) < 0.4) return false;
+  if (candidate.associationConfidence != null && Number(candidate.associationConfidence) < 0.5) return false;
+  return renderVisualAssets.basicAssetCheck(candidate, { lookupDb: false }).valid;
+}
+
 function sourceVisualPayload(candidate) {
   if (!candidate) return {};
   const sourcePage = candidate.sourcePage ?? candidate.pageNumber ?? null;
@@ -2705,7 +2720,7 @@ function sourceVisualsForBoard(userId, board) {
   }
   const seen = new Set();
   return candidates.filter(candidate => {
-    if (!candidateHasSourceImage(candidate)) return false;
+    if (!candidateHasUsableSourceImage(candidate)) return false;
     const k = sourceVisualKey(candidate);
     if (!k || seen.has(k)) return false;
     seen.add(k);
@@ -4496,6 +4511,9 @@ function inferVisualTypeFromTopic(topic) {
   if (/tree|bst|binary/.test(lower)) return 'tree_visual';
   if (/big.?o|complexity|growth/.test(lower)) return 'big_o_growth';
   if (/sort|search|algorithm/.test(lower)) return 'process_flow';
+  if (/normalization|transaction|dns|routing|handshake|authentication|encryption|deployment/.test(lower)) return 'process_flow';
+  if (/erd|entity.?relationship|primary key|foreign key|database key/.test(lower)) return 'comparison_table';
+  if (/osi|tcp.?ip|requirements|testing|defenses?|attacks?/.test(lower)) return 'concept_cards';
   if (/compar|versus|differ|advantage|disadvantage|pros?\b|cons?\b/.test(lower)) return 'comparison_table';
   if (/classif|categor|types?\s+of|kinds?\s+of/.test(lower)) return 'classification_table';
   if (/process|pipeline|stages?|phases?|steps?\s+\d|workflow|cycle|procedure/.test(lower)) return 'flowchart';

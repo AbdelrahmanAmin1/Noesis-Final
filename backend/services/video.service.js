@@ -25,6 +25,7 @@ const visualRegistry = require('../utils/visual-registry');
 const sourceGroundingJudge = require('./source-grounding-judge.service');
 const sourceTopicPlans = require('./source-topic-plan.service');
 const materialTopicMap = require('./material-topic-map.service');
+const renderVisualAssets = require('./render-visual-assets.service');
 const { HttpError } = require('../middleware/error');
 const log = require('../utils/logger');
 const {
@@ -1194,7 +1195,7 @@ function normalizeScript(script, concept, chunks, lowGrounding = false) {
     const inferredVisualType = inferScriptVisualType(s, concept, slideType, nodes, bullets, i, slidesIn.length);
     const imagePath = s.image_path || s.imagePath || visual.imagePath || visual.image_path || '';
     const sourceVisualId = s.source_visual_id || s.sourceVisualId || visual.sourceVisualId || visual.source_visual_id || null;
-    const hasSourceImage = !!(imagePath || sourceVisualId);
+    const hasSourceImage = !!imagePath;
     // Resolve the requested visual type through the shared registry so canonical names
     // (no_visual, source_page_reference, concept_cards, stack_operation, ...) and legacy
     // names both map to a drawer the canvas renderer supports. A deliberate no_visual or
@@ -2351,6 +2352,12 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
     let prepared = storyboards.scriptForRender(userId, storyboardId);
     assertStoryboardRenderable(prepared);
     let script = normalizeScript(prepared.script, prepared.board.topic, [], false);
+    let renderAssetPreflight = await renderVisualAssets.preflightScriptAssets(script, {
+      materialId: prepared.board.material_id,
+      scenes: prepared.board.storyboard && prepared.board.storyboard.scenes || [],
+    });
+    script = renderAssetPreflight.script;
+    let renderScenes = renderAssetPreflight.scenes;
     let quality = scoreVideoScript(script, {
       concept: prepared.board.topic,
       chunks: [],
@@ -2364,6 +2371,12 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
         prepared = storyboards.scriptForRender(userId, storyboardId);
         assertStoryboardRenderable(prepared);
         script = normalizeScript(prepared.script, prepared.board.topic, [], false);
+        renderAssetPreflight = await renderVisualAssets.preflightScriptAssets(script, {
+          materialId: prepared.board.material_id,
+          scenes: prepared.board.storyboard && prepared.board.storyboard.scenes || [],
+        });
+        script = renderAssetPreflight.script;
+        renderScenes = renderAssetPreflight.scenes;
         quality = scoreVideoScript(script, {
           concept: prepared.board.topic,
           chunks: [],
@@ -2391,10 +2404,17 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
       throw new Error(`storyboard_visible_text_leak: banned term "${prepared.visibleTextBanned}" found in learner-facing content`);
     }
     setStatus('processing', {
-      script_md: JSON.stringify(script),
+      script_md: JSON.stringify(renderVisualAssets.stripEmbeddedBrowserAssets(script)),
       lesson_json: JSON.stringify(prepared.lesson || {}),
       storyboard_json: JSON.stringify(prepared.board.storyboard),
-      quality_json: JSON.stringify({ ...(prepared.quality || {}), renderScript: quality }),
+      quality_json: JSON.stringify({
+        ...(prepared.quality || {}),
+        renderScript: quality,
+        renderAssets: {
+          warnings: renderAssetPreflight.warnings,
+          fallbackCount: renderAssetPreflight.warnings.length,
+        },
+      }),
       resolved_concept: prepared.board.topic,
     });
     jobs.update(jobId, { progress: 18, stage: 'Creating narration...' });
@@ -2416,9 +2436,11 @@ async function runStoryboardPipeline({ videoId, userId, storyboardId, jobId }) {
 
     for (let i = 0; i < script.slides.length; i++) {
       const s = script.slides[i];
-      const rawScene = prepared.board.storyboard && prepared.board.storyboard.scenes
-        ? prepared.board.storyboard.scenes[i]
-        : null;
+      const rawScene = renderScenes && renderScenes.length
+        ? renderScenes[i]
+        : prepared.board.storyboard && prepared.board.storyboard.scenes
+          ? prepared.board.storyboard.scenes[i]
+          : null;
       const storyboardScene = rawScene ? storyboards.sanitizeSceneForRender(rawScene) : null;
       const slideImg = path.join(workDir, `slide_${i}.png`);
       const audioFile = path.join(workDir, `audio_${i}.wav`);

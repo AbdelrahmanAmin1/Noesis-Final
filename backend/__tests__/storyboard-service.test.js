@@ -213,6 +213,25 @@ describe('storyboard.service', () => {
     expect(validation.warnings).toContain('page_number_center_visual');
   });
 
+  it('rejects page-number bubble visuals for any domain', () => {
+    const validation = _internals.validateVisualRelevance({
+      id: 'scene-network-page',
+      title: 'DNS Resolution',
+      sceneTitle: 'DNS Resolution',
+      narration: 'DNS resolution sends a domain name query to a resolver and returns an IP address.',
+      visualType: 'source_page_reference',
+      visualTemplate: 'source_page_reference',
+      visualData: {
+        type: 'source_page_reference',
+        nodes: ['Page 12', 'DNS', 'resolver', 'IP address'],
+      },
+      sourceEvidence: [{ chunkId: 12, quote: 'DNS maps domain names to IP addresses.' }],
+    }, 'DNS');
+
+    expect(validation.passed).toBe(false);
+    expect(validation.warnings).toContain('page_number_center_visual');
+  });
+
   it('uses the topic-map title and sanitizes uploaded-material narration before scripting', () => {
     const script = scriptFromStoryboard({
       topic: 'Queue',
@@ -238,6 +257,49 @@ describe('storyboard.service', () => {
     expect(script.topic).toBe('Stack / Queue');
     expect(script.slides[0].narration).toMatch(/Queue operations use FIFO/i);
     expect(script.slides[0].narration).not.toMatch(/uploaded material is organized/i);
+  });
+
+  it('sanitizes generic uploaded-material narration into direct teaching text', () => {
+    const narration = _internals.sanitizeNarrationText(
+      'The uploaded material is organized around OOP concepts.',
+      {
+        title: 'OOP Concepts',
+        sceneTitle: 'OOP Concepts',
+        learningPoint: 'Classes define reusable structure while objects hold concrete state',
+        visualType: 'concept_cards',
+      },
+      'Object-Oriented Programming',
+    );
+
+    expect(narration).not.toMatch(/uploaded material|name the rule|point to the visual/i);
+    expect(narration).toMatch(/Classes define reusable structure/i);
+  });
+
+  it('allocates database storyboard scenes across multiple topics with meaningful generic visuals', () => {
+    const topicMap = {
+      title: 'ERD / Normalization / SQL / Transactions',
+      domain: 'databases',
+      topics: [
+        { id: 'topic-erd', name: 'ERD', terms: ['entity', 'relationship', 'attribute'], sourceChunkIds: [1], sourceVisualIds: [], requiredVisualTypes: ['comparison_table'], checkpointNeeded: true },
+        { id: 'topic-normalization', name: 'Normalization', terms: ['redundancy', 'normal forms'], sourceChunkIds: [2], sourceVisualIds: [], requiredVisualTypes: ['process_flow'], checkpointNeeded: true },
+        { id: 'topic-sql', name: 'SQL', terms: ['SELECT', 'FROM', 'WHERE'], sourceChunkIds: [3], sourceVisualIds: [], requiredVisualTypes: ['code_walkthrough'], checkpointNeeded: true },
+        { id: 'topic-transactions', name: 'Transactions', terms: ['ACID', 'COMMIT', 'ROLLBACK'], sourceChunkIds: [4], sourceVisualIds: [], requiredVisualTypes: ['process_flow'], checkpointNeeded: true },
+      ],
+    };
+    const chunks = [
+      { id: 1, text: 'An ERD shows entities, relationships, attributes, and cardinality.' },
+      { id: 2, text: 'Normalization reduces redundancy and avoids update anomalies.' },
+      { id: 3, text: 'SQL SELECT statements query tables with SELECT, FROM, and WHERE.' },
+      { id: 4, text: 'Transactions follow ACID properties and can COMMIT or ROLLBACK.' },
+    ];
+
+    const scenes = _internals.topicMapScenePlan(topicMap, chunks, [], { domain: 'databases' });
+    const coveredTopics = new Set(scenes.map(scene => scene.topicId).filter(Boolean));
+
+    expect([...coveredTopics]).toEqual(expect.arrayContaining(['topic-erd', 'topic-normalization', 'topic-sql', 'topic-transactions']));
+    expect(scenes.some(scene => scene.visualType === 'process_flow')).toBe(true);
+    expect(scenes.some(scene => scene.visualType === 'comparison_table')).toBe(true);
+    expect(scenes.every(scene => !/page\s+\d+/i.test(JSON.stringify(scene.visualElements || {})))).toBe(true);
   });
 
   it('rejects generic scenes before rendering', () => {

@@ -121,6 +121,8 @@ async function extractPdfStructure(filePath, opts = {}) {
     buffer: img.buffer,
     mime: img.mime,
     name: img.name,
+    associationMethod: 'pdf_byte_offset_estimate',
+    associationConfidence: 0.25,
   }));
   return {
     type: 'pdf',
