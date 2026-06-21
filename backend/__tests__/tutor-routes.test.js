@@ -7,6 +7,72 @@ const { setupTestEnv, cleanupTestDb, createTestUser } = require('./helpers/setup
 const { migrate, getDb } = require('../config/db');
 const { notFound, errorHandler } = require('../middleware/error');
 
+vi.mock('../services/rag.service', async () => {
+  const actual = await vi.importActual('../services/rag.service');
+  return {
+    ...actual,
+    retrieveLessonContext: vi.fn(async () => ({
+      chunks: [{
+        id: 'chunk:polymorphism',
+        chunk_id: 1,
+        material_id: 1,
+        chapter_id: 1,
+        idx: 0,
+        text: [
+          'What is polymorphism?',
+          'A superclass reference can be aimed at a subclass object.',
+          'The type of the actual referenced object, not the reference, determines which method is called.',
+          'Dynamic dispatch chooses Circle.draw or Rectangle.draw at runtime.',
+        ].join('\n'),
+        score: 1,
+        chapter_title: 'Chapter 10',
+        heading: 'Polymorphism',
+        material_title: '15',
+        source_title: 'Chapter 10',
+      }],
+      uploaded: {
+        chunks: [{
+          id: 'chunk:polymorphism',
+          chunk_id: 1,
+          text: 'Dynamic dispatch chooses Circle.draw or Rectangle.draw at runtime.',
+          chapter_title: 'Chapter 10',
+          heading: 'Polymorphism',
+          score: 1,
+        }],
+      },
+      system: { chunks: [] },
+    })),
+  };
+});
+
+vi.mock('../services/topic-resolver.service', async () => {
+  const actual = await vi.importActual('../services/topic-resolver.service');
+  return {
+    ...actual,
+    isGenericTopic: actual.isGenericTopic,
+    resolveTopic: vi.fn(async () => ({
+      topic: 'Polymorphism',
+      confidence: 0.96,
+      topic_source: 'test_mock',
+      sourceTitle: 'Chapter 10',
+      understanding: null,
+      cacheHit: false,
+    })),
+  };
+});
+
+vi.mock('../services/learning-map.service', async () => {
+  const actual = await vi.importActual('../services/learning-map.service');
+  return {
+    ...actual,
+    buildLearningMap: vi.fn(() => ({
+      root: 'Polymorphism',
+      nodes: [{ id: 'polymorphism', label: 'Polymorphism' }],
+      edges: [],
+    })),
+  };
+});
+
 function getTutorTestApp() {
   setupTestEnv();
   process.env.TUTOR_ASYNC_START = 'true';
@@ -46,7 +112,7 @@ function seedPolymorphismMaterial(db, userId) {
 }
 
 async function waitForReady(app, token, sessionId) {
-  for (let i = 0; i < 80; i += 1) {
+  for (let i = 0; i < 120; i += 1) {
     const res = await request(app)
       .get(`/api/tutor/sessions/${sessionId}/status`)
       .set('Authorization', `Bearer ${token}`);

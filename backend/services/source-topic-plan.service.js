@@ -3,9 +3,13 @@
 const { getDb } = require('../config/db');
 const materialUnderstanding = require('./material-understanding.service');
 const topicResolver = require('./topic-resolver.service');
+const sourceTextQuality = require('./source-text-quality.service');
 
 function clean(value, max = 140) {
-  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
+  return sourceTextQuality.stripSourceNoise(String(value || ''), { preserveNewlines: false })
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, max);
 }
 
 function key(value) {
@@ -19,6 +23,7 @@ function searchKey(value) {
 function isGeneric(value) {
   const text = clean(value);
   if (!text || /^\d+$/.test(text)) return true;
+  if (sourceTextQuality.isDocumentMetadata(text) || sourceTextQuality.isIncompleteLabel(text)) return true;
   if (/^((info\s+)?material concepts?|computer science|cs|data structures?|object[-\s]?oriented programming|oop|algorithms?)$/i.test(text)) return true;
   return topicResolver.isGenericTopic(text) ||
     (materialUnderstanding._internals && materialUnderstanding._internals.isGenericGeneralLabel
@@ -121,9 +126,7 @@ function chunkIdsForBundleItem(item, chunks) {
 }
 
 function sourceLabelForItem(item) {
-  const pages = Array.isArray(item && item.sourcePages) ? item.sourcePages.filter(Boolean) : [];
-  if (pages.length) return `page ${pages[0]}`;
-  return '';
+  return item && item.topic ? sourceTextQuality.sourceLabel(item.topic, '') : '';
 }
 
 function bundleFromOutline(outline = {}, chunks = []) {

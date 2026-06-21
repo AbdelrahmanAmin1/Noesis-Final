@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const sourceTextQuality = require('../services/source-text-quality.service');
 
 const TEMPLATE_DIR = path.join(__dirname, '..', 'prompts', 'templates');
 const templateCache = new Map();
@@ -133,7 +134,7 @@ Rules:
 
 const QUIZ_MCQ_FALLBACK = `{{SYSTEM_BASE}}
 
-Task: Generate {{COUNT}} multiple-choice quiz questions at {{DIFFICULTY}} difficulty. Focus on conceptual understanding: ask about time complexity, design trade-offs, when to use which data structure, OOP design principles, and common pitfalls. Avoid purely syntactic questions. Each question must have exactly 4 options with ONE correct answer (correct_idx 0-3). Each must include a short, helpful explanation that justifies the correct answer and addresses common misconceptions. Include a difficulty field and a topic tag for every question.
+Task: Generate exactly {{COUNT}} multiple-choice quiz questions at {{DIFFICULTY}} difficulty. Test conceptual understanding, decisions, trade-offs, applications, and common misconceptions in the subject matter. Ask about code only when the source contains code or a design example. Each question must have exactly 4 plausible options with ONE correct answer (correct_idx 0-3), a helpful explanation, a focused topic tag, one question_type, and 1-3 source_chunk_ids.
 
 Grounding tier: {{GROUNDING_STATUS}}
 
@@ -143,15 +144,23 @@ Source excerpts:
 {{EDUCATIONAL_CONTEXT_BLOCK}}
 
 Output STRICT JSON only:
-{"questions":[{"question":"...","options":["A","B","C","D"],"correct_idx":0,"explanation":"...","difficulty":"{{DIFFICULTY}}","topic":"Arrays / Big-O / Encapsulation"}]}
+{"questions":[{"question":"...","options":["A","B","C","D"],"correct_idx":0,"explanation":"...","difficulty":"{{DIFFICULTY}}","topic":"focused concept","question_type":"concept|scenario|code_design|misconception|tradeoff","source_chunk_ids":[123]}]}
 
 Rules:
 - Uploaded excerpts are the course-specific source of truth.
 - Curated educational context is trusted expansion for definitions, applications, code behavior, common mistakes, complexity, and scenario reasoning.
 - Do not invent course-specific claims or pretend curated context came from the uploaded material.
 - Do not put raw chunk IDs, debug labels, raw curated JSON, or sourceChunkIds in visible questions, options, or explanations.
+- Never ask about or mention the file name, document title, handout number, author, instructor, credit, course code, semester, date, uploader, or source format.
+- Questions, options, explanations, difficulty labels, and topic tags must contain subject concepts only, never document metadata or bibliographic trivia.
+- Never use framing such as "According to the uploaded material", "Based on the document", "In the source", or "Which statement best describes". Ask the concept question directly.
 - Avoid generic questions such as "What is this topic?", "Define the concept", or "True or false: this is important".
-- Make every question specific and useful.`;
+- Make every question specific and useful: test a source-backed concept, relationship, example, design choice, misconception, or consequence.
+- source_chunk_ids must contain only numeric chunk IDs shown in the source excerpts and must support the correct answer.
+- Do not copy raw source sentences as answer choices. Rewrite ideas into concise, parallel, plausible options.
+- Concise options such as "Pop", "LIFO", "O(1)", formulas, symbols, or short domain terms are allowed when they are meaningful and plausible.
+- For 6 questions, aim for at least 2 scenario or code_design questions, 1 misconception question, and 1 tradeoff question when the source supports those types. Never invent a tradeoff, scenario, or code example merely to satisfy the mix.
+- Use concrete examples, APIs, operations, and design choices present in the source. Distractors should represent realistic misunderstandings of the same concept.`;
 
 const TUTOR_PLAN_FALLBACK = `{{SYSTEM_BASE}}
 
@@ -433,7 +442,7 @@ function renderTemplate(fileName, fallback, vars) {
 function cleanExcerptText(text) {
   let value = String(text || '').trim();
   if (/<\/?(a|p|dgm|c):/i.test(value)) value = value.replace(/<[^>]+>/g, ' ');
-  return value.replace(/\s+/g, ' ').trim();
+  return sourceTextQuality.stripSourceNoise(value, { preserveNewlines: false }).replace(/\s+/g, ' ').trim();
 }
 
 function sourceExcerpts(chunks, opts = {}) {
@@ -499,15 +508,11 @@ function compactTopicMap(topicMap, maxChars = 2400) {
     `Domain: ${cleanExcerptText(topicMap.domain || 'unknown')}`,
   ];
   for (const topic of topicMap.topics.slice(0, 8)) {
-    const refs = (topic.sourcePageRefs || [])
-      .map(ref => ref.label || (ref.pageNumber ? `Page ${ref.pageNumber}` : ref.slideNumber ? `Slide ${ref.slideNumber}` : ''))
-      .filter(Boolean)
-      .slice(0, 3)
-      .join(', ');
     const visuals = (topic.requiredVisualTypes || []).slice(0, 4).join(', ');
-    const terms = (topic.terms || []).slice(0, 6).join(', ');
+    const terms = (topic.terms || []).slice(0, 6).map(term => cleanExcerptText(term)).filter(Boolean).join(', ');
     const order = Number.isFinite(Number(topic.order)) ? Number(topic.order) + 1 : lines.length - 1;
-    lines.push(`${order}. ${topic.name}${terms ? ` | terms: ${terms}` : ''}${visuals ? ` | visuals: ${visuals}` : ''}${refs ? ` | source: ${refs}` : ''}`);
+    const name = cleanExcerptText(topic.name);
+    if (name) lines.push(`${order}. ${name}${terms ? ` | terms: ${terms}` : ''}${visuals ? ` | visuals: ${visuals}` : ''}`);
   }
   const text = lines.join('\n');
   return text.length > maxChars ? `${text.slice(0, maxChars).trim()}...` : text;

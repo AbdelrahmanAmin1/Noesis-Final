@@ -3,6 +3,26 @@
 const materialTopicMap = require('../services/material-topic-map.service');
 
 describe('material-topic-map.service helpers', () => {
+  it('rejects document metadata and incomplete fragments from topic rows', () => {
+    const topicMap = materialTopicMap._internals.buildTopicMapFromPartsForTest({
+      plan: {
+        topicBundle: [
+          { topic: 'CS108, Stanford Handout #9', terms: ['objects'] },
+          { topic: 'However, In', terms: ['operation'] },
+          { topic: 'Encapsulation', terms: ['private state', 'public interface'] },
+          { topic: 'Public Interface/API Design', terms: ['client vocabulary'] },
+        ],
+        primaryTopic: 'Encapsulation',
+      },
+      outline: { keyConcepts: ['Encapsulation'] },
+      chunks: [{ id: 1, idx: 0, text: 'Encapsulation hides implementation details behind a client-oriented public interface.' }],
+      visuals: [],
+      domain: 'Object-Oriented Programming',
+    });
+
+    expect(topicMap.topics.map(topic => topic.name)).toEqual(expect.arrayContaining(['Encapsulation', 'Public Interface/API Design']));
+    expect(topicMap.topics.map(topic => topic.name).join(' ')).not.toMatch(/CS108|Handout|However, In/i);
+  });
   it('keeps stack and queue as separate material-wide allocations', () => {
     const topicMap = {
       title: 'Stack / Queue',

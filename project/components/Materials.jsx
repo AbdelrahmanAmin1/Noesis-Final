@@ -244,12 +244,27 @@ const MaterialDetail = ({ onNav }) => {
       const scopePayload = currentScopePayload();
       if (kind === 'notes') await window.NoesisAPI.notes.generate({ material_id: id, ...scopePayload });
       let flashcardResult = null;
+      let quizResult = null;
       if (kind === 'flashcards') flashcardResult = await window.NoesisAPI.flashcards.generate({ material_id: id, count: 8, regenerate: !!options.regenerate, ...scopePayload });
       if (kind === 'quiz') {
-        const r = await window.NoesisAPI.quizzes.generate({ material_id: id, count: 6, difficulty: 'medium', ...scopePayload });
+        const quizPayload = { material_id: id, count: 6, difficulty: 'medium', ...scopePayload };
+        let r = await window.NoesisAPI.quizzes.generate(quizPayload);
+        if (r && r.status === 'reindexing' && r.job_id) {
+          setGenStatus('Repairing extracted text and rebuilding the study index...');
+          await window.NoesisAPI.pollJob(r.job_id, {
+            intervalMs: 1200,
+            onProgress: job => setGenStatus(`Repairing study index... ${Math.max(0, Number(job.progress || 0))}%`),
+          });
+          setGenStatus('Generating concept-focused quiz...');
+          r = await window.NoesisAPI.quizzes.generate(quizPayload);
+        }
+        if (!r || !r.quiz_id) throw new Error('Quiz generation did not complete after reindexing.');
+        quizResult = r;
         sessionStorage.setItem('noesis.quizId', String(r.quiz_id));
       }
-      if (kind === 'flashcards' && flashcardResult) {
+      if (kind === 'quiz' && quizResult && quizResult.partial) {
+        setGenStatus(`Quiz created with ${quizResult.count || 0} of ${quizResult.requested_count || 6} grounded questions.`);
+      } else if (kind === 'flashcards' && flashcardResult) {
         if (flashcardResult.reused) setGenStatus('Using existing flashcards for this material.');
         else if (flashcardResult.fallback) setGenStatus(flashcardResult.message || 'Created fallback flashcards from source material.');
         else setGenStatus(`${flashcardResult.created || 0} flashcards generated successfully.`);
@@ -258,7 +273,12 @@ const MaterialDetail = ({ onNav }) => {
       }
       return true;
     } catch (e) {
-      setGenStatus('Failed: ' + (e.message || 'error'));
+      const qualityMessage = e && e.code === 'quiz_quality_failed'
+        ? 'The models could not produce a high-quality grounded quiz. Please retry.'
+        : e && e.code === 'insufficient_quiz_content'
+          ? 'There is not enough clean concept content for a useful quiz.'
+          : null;
+      setGenStatus(qualityMessage || ('Failed: ' + (e.message || 'error')));
       return false;
     } finally {
       setBusy(false);

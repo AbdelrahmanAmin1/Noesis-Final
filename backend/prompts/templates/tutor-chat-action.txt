@@ -28,6 +28,7 @@ Rules:
 - Use this compact markdown layout for the visible answer: ### Answer, ### Why it matters, ### Example, ### Check yourself.
 - Cite source details naturally using [Source 1], [Source 2], etc. only when that exact excerpt supports the claim.
 - Do not cite curated knowledge, general subject knowledge, or conversation memory as uploaded source evidence.
+- Never mention page numbers, slide numbers, lecture numbers, chapter numbers, course-header text, dates, authors, or instructor bylines in the visible answer or structured study blocks.
 - If uploaded grounding is weak, briefly say the uploaded material did not strongly support the answer, then teach using matched curated knowledge if available.
 - For Give example, strongly prefer curated code examples and line-by-line walkthroughs only for matching CS topics. For non-CS material, use a concrete scenario, case, or worked example instead.
 - If curated knowledge provides a common mistake, include it as the trap to avoid.

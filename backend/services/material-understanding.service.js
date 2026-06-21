@@ -2,6 +2,7 @@
 
 const { getDb } = require('../config/db');
 const topicResolver = require('./topic-resolver.service');
+const sourceTextQuality = require('./source-text-quality.service');
 
 const NORMAL_CONFIDENCE_THRESHOLD = 0.65;
 const MIN_KEY_CONCEPTS = 3;
@@ -466,6 +467,7 @@ const TERM_STOPWORDS = new Set([
 function isGenericGeneralLabel(value) {
   const text = String(value || '').replace(/\.[a-z0-9]+$/i, '').replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (!text) return true;
+  if (sourceTextQuality.isDocumentMetadata(text) || sourceTextQuality.isIncompleteLabel(text)) return true;
   if (topicResolver.isGenericTopic(text)) return true;
   if (BOILERPLATE_LABEL_RE.test(text)) return true;
   if (/^(document|file|material|upload|uploaded material|source|lesson|chapter\s*\d+|slide\s*\d+|section\s*\d+|page\s*\d+|unit\s*\d+|module\s*\d+|top|untitled|\d+)$/i.test(text)) return true;
@@ -638,6 +640,7 @@ function splitSourceLines(value) {
 function looksLikeNavigationLine(value) {
   const text = normalizeSourceLine(value);
   if (!text) return false;
+  if (sourceTextQuality.isDocumentMetadata(text)) return true;
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length > 6 || text.length > 80) return false;
   if (/[.!?]$/.test(text) && words.length > 3) return false;

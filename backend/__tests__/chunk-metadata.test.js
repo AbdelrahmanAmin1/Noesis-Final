@@ -55,6 +55,22 @@ describe('chunkText', () => {
     expect(chunkText('')).toEqual([]);
     expect(chunkText(null)).toEqual([]);
   });
+
+  it('uses complete semantic units and drops document metadata paragraphs', () => {
+    const sentence = 'Encapsulation keeps implementation details private while clients use a focused public interface.';
+    const text = [
+      'Thanks to Example Author for much of this handout',
+      ...Array.from({ length: 14 }, (_, index) => `${sentence} Example ${index + 1} preserves the same design boundary.`),
+    ].join('\n\n');
+
+    const chunks = chunkText(text, { targetTokens: 55, overlapTokens: 18 });
+    const combined = chunks.map(chunk => chunk.text).join('\n');
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(combined).not.toMatch(/handout|Example Author/i);
+    expect(chunks.every(chunk => !/^\w{1,3}\s/.test(chunk.text))).toBe(true);
+    expect(chunks.every(chunk => /[.!?)]$/.test(chunk.text))).toBe(true);
+  });
 });
 
 describe('chunkByChapter', () => {

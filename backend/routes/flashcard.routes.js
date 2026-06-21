@@ -17,6 +17,7 @@ const materialUnderstanding = require('../services/material-understanding.servic
 const sourceGroundingJudge = require('../services/source-grounding-judge.service');
 const sourceTopicPlans = require('../services/source-topic-plan.service');
 const materialTopicMap = require('../services/material-topic-map.service');
+const sourceTextQuality = require('../services/source-text-quality.service');
 const srs = require('../services/srs.service');
 const log = require('../utils/logger');
 const gamification = require('../services/gamification.service');
@@ -97,13 +98,16 @@ function inferTopic(text, fallback) {
 }
 
 function stripInternalRefs(value) {
-  return String(value || '')
+  const stripped = String(value || '')
     .replace(/\[chunk\s*:\s*\d+\]/gi, '')
     .replace(/\[source[_\s-]*chunk\s*:\s*\d+\]/gi, '')
     .replace(/"?source[_\s-]*chunk[_\s-]*id"?\s*:?\s*\d+/gi, '')
     .replace(/\bchunk\s*id\s*#?\s*\d+\b/gi, '')
     .replace(/sourceChunkIds?\s*:\s*\[[^\]]*\]/gi, '')
     .replace(/\b(debug|trace|raw curated json|internal metadata)\s*:\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return sourceTextQuality.stripSourceNoise(stripped, { preserveNewlines: false })
     .replace(/\s+/g, ' ')
     .trim();
 }

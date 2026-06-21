@@ -14,6 +14,7 @@ const sourceGroundingJudge = require('./source-grounding-judge.service');
 const sourceTopicPlans = require('./source-topic-plan.service');
 const materialUnderstanding = require('./material-understanding.service');
 const materialTopicMap = require('./material-topic-map.service');
+const sourceTextQuality = require('./source-text-quality.service');
 
 const CHAT_ACTIONS = {
   explain_deeper: {
@@ -232,7 +233,7 @@ function structuredReplyToMarkdown(obj, opts = {}) {
   if (visual) sections.push(`### Visual\n${visual}`);
   if (hint) sections.push(`### Hint\n${hint}`);
   if (question) sections.push(`### Check yourself\n${question}`);
-  return sanitizeSourceReferences(sections.join('\n\n'), sourceCount);
+  return sourceTextQuality.stripSourceNoise(sanitizeSourceReferences(sections.join('\n\n'), sourceCount));
 }
 
 function responseMetadataFromStructured(obj) {
@@ -284,6 +285,7 @@ function normalizeTutorChatReply(reply, opts = {}) {
   }
   let text = sanitizeSourceReferences(cleanText(decodeJsonishString(reply), 8000), Array.isArray(opts.sources) ? opts.sources.length : 0);
   if (replyLooksBadForDisplay(text)) text = readableFallback(text, opts.message || '');
+  text = sourceTextQuality.stripSourceNoise(text);
   return {
     reply: cleanText(text, 8000),
     response: null,
@@ -478,10 +480,10 @@ function sanitizeFlashcards(cards, chunks, topicFallback) {
       const difficulty = String(card && card.difficulty || 'medium').toLowerCase();
       const sourceId = Number(card && card.source_chunk_id);
       return {
-        question: cleanText(card && card.question, 280),
-        answer: cleanText(card && card.answer, 900),
+        question: cleanText(sourceTextQuality.stripSourceNoise(card && card.question), 280),
+        answer: cleanText(sourceTextQuality.stripSourceNoise(card && card.answer), 900),
         difficulty: ['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium',
-        topic: cleanText(card && card.topic || topicFallback || 'Tutor chat', 120),
+        topic: cleanText(sourceTextQuality.stripSourceNoise(card && card.topic || topicFallback || 'Tutor chat'), 120),
         source_chunk_id: Number.isInteger(sourceId) && validChunkIds.has(sourceId) ? sourceId : null,
       };
     })
@@ -532,16 +534,16 @@ function persistFlashcards(db, userId, conversation, material, cards) {
 
 function normalizeQuiz(quiz, reply, topicFallback) {
   if (quiz && quiz.question) {
-    const options = Array.isArray(quiz.options) ? quiz.options.map(o => cleanText(o, 180)).filter(Boolean).slice(0, 4) : [];
+    const options = Array.isArray(quiz.options) ? quiz.options.map(o => cleanText(sourceTextQuality.stripSourceNoise(o), 180)).filter(Boolean).slice(0, 4) : [];
     const correctIdx = Number(quiz.correct_idx);
     return {
       type: options.length >= 2 ? 'multiple_choice' : 'short_answer',
-      question: cleanText(quiz.question, 400),
+      question: cleanText(sourceTextQuality.stripSourceNoise(quiz.question), 400),
       options,
       correct_idx: Number.isInteger(correctIdx) && correctIdx >= 0 && correctIdx < options.length ? correctIdx : null,
-      expectedAnswer: cleanText(quiz.expectedAnswer || quiz.answer, 600),
-      explanation: cleanText(quiz.explanation, 900),
-      topic: cleanText(quiz.topic || topicFallback || 'Tutor chat', 120),
+      expectedAnswer: cleanText(sourceTextQuality.stripSourceNoise(quiz.expectedAnswer || quiz.answer), 600),
+      explanation: cleanText(sourceTextQuality.stripSourceNoise(quiz.explanation), 900),
+      topic: cleanText(sourceTextQuality.stripSourceNoise(quiz.topic || topicFallback || 'Tutor chat'), 120),
     };
   }
   const firstSentence = cleanText(reply, 1000).split(/(?<=[.!?])\s+/).find(s => s.length > 20) || 'Review the tutor explanation and state the key idea in your own words.';
@@ -550,9 +552,9 @@ function normalizeQuiz(quiz, reply, topicFallback) {
     question: `In one sentence, explain the key idea about ${topicFallback || 'this concept'}.`,
     options: [],
     correct_idx: null,
-    expectedAnswer: firstSentence,
+    expectedAnswer: sourceTextQuality.stripSourceNoise(firstSentence),
     explanation: 'A strong answer should match the source-grounded explanation from the tutor reply.',
-    topic: topicFallback || 'Tutor chat',
+    topic: sourceTextQuality.stripSourceNoise(topicFallback || 'Tutor chat'),
   };
 }
 
@@ -577,16 +579,15 @@ function friendlyAiMessage(err) {
 
 function formatSourceVisualsForPrompt(candidates = []) {
   const lines = (candidates || []).slice(0, 4).map((candidate) => {
-    const label = candidate.slideNumber != null ? `Slide ${candidate.slideNumber}` : `Page ${candidate.sourcePage || candidate.pageNumber || 1}`;
-    const heading = candidate.heading || candidate.visualTypeGuess || 'source visual';
-    const evidence = candidate.nearbyText || candidate.evidence || '';
-    return `- ${label}: ${heading}${evidence ? ` (${String(evidence).slice(0, 180)})` : ''}`;
+    const heading = sourceTextQuality.sourceLabel(candidate.heading || candidate.visualTypeGuess || 'source visual', 'Source visual');
+    const evidence = sourceTextQuality.stripSourceNoise(candidate.nearbyText || candidate.evidence || '', { preserveNewlines: false });
+    return `- ${heading}${evidence ? ` (${String(evidence).slice(0, 180)})` : ''}`;
   });
   if (!lines.length) return '';
   return [
     'Source visuals available from the uploaded material:',
     ...lines,
-    'Use these only when they directly support the answer. You may say "Look at the diagram on page X" or "slide X" when relevant.',
+    'Use these only when they directly support the answer. Do not mention page numbers, slide numbers, or lecture numbers.',
   ].join('\n');
 }
 

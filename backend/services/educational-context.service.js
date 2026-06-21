@@ -4,11 +4,12 @@ const env = require('../config/env');
 const knowledge = require('./knowledge.service');
 const rag = require('./rag.service');
 const domainDetection = require('./domain-detection.service');
+const sourceTextQuality = require('./source-text-quality.service');
 
 const DEFAULT_MAX_CHARS = 6000;
 
 function cleanText(value, max = 800) {
-  const text = String(value || '')
+  const text = sourceTextQuality.stripSourceNoise(String(value || ''), { preserveNewlines: false })
     .replace(/\s+/g, ' ')
     .trim();
   return max && text.length > max ? `${text.slice(0, max - 3).trim()}...` : text;

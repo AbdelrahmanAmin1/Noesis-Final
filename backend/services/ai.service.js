@@ -23,12 +23,14 @@ function getProviderFor(feature) {
   if (feature === 'notes') return env.NOTES_PROVIDER || env.AI_PROVIDER;
   if (feature === 'summary') return env.SUMMARY_PROVIDER || env.NOTES_PROVIDER || env.AI_PROVIDER;
   if (feature === 'tutor') return env.TUTOR_PROVIDER || env.AI_PROVIDER;
+  if (feature === 'quiz') return env.QUIZ_PROVIDER || env.AI_PROVIDER;
   if (feature === 'flashcards') return env.FLASHCARD_PROVIDER || env.AI_PROVIDER;
   return env.AI_PROVIDER;
 }
 
 function fallbackProviderFor(feature) {
   if (feature === 'tutor') return env.TUTOR_FALLBACK_PROVIDER;
+  if (feature === 'quiz') return env.QUIZ_FALLBACK_PROVIDER;
   if (feature === 'flashcards') return env.FLASHCARD_FALLBACK_PROVIDER;
   return null;
 }
@@ -190,6 +192,11 @@ async function healthCheck() {
       voiceDefault: env.TUTOR_VOICE_DEFAULT,
       learningMapLayout: env.LEARNING_MAP_LAYOUT,
       cacheTtlMs: env.TUTOR_CACHE_TTL_MS,
+    },
+    quiz: {
+      provider: env.QUIZ_PROVIDER,
+      fallbackProvider: env.QUIZ_FALLBACK_PROVIDER,
+      groqConfigured: !!env.GROQ_API_KEY,
     },
     flashcards: {
       provider: env.FLASHCARD_PROVIDER,

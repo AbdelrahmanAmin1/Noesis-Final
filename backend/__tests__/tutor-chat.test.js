@@ -129,6 +129,30 @@ describe('free-form tutor chat routes', () => {
     expect(stored.map(row => row.role)).toEqual(['user', 'assistant']);
   });
 
+  it('sanitizes page and lecture labels from free chat replies before returning and storing', async () => {
+    mockGeneration([
+      '### Answer',
+      'Page 1 CS 2110 September 18, 2025 Lecture 8: Polymorphism lets the runtime object choose the overridden method [Source 1].',
+      '',
+      '[SUGGESTIONS]',
+      '- Show a code example',
+      '- Quiz me',
+      '[/SUGGESTIONS]',
+    ].join('\n'));
+
+    const res = await request(app)
+      .post('/api/tutor/chat')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ material_id: materialId, message: 'What is polymorphism?' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.reply).toMatch(/runtime object/i);
+    expect(res.body.reply).not.toMatch(/\b(Page|Lecture|Slide)\s*\d+\b/i);
+    expect(res.body.reply).not.toMatch(/\bCS\s*2110\b|September\s+18,\s+2025/i);
+    const stored = db.prepare('SELECT content FROM tutor_chat_messages WHERE id=?').get(res.body.message_id);
+    expect(stored.content).not.toMatch(/\b(Page|Lecture|Slide)\s*\d+\b/i);
+  });
+
   it('normalizes raw JSON tutor replies into readable markdown', async () => {
     mockGeneration(JSON.stringify({
       explanation: 'Polymorphism lets a superclass reference call behavior chosen by the runtime object [Source 1].',
@@ -282,7 +306,7 @@ describe('free-form tutor chat routes', () => {
       '- Give another quiz',
       '[/SUGGESTIONS]',
       '[QUIZ]',
-      '{"type":"multiple_choice","question":"Who decides which overridden method runs?","options":["The compiler only","The runtime object","The file name"],"correct_idx":1,"expectedAnswer":"The runtime object","explanation":"Dynamic dispatch chooses the method from the actual object.","topic":"Polymorphism"}',
+      '{"type":"multiple_choice","question":"Page 2 Lecture 8: Who decides which overridden method runs?","options":["The compiler only","Slide 4: The runtime object","The file name"],"correct_idx":1,"expectedAnswer":"Lecture 8: The runtime object","explanation":"Lecture 8 says dynamic dispatch chooses the method from the actual object.","topic":"Lecture 8: Polymorphism"}',
       '[/QUIZ]',
     ].join('\n'));
 
@@ -296,18 +320,20 @@ describe('free-form tutor chat routes', () => {
     expect(res.body.actionResult.type).toBe('quiz');
     expect(res.body.actionResult.quiz.question).toMatch(/overridden method/i);
     expect(res.body.actionResult.quiz.correct_idx).toBe(1);
+    expect(JSON.stringify(res.body.actionResult.quiz)).not.toMatch(/\b(Page|Lecture|Slide)\s*\d+\b/i);
+    expect(res.body.actionResult.quiz.topic).toBe('Polymorphism');
   });
 
   it('creates flashcards from the flashcard action chip', async () => {
     mockGeneration([
-      'I made three focused flashcards from the current concept [Source 1].',
+      'Page 1 CS 2110 Lecture 8: I made three focused flashcards from the current concept [Source 1].',
       '',
       '[SUGGESTIONS]',
       '- Review these cards',
       '- Quiz me',
       '[/SUGGESTIONS]',
       '[FLASHCARDS]',
-      '{"cards":[{"question":"What is dynamic dispatch?","answer":"Runtime method selection based on the actual object.","difficulty":"medium","topic":"Polymorphism","source_chunk_id":1},{"question":"What can a superclass reference point to?","answer":"A subclass object.","difficulty":"easy","topic":"Polymorphism","source_chunk_id":1},{"question":"Why is polymorphism useful?","answer":"It lets shared code call behavior implemented differently by subclasses.","difficulty":"medium","topic":"Polymorphism","source_chunk_id":1}]}',
+      '{"cards":[{"question":"Page 1 Lecture 8: What is dynamic dispatch?","answer":"Lecture 8 says runtime method selection is based on the actual object.","difficulty":"medium","topic":"Lecture 8: Polymorphism","source_chunk_id":1},{"question":"What can a superclass reference point to?","answer":"A subclass object.","difficulty":"easy","topic":"Polymorphism","source_chunk_id":1},{"question":"Why is polymorphism useful?","answer":"It lets shared code call behavior implemented differently by subclasses.","difficulty":"medium","topic":"Polymorphism","source_chunk_id":1}]}',
       '[/FLASHCARDS]',
     ].join('\n'));
 
@@ -317,10 +343,15 @@ describe('free-form tutor chat routes', () => {
       .send({ material_id: materialId, message: 'Make flashcards', action: 'make_flashcards' });
 
     expect(res.status).toBe(200);
+    expect(res.body.reply).not.toMatch(/\b(Page|Lecture|Slide)\s*\d+\b/i);
     expect(res.body.actionResult.type).toBe('flashcards');
     expect(res.body.actionResult.created).toBe(3);
     const count = db.prepare('SELECT COUNT(*) AS n FROM flashcards WHERE user_id=?').get(user.id).n;
     expect(count).toBe(3);
+    const stored = db.prepare('SELECT question, answer, topic FROM flashcards WHERE user_id=? ORDER BY id LIMIT 1').get(user.id);
+    expect(`${stored.question} ${stored.answer} ${stored.topic}`).not.toMatch(/\b(Page|Lecture|Slide)\s*\d+\b/i);
+    expect(stored.question).toMatch(/dynamic dispatch/i);
+    expect(stored.topic).toBe('Polymorphism');
   });
 
   it('streams tutor TTS audio and validates text length', async () => {

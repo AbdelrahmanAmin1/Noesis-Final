@@ -56,6 +56,7 @@ function detectTTS() {
     piper_voice_valid: !!piperVoiceLooksValid,
     voice_path: env.TTS_VOICE_PATH || '',
     voice_path_resolved: piperVoicePath,
+    sapi_voice: env.TTS_SAPI_VOICE || '',
     sentence_pause_ms: env.TTS_PAUSE_MS_SENTENCE,
     section_pause_ms: env.TTS_PAUSE_MS_SECTION,
     recommendation,
@@ -65,7 +66,10 @@ function detectTTS() {
   if (recommendation) {
     log.warn(`TTS: ${configured} configured but not ready - falling back to ${activeEngine}. ${recommendation}`);
   } else {
-    log.info(`TTS: ${activeEngine} ready${activeEngine === 'piper' ? ` (voice: ${env.TTS_VOICE_PATH})` : ''}`);
+    const voiceLabel = activeEngine === 'piper'
+      ? env.TTS_VOICE_PATH
+      : (activeEngine === 'sapi' ? env.TTS_SAPI_VOICE : '');
+    log.info(`TTS: ${activeEngine} ready${voiceLabel ? ` (voice: ${voiceLabel})` : ''}`);
   }
 
   return _detectedEngine;
@@ -199,13 +203,22 @@ function synthSapi(text, outPath, opts = {}) {
       'Add-Type -AssemblyName System.Speech',
       '$ssml = Get-Content -LiteralPath $args[0] -Raw',
       '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer',
+      '$voice = $args[2]',
+      'if ($voice) { $s.SelectVoice($voice) }',
       '$s.Volume = 100',
       '$s.SetOutputToWaveFile($args[1])',
       '$s.SpeakSsml($ssml)',
       '$s.Dispose()',
     ].join('; ');
     fs.writeFileSync(scriptPath, script, 'utf8');
-    const p = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath, textPath, outPath]);
+    const p = spawn('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-File', scriptPath,
+      textPath,
+      outPath,
+      opts.voice || env.TTS_SAPI_VOICE || '',
+    ]);
     let stderr = '';
     p.stderr.on('data', d => { stderr += d.toString(); });
     p.on('error', (err) => {

@@ -16,6 +16,7 @@ Rules:
 - Uploaded excerpts are the course-specific source of truth.
 - Curated educational context is trusted expansion only when it matches the uploaded subject, not uploaded evidence.
 - Do not invent course-specific claims.
+- Never mention page numbers, slide numbers, lecture numbers, chapter numbers, course-header text, dates, authors, or instructor bylines in question, answer, or topic text.
 - Do not put raw chunk IDs, debug labels, raw curated JSON, or sourceChunkIds in question or answer text.
 - Use a numeric source_chunk_id from the uploaded source excerpts when possible. Use null when no single uploaded chunk applies.
 - Never use shallow placeholders such as "What is this topic?", "Define the concept", "True or false: this is important", "Example here", or "Definition goes here".

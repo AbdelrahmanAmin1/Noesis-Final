@@ -21,6 +21,8 @@ const gamification = require('./gamification.service');
 const sourceVisualCandidates = require('./source-visual-candidates.service');
 const materialTopicMap = require('./material-topic-map.service');
 
+const EXTRACTION_PIPELINE_VERSION = 2;
+
 function nowIso() { return new Date().toISOString(); }
 
 const ConceptExtractSchema = z.object({
@@ -176,8 +178,9 @@ function sourceKindForChunk(chunk, pages = []) {
   return page && page.sourceKind ? page.sourceKind : 'text';
 }
 
-async function processMaterial(materialId, jobId) {
+async function processMaterial(materialId, jobId, opts = {}) {
   const db = getDb();
+  const replaceExisting = !!opts.replaceExisting;
   const setStatus = (s, p) => db.prepare('UPDATE materials SET status=?, progress=? WHERE id=?').run(s, p, materialId);
   const m = db.prepare('SELECT * FROM materials WHERE id=?').get(materialId);
   if (!m) return;
@@ -258,6 +261,11 @@ async function processMaterial(materialId, jobId) {
     const insChapter = db.prepare('INSERT INTO chapters (material_id, idx, title, char_start, char_end) VALUES (?,?,?,?,?)');
     const chapterIds = [];
     db.transaction(() => {
+      if (replaceExisting) {
+        db.prepare('UPDATE flashcards SET source_chunk_id=NULL WHERE material_id=?').run(materialId);
+        db.prepare('DELETE FROM chunks WHERE material_id=?').run(materialId);
+        db.prepare('DELETE FROM chapters WHERE material_id=?').run(materialId);
+      }
       for (const ch of chapters) {
         const r = insChapter.run(materialId, ch.idx, ch.title, ch.char_start, ch.char_end);
         chapterIds[ch.idx] = r.lastInsertRowid;
@@ -313,6 +321,7 @@ async function processMaterial(materialId, jobId) {
       },
       sourcePages: (mergedExtraction.pages || []).length,
       sourceVisualCandidates: visualCandidates.length,
+      extractionPipelineVersion: EXTRACTION_PIPELINE_VERSION,
     });
     try {
       materialTopicMap.refresh(m.user_id, materialId, { hint: m.title, limit: 120 });
@@ -334,9 +343,9 @@ async function processMaterial(materialId, jobId) {
     }
 
     setStatus('ready', 100);
-    db.prepare(`INSERT INTO study_events (user_id, kind, ref_id, duration_s, occurred_at) VALUES (?,?,?,?,?)`)
+    if (!replaceExisting) db.prepare(`INSERT INTO study_events (user_id, kind, ref_id, duration_s, occurred_at) VALUES (?,?,?,?,?)`)
       .run(m.user_id, 'reading', materialId, 0, nowIso());
-    if (m.user_id > 0) {
+    if (!replaceExisting && m.user_id > 0) {
       gamification.award(m.user_id, 'material_uploaded', 'material', materialId, {
         metadata: { title: m.title, type: m.type },
       });
@@ -344,9 +353,39 @@ async function processMaterial(materialId, jobId) {
     if (jobId) jobs.update(jobId, { status: 'completed', progress: 100, result: { material_id: materialId } });
   } catch (e) {
     log.error('processMaterial', e.message || e);
-    setStatus('failed', 0);
+    const existingChunks = db.prepare('SELECT COUNT(*) AS count FROM chunks WHERE material_id=?').get(materialId).count;
+    setStatus(replaceExisting && existingChunks > 0 ? 'ready' : 'failed', replaceExisting && existingChunks > 0 ? 100 : 0);
     if (jobId) jobs.update(jobId, { status: 'failed', error: String(e.message || e) });
   }
 }
 
-module.exports = { listForUser, getOwned, getChunks, createPending, deleteMaterial, processMaterial, displayTitleForMaterial };
+function extractionNeedsReindex(userId, materialId) {
+  const db = getDb();
+  const row = db.prepare('SELECT id, status, extraction_diagnostics_json FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
+  if (!row) throw new HttpError(404, 'material_not_found');
+  let diagnostics = {};
+  try { diagnostics = JSON.parse(row.extraction_diagnostics_json || '{}'); } catch (_) {}
+  return row.status !== 'ready' || Number(diagnostics.extractionPipelineVersion || 0) < EXTRACTION_PIPELINE_VERSION;
+}
+
+function queueReindex(userId, materialId) {
+  if (!extractionNeedsReindex(userId, materialId)) return { needed: false, job: null };
+  const active = jobs.findActive('material_reindex', { userId, materialId });
+  if (active) return { needed: true, job: active };
+  const job = jobs.create('material_reindex', { userId, materialId });
+  setImmediate(() => processMaterial(materialId, job.id, { replaceExisting: true }));
+  return { needed: true, job };
+}
+
+module.exports = {
+  listForUser,
+  getOwned,
+  getChunks,
+  createPending,
+  deleteMaterial,
+  processMaterial,
+  displayTitleForMaterial,
+  extractionNeedsReindex,
+  queueReindex,
+  EXTRACTION_PIPELINE_VERSION,
+};

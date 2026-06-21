@@ -26,4 +26,11 @@ function listFor(userId) {
   return [..._jobs.values()].filter(j => j.meta.userId === userId);
 }
 
-module.exports = { create, update, get, listFor };
+function findActive(kind, meta = {}) {
+  return [..._jobs.values()].find(job => {
+    if (job.kind !== kind || !['queued', 'running'].includes(job.status)) return false;
+    return Object.entries(meta).every(([key, value]) => job.meta && job.meta[key] === value);
+  }) || null;
+}
+
+module.exports = { create, update, get, listFor, findActive };

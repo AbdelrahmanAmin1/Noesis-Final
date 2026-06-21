@@ -22,7 +22,13 @@
     "tts:check": "node scripts/tts-check.js",
     "tts:preview": "node scripts/tts-preview.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:legacy": "node --test --test-concurrency=1 tests/unit.test.js tests/integration.test.js",
+    "eval:noesis:evidence": "node ../scripts/run-noesis-evals.js",
+    "knowledge:validate:evidence": "node ../scripts/validate-knowledge.js",
+    "license:validate": "node ../scripts/validate-licenses.js",
+    "frontend:verify": "node ../scripts/verify-frontend-bundle.js",
+    "test:evidence": "node ../scripts/run-testing-evaluation-suite.js"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

@@ -16,6 +16,7 @@ const sourceTopicPlans = require('./source-topic-plan.service');
 const materialTopicMap = require('./material-topic-map.service');
 const { recordConceptOutcome } = require('./mastery.service');
 const log = require('../utils/logger');
+const sourceTextQuality = require('./source-text-quality.service');
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -53,10 +54,12 @@ function parseJson(value, fallback) {
 }
 
 function cleanText(value, max = 1200) {
-  return String(value || '')
+  const text = String(value || '')
     .replace(/\[chunk:\s*\d+\]/gi, '')
     .replace(/[ \t]+/g, ' ')
     .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  return sourceTextQuality.stripSourceNoise(text)
     .trim()
     .slice(0, max);
 }
@@ -98,15 +101,14 @@ function topicFromMaterialSource(userId, materialId, hint, fallback, domainInfo)
 
 function sourceChunksForClient(chunks, materialTitle) {
   return (chunks || []).slice(0, 8).map((c, i) => {
-    const heading = c.heading || c.slide_title || c.section_title || c.chapter_title || materialTitle || `Source ${i + 1}`;
-    const location = c.slide_number ? `Slide ${c.slide_number}` : (c.source_page ? `Page ${c.source_page}` : (c.chapter_title || 'Material excerpt'));
+    const heading = sourceTextQuality.sourceLabel(c.heading || c.slide_title || c.section_title || c.chapter_title || materialTitle, `Source ${i + 1}`);
     return {
       id: c.id,
       chunkId: c.id,
       idx: c.idx,
-      materialTitle: materialTitle || '',
+      materialTitle: cleanText(materialTitle || '', 160),
       heading: cleanText(heading, 120),
-      location,
+      location: 'Source excerpt',
       excerpt: cleanText(c.text, 520),
       score: typeof c.score === 'number' ? c.score : null,
       corpus: c.corpus || 'uploaded',

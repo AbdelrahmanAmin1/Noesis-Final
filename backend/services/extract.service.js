@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const sourceTextQuality = require('./source-text-quality.service');
 
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp']);
 
@@ -140,21 +141,73 @@ async function extractPdfStructure(filePath, opts = {}) {
 
 function textFromPdfItems(items = []) {
   const lines = [];
-  let current = [];
-  let lastY = null;
+  let current = null;
   for (const item of items) {
     const str = item && item.str ? String(item.str) : '';
     if (!str.trim()) continue;
     const y = item && item.transform ? Math.round(Number(item.transform[5] || 0)) : null;
-    if (lastY != null && y != null && Math.abs(y - lastY) > 2 && current.length) {
-      lines.push(current.join(' ').replace(/\s+/g, ' ').trim());
-      current = [];
+    const x = item && item.transform ? Number(item.transform[4] || 0) : 0;
+    const height = Math.abs(Number(item.height || (item.transform && item.transform[3]) || 0));
+    if (current && y != null && current.y != null && Math.abs(y - current.y) > 2) {
+      lines.push(current);
+      current = null;
     }
-    current.push(str);
-    if (y != null) lastY = y;
+    if (!current) current = { y, height, items: [] };
+    current.height = Math.max(current.height || 0, height);
+    current.items.push({ str, x, width: Math.max(0, Number(item.width || 0)) });
   }
-  if (current.length) lines.push(current.join(' ').replace(/\s+/g, ' ').trim());
-  return lines.join('\n');
+  if (current) lines.push(current);
+  if (!lines.length) return '';
+
+  const lineGaps = [];
+  for (let i = 1; i < lines.length; i++) {
+    const gap = Math.abs(Number(lines[i - 1].y || 0) - Number(lines[i].y || 0));
+    if (gap > 2 && gap < 40) lineGaps.push(gap);
+  }
+  const baselineGap = median(lineGaps) || 12;
+  const bodyHeight = median(lines.map(line => line.height).filter(height => height > 0)) || 10;
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (i > 0) {
+      const prev = lines[i - 1];
+      const verticalGap = Math.abs(Number(prev.y || 0) - Number(line.y || 0));
+      const fontBreak = Math.max(prev.height || 0, line.height || 0) > bodyHeight * 1.24;
+      if (verticalGap > baselineGap * 1.42 || fontBreak) out.push('');
+    }
+    out.push(joinPdfLine(line.items));
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+function median(values = []) {
+  const nums = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (!nums.length) return 0;
+  const middle = Math.floor(nums.length / 2);
+  return nums.length % 2 ? nums[middle] : (nums[middle - 1] + nums[middle]) / 2;
+}
+
+function joinPdfLine(items = []) {
+  const ordered = [...items].sort((a, b) => a.x - b.x);
+  let text = '';
+  let previous = null;
+  for (const item of ordered) {
+    const value = String(item.str || '').replace(/[ \t]+/g, ' ');
+    if (!value.trim()) continue;
+    if (!previous) {
+      text = value.trimStart();
+      previous = item;
+      continue;
+    }
+    const gap = item.x - (previous.x + previous.width);
+    const visibleChars = String(previous.str || '').replace(/\s/g, '').length || 1;
+    const averageCharWidth = previous.width / visibleChars;
+    const spacingThreshold = Math.max(1.2, Math.min(4, averageCharWidth * 0.45));
+    if (!/\s$/.test(text) && !/^\s/.test(value) && gap > spacingThreshold) text += ' ';
+    text += value;
+    previous = item;
+  }
+  return text.replace(/[ \t]+/g, ' ').trim();
 }
 
 function extractPptxText(filePath) {
@@ -344,7 +397,16 @@ function isImageFile(ext, mime) {
 }
 
 function xmlTextRuns(xml) {
-  return extractParagraphText(xml);
+  const paragraphs = extractParagraphText(xml);
+  if (paragraphs.length) return paragraphs;
+  const runs = [];
+  const re = /<a:t[^>]*>([\s\S]*?)<\/a:t>/gi;
+  let m;
+  while ((m = re.exec(xml))) {
+    const text = decodeXml(m[1]).replace(/\s+/g, ' ').trim();
+    if (text) runs.push(text);
+  }
+  return collapseRepeats(runs);
 }
 
 function collapseRepeats(items) {
@@ -393,6 +455,7 @@ const WEAK_HEADING_RE = /^(?:top|home|welcome|contents?|table of contents|index|
 function isWeakHeading(value) {
   const text = String(value || '').replace(/\s+/g, ' ').trim();
   if (!text) return true;
+  if (sourceTextQuality.isWeakHeading(text)) return true;
   if (WEAK_HEADING_RE.test(text)) return true;
   return /^(?:page|p\.)\s*\d+$/i.test(text);
 }
@@ -454,6 +517,8 @@ module.exports = {
   extractStructured,
   detectChapters,
   _internals: {
+    joinPdfLine,
+    textFromPdfItems,
     extractPdfStructure,
     extractPptxStructure,
     extractPptxText,
@@ -462,7 +527,6 @@ module.exports = {
     isImageFile,
     mimeFromName,
     parseXmlAttrs,
-    textFromPdfItems,
     xmlTextRuns,
     extractSlideXmlText,
     extractTableText,

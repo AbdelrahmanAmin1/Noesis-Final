@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { extractText, extractStructured } = require('../services/extract.service');
+const { extractText, extractStructured, _internals } = require('../services/extract.service');
 
 function makePptx(filePath) {
   const zip = new AdmZip();
@@ -49,6 +49,24 @@ function uploadedPdfFixture() {
 }
 
 describe('extract.service video grounding fixtures', () => {
+  it('reconstructs adjacent PDF glyph runs without introducing broken words', () => {
+    const items = [
+      { str: 'CS108, Stanford ', transform: [1, 0, 0, 1, 72, 700], width: 70, height: 10 },
+      { str: 'Handout #9', transform: [1, 0, 0, 1, 430, 700], width: 50, height: 10 },
+      { str: 'OOP Encapsulation', transform: [1, 0, 0, 1, 72, 650], width: 120, height: 16 },
+      { str: 'Each object enca', transform: [1, 0, 0, 1, 72, 638], width: 75, height: 10 },
+      { str: 'psulates data.', transform: [1, 0, 0, 1, 147.1, 638], width: 65, height: 10 },
+      { str: 'Clients use its interface.', transform: [1, 0, 0, 1, 72, 626], width: 115, height: 10 },
+      { str: 'A new paragraph starts here.', transform: [1, 0, 0, 1, 72, 600], width: 130, height: 10 },
+    ];
+
+    const text = _internals.textFromPdfItems(items);
+
+    expect(text).toContain('CS108, Stanford Handout #9');
+    expect(text).toContain('Each object encapsulates data.');
+    expect(text).not.toContain('enca psulates');
+    expect(text).toContain('Clients use its interface.\n\nA new paragraph');
+  });
   it('extracts non-empty, slide-numbered text from PPTX files', async () => {
     const filePath = path.join(os.tmpdir(), `noesis-extract-${Date.now()}.pptx`);
     makePptx(filePath);

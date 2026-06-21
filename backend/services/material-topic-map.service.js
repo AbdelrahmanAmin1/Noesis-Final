@@ -5,8 +5,9 @@ const domainDetection = require('./domain-detection.service');
 const materialUnderstanding = require('./material-understanding.service');
 const sourceTopicPlans = require('./source-topic-plan.service');
 const sourceVisualCandidates = require('./source-visual-candidates.service');
+const sourceTextQuality = require('./source-text-quality.service');
 
-const TOPIC_MAP_VERSION = 1;
+const TOPIC_MAP_VERSION = 2;
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -62,6 +63,7 @@ function hasKeyPhrase(source, phrase) {
 function canonicalTopicForHeading(value) {
   const original = clean(value, 120);
   if (!original) return '';
+  if (/^public\s+interface\s*\/\s*api\s+design$/i.test(original)) return 'Public Interface/API Design';
   const source = key(original);
   let best = null;
   for (const rule of taxonomyTopicRules()) {
@@ -90,7 +92,7 @@ function mergeTopicBundles(...bundles) {
       const normalized = normalizeTopicBundleItem(item);
       const name = clean(normalized && (normalized.topic || normalized.name), 100);
       const k = key(name);
-      if (!k || seen.has(k)) continue;
+      if (!k || seen.has(k) || isRejectedTopicLabel(name)) continue;
       seen.add(k);
       merged.push({ ...normalized, topic: name, name });
     }
@@ -107,6 +109,11 @@ function normalizeTopicBundleItem(item = {}) {
     name: canonical,
     terms: unique([canonical, original, ...((item && item.terms) || [])], 16),
   };
+}
+
+function isRejectedTopicLabel(value) {
+  const text = clean(value, 120);
+  return !text || sourceTextQuality.isDocumentMetadata(text) || sourceTextQuality.isIncompleteLabel(text);
 }
 
 function derivedTopicsFromChunks(chunks = [], domain = '') {
@@ -307,7 +314,7 @@ function buildTopicRows({ plan, outline, chunks, visuals, domain }) {
   for (const item of rawBundle) {
     const name = clean(item && (item.topic || item.name), 100);
     const k = key(name);
-    if (!k || seen.has(k)) continue;
+    if (!k || seen.has(k) || isRejectedTopicLabel(name)) continue;
     seen.add(k);
     const sourceChunkIds = chunkIdsForTopic(item, chunks);
     const topicChunks = chunks.filter(chunk => sourceChunkIds.includes(chunk.id));
@@ -494,6 +501,7 @@ function getStored(userId, materialId) {
   const row = db.prepare('SELECT id, topic_map_json, topic_map_version FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
   if (!row) return null;
   const parsed = parseJson(row.topic_map_json, {});
+  if (Number(row.topic_map_version || parsed.version || 0) !== TOPIC_MAP_VERSION) return null;
   if (parsed && Array.isArray(parsed.topics) && parsed.topics.length) return parsed;
   return null;
 }

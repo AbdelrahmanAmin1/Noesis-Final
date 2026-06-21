@@ -56,7 +56,9 @@ async function groqFetch(pathname, body, opts = {}) {
           groq_status: res.status,
         });
       }
-      if (res.status === 404 || /model|not found|invalid/i.test(message)) {
+      const missingModel = res.status === 404
+        || /(?:model\s+[^.]{0,120}\s+(?:not found|does not exist|decommissioned|unavailable)|unknown model)/i.test(message);
+      if (missingModel) {
         throw new AiServiceError(404, 'ai_model_missing', message || 'Groq model was not found or is not available.', {
           provider: 'groq',
           groq_status: res.status,
@@ -156,7 +158,9 @@ async function chatCompletion(prompt, opts = {}, useResponseFormat = true) {
   if (opts.format === 'json' && useResponseFormat) {
     body.response_format = { type: 'json_object' };
   }
-  const out = await groqFetch('/chat/completions', body);
+  const out = await groqFetch('/chat/completions', body, {
+    timeoutMs: opts.timeoutMs || opts.timeout_ms,
+  });
   const choice = out && out.choices && out.choices[0];
   return (choice && choice.message && choice.message.content) || '';
 }

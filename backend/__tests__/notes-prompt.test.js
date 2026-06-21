@@ -200,7 +200,8 @@ describe('lesson source visuals', () => {
     }];
 
     const md = lessons.lessonToMarkdown(lesson);
-    expect(md).toContain('[Source: Page 4 - Bone shape classification diagram]');
+    expect(md).toContain('[Source visual: Bone shape classification diagram]');
+    expect(md).not.toMatch(/\bPage\s*4\b|\bSlide\s*4\b/i);
     expect(md).not.toContain('## Important Visuals From the Material');
     expect(md).not.toMatch(/\bOCR\b/i);
   });

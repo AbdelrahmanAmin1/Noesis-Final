@@ -1,5 +1,7 @@
 'use strict';
 
+const sourceTextQuality = require('./source-text-quality.service');
+
 const TARGET_TOKENS = 600;
 const OVERLAP_TOKENS = 100;
 const TOK_CHARS = 4; // ~4 chars per token
@@ -12,46 +14,95 @@ function estimateTokens(s) {
 function chunkText(text, opts = {}) {
   const targetChars = (opts.targetTokens || TARGET_TOKENS) * TOK_CHARS;
   const overlapChars = (opts.overlapTokens || OVERLAP_TOKENS) * TOK_CHARS;
-  const out = [];
-  if (!text || !text.trim()) return out;
+  if (!text || !text.trim()) return [];
+  const units = semanticUnits(text, targetChars);
+  const chunks = [];
+  let current = [];
 
-  // Split into paragraphs first to keep semantic boundaries.
-  const paras = text.split(/\n{2,}/);
-  let buf = '';
-  for (const p of paras) {
-    const candidate = buf ? buf + '\n\n' + p : p;
-    if (candidate.length <= targetChars) {
-      buf = candidate;
-    } else {
-      if (buf) out.push(buf);
-      // If a single paragraph exceeds target, hard split it.
-      if (p.length > targetChars) {
-        let i = 0;
-        while (i < p.length) {
-          out.push(p.slice(i, i + targetChars));
-          i += targetChars - overlapChars;
-        }
-        buf = '';
-      } else {
-        buf = p;
-      }
+  const flush = () => {
+    if (!current.length) return;
+    const value = current.join('\n\n').trim();
+    if (value) chunks.push(value);
+  };
+
+  for (const unit of units) {
+    const candidate = [...current, unit].join('\n\n');
+    if (current.length && candidate.length > targetChars) {
+      const previous = current;
+      flush();
+      current = overlapUnits(previous, overlapChars);
+      while (current.length && [...current, unit].join('\n\n').length > targetChars) current.shift();
     }
+    current.push(unit);
   }
-  if (buf) out.push(buf);
+  flush();
 
-  // Apply overlap by stitching tail of previous chunk to start of next.
-  const overlapped = [];
-  for (let i = 0; i < out.length; i++) {
-    if (i === 0) {
-      overlapped.push(out[i]);
-    } else {
-      const prev = out[i - 1];
-      const tail = prev.slice(Math.max(0, prev.length - overlapChars));
-      overlapped.push(tail + '\n' + out[i]);
+  return chunks.map((chunk, idx) => ({ idx, text: chunk, token_count: estimateTokens(chunk) }));
+}
+
+function semanticUnits(text, targetChars) {
+  const units = [];
+  const seen = new Set();
+  const add = (value) => {
+    const clean = String(value || '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    if (!clean) return;
+    for (const part of splitLongUnit(clean, targetChars)) {
+      const key = part.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+      if (key.length >= 80 && seen.has(key)) continue;
+      if (key.length >= 80) seen.add(key);
+      units.push(part);
     }
-  }
+  };
 
-  return overlapped.map((text, idx) => ({ idx, text, token_count: estimateTokens(text) }));
+  for (const rawParagraph of String(text || '').split(/\n{2,}/)) {
+    const paragraph = rawParagraph.trim();
+    if (!paragraph) continue;
+    const lines = paragraph.split(/\n+/).map(line => line.trim()).filter(Boolean);
+    if (lines.length <= 2 && sourceTextQuality.isDocumentMetadata(paragraph)) continue;
+    const codeLike = /(?:^|\n)\s*(?:\/\/|#include|public\s|private\s|class\s|def\s|function\s|for\s*\(|if\s*\(|return\b|[{}])/.test(paragraph);
+    const headingOnly = lines.length === 1 && lines[0].length <= 100 && !/[.!?]$/.test(lines[0]);
+    if (codeLike || headingOnly) {
+      add(codeLike ? lines.join('\n') : lines[0]);
+      continue;
+    }
+    const prose = lines.join(' ').replace(/\s+/g, ' ').trim();
+    const sentences = prose.split(/(?<=[.!?])\s+(?=[A-Z0-9"'(])/).map(item => item.trim()).filter(Boolean);
+    if (sentences.length > 1) sentences.forEach(add);
+    else add(prose);
+  }
+  return units;
+}
+
+function splitLongUnit(value, targetChars) {
+  const parts = [];
+  let remaining = String(value || '').trim();
+  const minimumCut = Math.max(40, Math.floor(targetChars * 0.55));
+  while (remaining.length > targetChars) {
+    const window = remaining.slice(0, targetChars + 1);
+    let cut = Math.max(window.lastIndexOf('. '), window.lastIndexOf('? '), window.lastIndexOf('! '));
+    if (cut >= minimumCut) cut += 1;
+    else cut = window.lastIndexOf('\n');
+    if (cut < minimumCut) cut = window.lastIndexOf(' ');
+    if (cut < 1) cut = targetChars;
+    parts.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+  if (remaining) parts.push(remaining);
+  return parts;
+}
+
+function overlapUnits(units, overlapChars) {
+  if (!overlapChars) return [];
+  const tail = [];
+  let length = 0;
+  for (let i = units.length - 1; i >= 0; i--) {
+    const unit = units[i];
+    const nextLength = length + unit.length + (tail.length ? 2 : 0);
+    if (nextLength > overlapChars) break;
+    tail.unshift(unit);
+    length = nextLength;
+  }
+  return tail;
 }
 
 function detectHeading(text) {
@@ -67,6 +118,7 @@ function detectHeading(text) {
       if (next && next.trim().length < 80) return next.trim().slice(0, 80);
       return '';
     }
+    if (sourceTextQuality.isWeakHeading(trimmed)) continue;
   }
   const first = (lines.find(l => l.trim().length > 0 && l.trim().length < 60) || '').trim();
   if (first && /^[A-Z]/.test(first) && !/[.!?]$/.test(first) && !WEAK_HEADING_RE.test(first)) return first.slice(0, 80);
@@ -146,4 +198,14 @@ function chunkByChapter(text, chapters) {
   return all.map((c, i) => ({ ...c, idx: i }));
 }
 
-module.exports = { chunkText, chunkByChapter, estimateTokens, detectHeading, hasCode, slideMeta, sourcePageMeta, keywords };
+module.exports = {
+  chunkText,
+  chunkByChapter,
+  estimateTokens,
+  detectHeading,
+  hasCode,
+  slideMeta,
+  sourcePageMeta,
+  keywords,
+  _internals: { overlapUnits, semanticUnits, splitLongUnit },
+};

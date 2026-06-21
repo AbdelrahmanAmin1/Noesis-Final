@@ -49,4 +49,19 @@ describe('quiz and flashcard practice prompts', () => {
     expect(prompt).not.toMatch(/show raw chunk ids/i);
     expect(prompt).not.toMatch(/cite chunk ids/i);
   });
+
+  it('scrubs page and lecture extraction labels from source excerpts in prompts', () => {
+    const prompt = prompts.QUIZ_MCQ([{
+      id: 44,
+      heading: 'Lecture 8',
+      text: 'Page 1 CS 2110 September 18, 2025 Lecture 8: Classes and Encapsulation. Encapsulation keeps fields private and exposes validated methods.',
+    }], 2, 'medium');
+
+    expect(prompt).toContain('Classes and Encapsulation');
+    expect(prompt).toContain('validated methods');
+    expect(prompt).not.toMatch(/\bPage\s*1\b/i);
+    expect(prompt).not.toMatch(/\bLecture\s*8\b/i);
+    expect(prompt).not.toMatch(/\bCS\s*2110\b/i);
+    expect(prompt).not.toMatch(/September\s+18,\s+2025/i);
+  });
 });

@@ -48,9 +48,10 @@ function missingModelError(model, role, details = {}) {
   );
 }
 
-async function ollamaFetch(pathname, body) {
+async function ollamaFetch(pathname, body, opts = {}) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), env.OLLAMA_TIMEOUT_MS);
+  const timeoutMs = opts.timeoutMs || opts.timeout_ms || env.OLLAMA_TIMEOUT_MS;
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(`${env.OLLAMA_BASE_URL}${pathname}`, {
       method: 'POST',
@@ -81,7 +82,7 @@ async function ollamaFetch(pathname, body) {
     if (err && err.name === 'AbortError') {
       throw new AiServiceError(503, 'ai_timeout', 'The local Ollama model did not respond before the timeout.', {
         endpoint: pathname,
-        timeout_ms: env.OLLAMA_TIMEOUT_MS,
+        timeout_ms: timeoutMs,
       });
     }
     throw new AiServiceError(503, 'ai_unavailable', 'Ollama is not reachable. Start Ollama and try again.', {
@@ -105,7 +106,7 @@ async function generate(prompt, opts = {}) {
   };
   if (opts.num_predict) body.options.num_predict = opts.num_predict;
   if (opts.format) body.format = opts.format;
-  const out = await ollamaFetch('/api/generate', body);
+  const out = await ollamaFetch('/api/generate', body, opts);
   return (out && out.response) || '';
 }
 

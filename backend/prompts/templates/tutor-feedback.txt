@@ -3,7 +3,7 @@
 The student is learning: "{{CONCEPT}}". Step: "{{STEP_TITLE}} - {{STEP_QUESTION}}".
 The student answered: "{{USER_ANSWER}}". The answer is {{CORRECTNESS}}.
 
-Use the relevant source excerpts below when available. Cite chunk ids as [chunk:ID] only when you use a source detail.
+Use the relevant source excerpts below when available. Do not cite chunk ids, page numbers, slide numbers, or lecture numbers in learner-facing feedback.
 
 Source excerpts:
 {{SOURCE_EXCERPTS}}

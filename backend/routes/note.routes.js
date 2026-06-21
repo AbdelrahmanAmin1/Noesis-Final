@@ -21,6 +21,7 @@ const sourceVisualCandidates = require('../services/source-visual-candidates.ser
 const sourceGroundingJudge = require('../services/source-grounding-judge.service');
 const sourceTopicPlans = require('../services/source-topic-plan.service');
 const materialTopicMap = require('../services/material-topic-map.service');
+const sourceTextQuality = require('../services/source-text-quality.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -905,8 +906,10 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         repair: repairTrace,
       });
     }
-    lesson.sourceVisuals = sourceVisuals;
-    const md = lessons.lessonToMarkdown(lesson);
+    lesson = sourceTextQuality.sanitizeObjectStrings(lesson);
+    const cleanSourceVisuals = sourceTextQuality.sanitizeObjectStrings(sourceVisuals);
+    lesson.sourceVisuals = cleanSourceVisuals;
+    const md = sourceTextQuality.stripSourceNoise(lessons.lessonToMarkdown(lesson));
     if (!md) throw new HttpError(502, 'ai_empty_response', 'The AI returned an empty note. Try again.');
     const lessonJson = JSON.stringify(lesson);
     const sourceMapJson = JSON.stringify({
@@ -925,7 +928,7 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       educational_context: education && education.trace || null,
       curated_topic: education && education.curatedKnowledge && education.curatedKnowledge.id || null,
       uploaded_chunk_count: uploadedChunks.length,
-      source_visuals: sourceVisuals,
+      source_visuals: cleanSourceVisuals,
       system_chunk_count: rag.system && Array.isArray(rag.system.chunks) ? rag.system.chunks.length : 0,
       source_outline: {
         mainTopic: sourceOutline.mainTopic,

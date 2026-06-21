@@ -565,7 +565,14 @@ const Quiz = ({ onNav }) => {
       setQi(0); setSelected(null); setSubmitted(false); setFeedback(null); setFinalScore(null);
       setAnsweredIds(new Set());
     } catch (e) {
-      setError(e.message || 'Failed to start quiz');
+      if (e.code === 'quiz_requires_regeneration') {
+        sessionStorage.removeItem('noesis.quizId');
+        setQuiz(null); setQuestions([]); setAttemptId(null);
+        await loadLibrary();
+        setError('That older quiz was hidden because it contained document details. Generate a new quiz for concept-only questions.');
+      } else {
+        setError(e.message || 'Failed to start quiz');
+      }
     } finally {
       setBusy(false); setAction('');
     }

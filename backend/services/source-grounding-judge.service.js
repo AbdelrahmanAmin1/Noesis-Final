@@ -4,6 +4,7 @@ const env = require('../config/env');
 const { getDb } = require('../config/db');
 const topicResolver = require('./topic-resolver.service');
 const materialUnderstanding = require('./material-understanding.service');
+const sourceTextQuality = require('./source-text-quality.service');
 
 const CS_DOMAINS = new Set(['cs', 'Object-Oriented Programming', 'Data Structures', 'Algorithms']);
 const DECISIONS = {
@@ -438,17 +439,17 @@ function sourceRepairSafe(verdict = {}) {
 }
 
 function sourceLimitedTutorFallback(verdict = {}, sources = []) {
-  const topic = verdict.correctedTopic || (verdict.evidence && verdict.evidence.sourceTopic) || 'the uploaded material';
+  const topic = sourceTextQuality.stripSourceNoise(verdict.correctedTopic || (verdict.evidence && verdict.evidence.sourceTopic) || 'the uploaded material', { preserveNewlines: false }) || 'the uploaded material';
   const source = (sources || []).find(item => item && (item.excerpt || item.text || item.heading));
   const detail = source
-    ? `The safest source cue I found is ${source.location ? `${source.location}: ` : ''}${cleanText(source.heading || source.excerpt || source.text, 180)}.`
+    ? `The safest source cue I found is ${source.location ? `${sourceTextQuality.stripSourceNoise(source.location, { preserveNewlines: false })}: ` : ''}${sourceTextQuality.stripSourceNoise(cleanText(source.heading || source.excerpt || source.text, 180), { preserveNewlines: false })}.`
     : 'I do not have enough reliable source evidence for the answer I was about to give.';
   return [
     '### Answer',
     `I should stay grounded in ${topic}. ${detail}`,
     '',
     '### Check yourself',
-    `Which source section or page should we use to focus the explanation of ${topic}?`,
+    `Which concept or source excerpt should we use to focus the explanation of ${topic}?`,
   ].join('\n');
 }
 

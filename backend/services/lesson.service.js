@@ -10,6 +10,7 @@ const diagrams = require('./diagram.service');
 const { findTopicNodes } = require('../utils/visual-templates');
 const codeWindow = require('../utils/code-window');
 const materialUnderstanding = require('./material-understanding.service');
+const sourceTextQuality = require('./source-text-quality.service');
 
 const SECTION_TYPES = [
   'hook',
@@ -156,8 +157,9 @@ function cleanText(value, max = null) {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
-  if (max && text.length > max) return `${text.slice(0, max - 1).trim()}...`;
-  return text;
+  const cleaned = sourceTextQuality.stripSourceNoise(text);
+  if (max && cleaned.length > max) return `${cleaned.slice(0, max - 1).trim()}...`;
+  return cleaned;
 }
 
 function inlineText(value, max = null) {
@@ -1171,16 +1173,15 @@ function normalizeSourceVisual(raw) {
   const sourcePage = raw.sourcePage ?? raw.pageNumber ?? raw.page_number ?? null;
   const slideNumber = raw.slideNumber ?? raw.slide_number ?? null;
   if (sourcePage == null && slideNumber == null && !raw.heading && !raw.caption) return null;
-  const label = slideNumber != null ? `Slide ${slideNumber}` : `Page ${sourcePage || 1}`;
-  const heading = inlineText(raw.heading || raw.visualTypeGuess || raw.visual_type_guess || 'source visual', 100);
+  const heading = sourceTextQuality.sourceLabel(raw.heading || raw.visualTypeGuess || raw.visual_type_guess || raw.caption, 'Source visual');
   return {
     id: raw.id || raw.sourceVisualId || raw.source_visual_id || null,
     materialId: raw.materialId || raw.material_id || null,
     pageNumber: sourcePage != null ? Number(sourcePage) : null,
     sourcePage: sourcePage != null ? Number(sourcePage) : null,
     slideNumber: slideNumber != null ? Number(slideNumber) : null,
-    heading,
-    caption: inlineText(raw.caption || (heading ? `${label}: ${heading}` : label), 160),
+    heading: inlineText(heading, 100),
+    caption: inlineText(raw.caption || heading || 'Source visual', 160),
     nearbyText: inlineText(raw.nearbyText || raw.nearby_text || raw.evidence || '', 260),
     ocrText: inlineText(raw.ocrText || raw.ocr_text || '', 260),
     evidence: inlineText(raw.evidence || raw.nearbyText || raw.nearby_text || '', 260),
@@ -1620,11 +1621,10 @@ function sourceVisualMarkdownKey(v) {
 }
 
 function sourceVisualMarkdownLine(v) {
-  const label = v.slideNumber != null ? `Slide ${v.slideNumber}` : `Page ${v.sourcePage || v.pageNumber || 1}`;
-  const heading = inlineText(v.heading || v.visualTypeGuess || 'source visual', 100);
+  const heading = sourceTextQuality.sourceLabel(v.heading || v.visualTypeGuess || 'source visual', 'Source visual');
   const desc = inlineText(v.explanation || v.ocrText || v.nearbyText || v.evidence || '', 220);
   const imgRef = v.imagePath ? ` _(image: ${v.imagePath})_` : '';
-  return `> **[Source: ${label} - ${heading}]**${desc ? ` ${desc}` : ''}${imgRef}`;
+  return `> **[Source visual: ${inlineText(heading, 100)}]**${desc ? ` ${desc}` : ''}${imgRef}`;
 }
 
 function lessonToMarkdown(lessonInput) {
@@ -1710,11 +1710,10 @@ function lessonToMarkdown(lessonInput) {
       const visuals = visualInsertions.get(si);
       const insertLines = [];
       for (const v of visuals) {
-        const label = v.slideNumber != null ? `Slide ${v.slideNumber}` : `Page ${v.sourcePage || v.pageNumber || 1}`;
-        const heading = inlineText(v.heading || v.visualTypeGuess || 'source visual', 100);
+        const heading = sourceTextQuality.sourceLabel(v.heading || v.visualTypeGuess || 'source visual', 'Source visual');
         const desc = inlineText(v.ocrText || v.nearbyText || v.evidence || '', 200);
         const imgRef = v.imagePath ? ` _(image: ${v.imagePath})_` : '';
-        insertLines.push(`> **[Source: ${label} — ${heading}]**${desc ? ` ${desc}` : ''}${imgRef}`);
+        insertLines.push(`> **[Source visual: ${inlineText(heading, 100)}]**${desc ? ` ${desc}` : ''}${imgRef}`);
         insertLines.push('');
       }
       lines.splice(endPos, 0, ...insertLines);
@@ -1723,11 +1722,10 @@ function lessonToMarkdown(lessonInput) {
     if (unmatchedVisuals.length) {
       lines.push('## Additional Visuals From the Material');
       for (const v of unmatchedVisuals) {
-        const label = v.slideNumber != null ? `Slide ${v.slideNumber}` : `Page ${v.sourcePage || v.pageNumber || 1}`;
-        const heading = inlineText(v.heading || v.visualTypeGuess || 'source visual', 100);
+        const heading = sourceTextQuality.sourceLabel(v.heading || v.visualTypeGuess || 'source visual', 'Source visual');
         const desc = inlineText(v.ocrText || v.nearbyText || v.evidence || '', 200);
         const imgRef = v.imagePath ? ` _(image: ${v.imagePath})_` : '';
-        lines.push(`> **[Source: ${label} — ${heading}]**${desc ? ` ${desc}` : ''}${imgRef}`);
+        lines.push(`> **[Source visual: ${inlineText(heading, 100)}]**${desc ? ` ${desc}` : ''}${imgRef}`);
       }
       lines.push('');
     }

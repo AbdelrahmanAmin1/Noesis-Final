@@ -139,6 +139,16 @@ function locationKey(page) {
 }
 
 function mergeStructuredWithOcr(structured = {}, ocrResult = null) {
+  if (!ocrResult || !Array.isArray(ocrResult.pages) || !ocrResult.pages.length) {
+    const pages = (structured.pages || []).map(page => ({
+      ...page,
+      normalText: cleanText(page.text || page.normalText || ''),
+      ocrText: '',
+      normalTextChars: usefulCharCount(page.text || page.normalText || ''),
+      ocrTextChars: 0,
+    }));
+    return { ...structured, pages, text: cleanText(structured.text || ''), ocrResult: null };
+  }
   const byKey = new Map();
   for (const page of structured.pages || []) {
     const key = locationKey(page);
