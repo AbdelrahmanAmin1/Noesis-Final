@@ -22,6 +22,7 @@ const sources = [
   'components/TutorChat.jsx',
   'components/TutorHome.jsx',
   'components/LearningMap.jsx',
+  'components/MaterialMindMap.jsx',
   'components/StoryboardReview.jsx',
   'components/StudyPlan.jsx',
   'components/LessonRenderer.jsx',

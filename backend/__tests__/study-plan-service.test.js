@@ -42,6 +42,52 @@ describe('study-plan.service', () => {
     expect(map.nodes.find(n => n.label === 'Linked List').type).toBe('weak');
   });
 
+  it('produces distinct curriculum trees for OOP, Data Structures, and both tracks', () => {
+    const mapFor = (subject) => {
+      db.prepare('UPDATE user_prefs SET subject=? WHERE user_id=?').run(subject, userId);
+      return learningMaps.buildLearningMap(userId);
+    };
+
+    const oop = mapFor('oop');
+    const ds = mapFor('data-structures');
+    const both = mapFor('computer-science');
+
+    expect(oop.track).toBe('oop');
+    expect(oop.tree.label).toBe('Object-Oriented Programming');
+    expect((oop.tree.children || []).map(node => node.label)).toContain('Encapsulation');
+    expect((oop.tree.children || []).map(node => node.label)).not.toContain('Linked List');
+
+    expect(ds.track).toBe('ds');
+    expect(ds.tree.label).toBe('Data Structures');
+    expect((ds.tree.children || []).map(node => node.label)).toContain('Linked List');
+    expect((ds.tree.children || []).map(node => node.label)).not.toContain('Encapsulation');
+
+    expect(both.track).toBe('both');
+    expect(both.tree.label).toBe('OOP + Data Structures');
+    expect((both.tree.children || []).map(node => node.label)).toEqual(['Object-Oriented Programming', 'Data Structures']);
+  });
+
+  it('colors matching weak concepts but does not insert unrelated quiz misses into curriculum maps', () => {
+    const now = new Date().toISOString();
+    const quizId = db.prepare('INSERT INTO quizzes (user_id, material_id, title, difficulty, created_at) VALUES (?,?,?,?,?)')
+      .run(userId, null, 'History Quiz', 'medium', now).lastInsertRowid;
+    const questionId = db.prepare('INSERT INTO quiz_questions (quiz_id, idx, question, options_json, correct_idx, explanation, concept) VALUES (?,?,?,?,?,?,?)')
+      .run(quizId, 0, 'What started the French Revolution?', '["A","B","C","D"]', 0, 'History concept.', 'French Revolution').lastInsertRowid;
+    const attemptId = db.prepare('INSERT INTO quiz_attempts (quiz_id, user_id, started_at, finished_at, score) VALUES (?,?,?,?,?)')
+      .run(quizId, userId, now, now, 0).lastInsertRowid;
+    db.prepare('INSERT INTO quiz_answers (attempt_id, question_id, selected_idx, is_correct) VALUES (?,?,?,?)')
+      .run(attemptId, questionId, 1, 0);
+
+    const map = learningMaps.buildLearningMap(userId);
+    const labels = map.nodes.map(node => node.label);
+    const visibleTree = JSON.stringify(map.tree);
+
+    expect(labels).toContain('Linked List');
+    expect(map.nodes.find(node => node.label === 'Linked List').type).toBe('weak');
+    expect(visibleTree).not.toMatch(/French Revolution/i);
+    expect(map.recommendedPath.join(' ')).not.toMatch(/French Revolution/i);
+  });
+
   it('grounds and prunes a material-specific learning map from uploaded chunks', () => {
     const materialId = db.prepare(`INSERT INTO materials
       (user_id, course_id, title, type, file_path, mime, size_bytes, status, progress, created_at)
@@ -66,7 +112,8 @@ describe('study-plan.service', () => {
     const map = learningMaps.buildLearningMap(userId, { materialId });
     const branchLabels = (map.tree.children || []).map(n => n.label);
 
-    expect(map.rootTopic).toBe('Encapsulation Lecture');
+    expect(map.rootTopic).toBe('Encapsulation');
+    expect(map.rootTopic).not.toMatch(/page|slide|lecture\s*\d*/i);
     expect(map.materialGrounding.used).toBe(true);
     expect(map.materialGrounding.specificEnough).toBe(true);
     expect(map.materialGrounding.groundedConcepts).toContain('Encapsulation');
@@ -81,6 +128,7 @@ describe('study-plan.service', () => {
     expect(draft.status).toBe('draft');
     expect(draft.plan.dailyPlan.length).toBeGreaterThan(0);
     expect(draft.plan.dailyPlan[0].focusTopic).toBe('Linked List');
+    expect(draft.plan.goalId).toBe('exams');
 
     const active = studyPlans.approvePlan(userId, draft.id);
     expect(active.status).toBe('active');
@@ -90,7 +138,36 @@ describe('study-plan.service', () => {
     expect(updated.tasks.find(t => t.id === firstTaskId).status).toBe('completed');
   });
 
-  it('builds global plans from uploaded non-CS materials instead of defaulting to CS paths', () => {
+  it('changes task mix based on the onboarding goal', () => {
+    const taskTypesFor = (goal) => {
+      db.prepare('UPDATE user_prefs SET goal=?, study_profile_json=? WHERE user_id=?')
+        .run(goal, JSON.stringify({ daysPerWeek: 4, minutesPerSession: 50, learningStyle: 'mixed' }), userId);
+      return studyPlans.buildPlan(userId).dailyPlan.flatMap(day => day.tasks.map(t => t.type));
+    };
+
+    const examTypes = taskTypesFor('exams');
+    const understandTypes = taskTypesFor('understand');
+    const retainTypes = taskTypesFor('retain');
+    const practiceTypes = taskTypesFor('practice');
+
+    expect(examTypes.filter(t => t === 'quiz').length).toBeGreaterThan(examTypes.filter(t => t === 'tutor_session').length);
+    expect(understandTypes.filter(t => t === 'tutor_session').length).toBeGreaterThan(understandTypes.filter(t => t === 'quiz').length);
+    expect(retainTypes.filter(t => t === 'flashcards').length).toBeGreaterThan(retainTypes.filter(t => t === 'quiz').length);
+    expect(practiceTypes.filter(t => t === 'quiz').length).toBeGreaterThan(practiceTypes.filter(t => t === 'flashcards').length);
+  });
+
+  it('defaults missing goals to exam-prep behavior', () => {
+    db.prepare('UPDATE user_prefs SET goal=NULL, study_profile_json=? WHERE user_id=?').run('{}', userId);
+
+    const plan = studyPlans.buildPlan(userId);
+    const taskTypes = plan.dailyPlan.flatMap(day => day.tasks.map(t => t.type));
+
+    expect(plan.goalId).toBe('exams');
+    expect(plan.goalProfile.label).toBe('Ace my exams');
+    expect(taskTypes.filter(t => t === 'quiz').length).toBeGreaterThan(0);
+  });
+
+  it('keeps study plans on the selected curriculum track regardless of uploaded materials', () => {
     const materialId = db.prepare(`INSERT INTO materials
       (user_id, course_id, title, type, file_path, mime, size_bytes, status, progress, created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?)`)
@@ -111,11 +188,14 @@ describe('study-plan.service', () => {
       JSON.stringify(['French Revolution', 'social inequality', 'financial crisis', 'Enlightenment', 'estates'])
     );
 
-    const draft = studyPlans.createPlan(userId);
+    const draft = studyPlans.createPlan(userId, { materialId });
     const focuses = draft.plan.dailyPlan.map(day => day.focusTopic).join(' ');
 
-    expect(draft.plan.learningMap.materialGrounding.combined).toBe(true);
-    expect(focuses).toMatch(/French Revolution|Causes|Estates|Inequality|Enlightenment/i);
-    expect(focuses).not.toMatch(/Encapsulation|Polymorphism|Stack Applications/i);
+    expect(draft.plan.trackId).toBe('ds');
+    expect(draft.plan.learningMap.tree.label).toBe('Data Structures');
+    expect(draft.plan.learningMap.materialGrounding.curriculum).toBe(true);
+    expect(JSON.stringify(draft.plan.learningMap.tree)).not.toMatch(/French Revolution|Causes|Estates|Inequality|Enlightenment/i);
+    expect(focuses).toMatch(/Linked List|Array|Stack|Queue|Tree|Graph|Hash|Complexity/i);
+    expect(focuses).not.toMatch(/French Revolution|Causes|Estates|Inequality|Enlightenment/i);
   });
 });

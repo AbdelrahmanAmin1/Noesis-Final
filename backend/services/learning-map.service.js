@@ -2,6 +2,7 @@
 
 const { getDb } = require('../config/db');
 const domainDetection = require('./domain-detection.service');
+const materialLearningMaps = require('./material-learning-map.service');
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -104,6 +105,31 @@ const PATHS = {
   algorithms: TOPIC_TREE.algorithms.children.map(c => c.label),
 };
 
+const CURRICULUM_SUMMARIES = {
+  'object-oriented programming': 'The OOP track organizes programs around classes, objects, state, behavior, and reusable interfaces.',
+  'oop + data structures': 'A combined curriculum path covering object-oriented design and the structures used to organize data.',
+  'data structures': 'The data structures track focuses on containers, operations, traversal, hashing, and complexity tradeoffs.',
+  'class & object': 'Classes define reusable blueprints; objects are the runtime instances with state and behavior.',
+  'constructor': 'Constructors initialize new objects into a valid starting state.',
+  'instance vs class': 'Instance members belong to one object, while class members are shared by the class.',
+  'encapsulation': 'Encapsulation protects object state behind a controlled public interface.',
+  'private fields': 'Private fields keep internal state from being changed directly by outside code.',
+  'getters & setters': 'Getters and setters expose controlled read or write access to object state.',
+  'access modifiers': 'Access modifiers define which code can see or use a class member.',
+  'inheritance': 'Inheritance lets a subclass reuse and specialize behavior from a superclass.',
+  'polymorphism': 'Polymorphism lets the same call behave differently depending on the runtime object.',
+  'abstraction': 'Abstraction focuses on essential behavior while hiding unnecessary implementation detail.',
+  'solid principles': 'SOLID principles guide maintainable object-oriented design.',
+  'arrays': 'Arrays store indexed items in contiguous positions for fast direct access.',
+  'linked list': 'Linked lists connect nodes with references instead of contiguous indexes.',
+  'stack': 'Stacks follow LIFO order, where push and pop operate at the top.',
+  'queue': 'Queues follow FIFO order, where items enter at the rear and leave from the front.',
+  'binary search tree': 'Binary search trees organize comparable values so left descendants are smaller and right descendants are larger.',
+  'hash table': 'Hash tables map keys to buckets for expected constant-time lookup.',
+  'graph': 'Graphs model relationships between vertices using edges.',
+  'big-o complexity': 'Big-O describes how time or memory grows as input size increases.',
+};
+
 const MATERIAL_ALIASES = {
   'class & object': ['class', 'object', 'blueprint', 'instance', 'state', 'behavior'],
   'constructor': ['constructor', 'new object', 'initialization', 'initialize'],
@@ -193,11 +219,22 @@ function textHasPhrase(text, phrase) {
   return haystack.includes(` ${needle} `) || haystack.includes(needle);
 }
 
+function subjectTrack(subject) {
+  const s = String(subject || '').toLowerCase();
+  const hasDs = /data.?struct|\bds\b/.test(s);
+  const hasOop = /oop|object|java/.test(s);
+  if (/both|computer.?science|cs\b|combined|all/.test(s) || (hasDs && hasOop)) return 'both';
+  if (hasDs) return 'ds';
+  if (hasOop) return 'oop';
+  return 'both';
+}
+
 function subjectKey(subject) {
   const s = String(subject || '').toLowerCase();
-  if (/data.?struct|ds\b/.test(s)) return 'ds';
   if (/algorithm/.test(s)) return 'algorithms';
-  if (/oop|object|java/.test(s)) return 'oop';
+  const track = subjectTrack(subject);
+  if (track === 'ds') return 'ds';
+  if (track === 'oop') return 'oop';
   return null;
 }
 
@@ -210,6 +247,32 @@ function subjectPath(subject) {
 function pathForKeyOrSubject(key, subject) {
   if (key && PATHS[key]) return PATHS[key];
   return subjectPath(subject);
+}
+
+function curriculumTreeForSubject(subject) {
+  const track = subjectTrack(subject);
+  if (track === 'oop') return { track, tree: cloneTree(TOPIC_TREE.oop) };
+  if (track === 'ds') return { track, tree: cloneTree(TOPIC_TREE.ds) };
+  return {
+    track: 'both',
+    tree: {
+      label: 'OOP + Data Structures',
+      children: [cloneTree(TOPIC_TREE.oop), cloneTree(TOPIC_TREE.ds)],
+    },
+  };
+}
+
+function curriculumSummary(label) {
+  const key = String(label || '').toLowerCase();
+  return CURRICULUM_SUMMARIES[key] || `${label} is part of your selected curriculum path.`;
+}
+
+function decorateCurriculumTree(node, depth = 0) {
+  node.summary = curriculumSummary(node.label);
+  node.kind = depth === 0 ? 'curriculum' : (depth === 1 ? 'topic' : 'concept');
+  node.relationship = depth === 0 ? '' : (depth === 1 ? 'curriculum branch' : 'supports');
+  for (const child of node.children || []) decorateCurriculumTree(child, depth + 1);
+  return node;
 }
 
 function statusFor(topic, conceptMap) {
@@ -487,6 +550,9 @@ function generalTreeFromMaterial(material, chunks) {
 // ---------------------------------------------------------------------------
 
 function buildLearningMap(userId, opts = {}) {
+  if (opts.materialId) {
+    return materialLearningMaps.getOrBuild(userId, opts.materialId, { persist: opts.persist !== false });
+  }
   const db = getDb();
   const prefs = db.prepare('SELECT * FROM user_prefs WHERE user_id=?').get(userId) || {};
   const concepts = db.prepare('SELECT name, mastery_pct FROM concepts WHERE user_id=? ORDER BY mastery_pct ASC, name ASC').all(userId);
@@ -525,6 +591,8 @@ function buildLearningMap(userId, opts = {}) {
     sourceTree = generalTreeFromMaterial(material, materialChunks);
   } else if (key && TOPIC_TREE[key]) {
     sourceTree = cloneTree(TOPIC_TREE[key]);
+  } else if (!opts.materialId) {
+    sourceTree = curriculumTreeForSubject(prefs.subject).tree;
   } else {
     // Mixed: combine OOP + DS branches under a generic root
     sourceTree = {
@@ -535,6 +603,7 @@ function buildLearningMap(userId, opts = {}) {
       ],
     };
   }
+  if (!opts.materialId) decorateCurriculumTree(sourceTree);
 
   let materialGrounding = annotateMaterialGrounding(sourceTree, materialChunks);
   if (materialGrounding.specificEnough) {
@@ -542,7 +611,7 @@ function buildLearningMap(userId, opts = {}) {
   }
 
   // Attach orphan weak topics (from quiz misses) that aren't already in the tree
-  const extraWeak = wrong.map(w => normalizeTopic(w.concept)).filter(Boolean);
+  const extraWeak = opts.materialId ? wrong.map(w => normalizeTopic(w.concept)).filter(Boolean) : [];
   for (const topic of extraWeak) {
     if (treeContains(sourceTree, topic)) continue;
     const evidence = materialChunks.length ? matchNodeToMaterial({ label: topic, children: [] }, materialChunks) : [];
@@ -584,7 +653,7 @@ function buildLearningMap(userId, opts = {}) {
   const remainingPath = pathTopics.filter(t => statusFor(t, conceptMap) !== 'mastered' && t !== startHere);
 
   const map = {
-    rootTopic: opts.rootTopic || (material && material.title) || prefs.subject || sourceTree.label,
+    rootTopic: opts.rootTopic || (material && material.title) || sourceTree.label || prefs.subject,
     startHere,
     tree: sourceTree,
     nodes: nodes.slice(0, 14),
@@ -598,7 +667,12 @@ function buildLearningMap(userId, opts = {}) {
       groundedBranches: materialGrounding.groundedBranches,
       specificEnough: materialGrounding.specificEnough,
       prunedUngroundedBranches: materialGrounding.specificEnough,
+      curriculum: !opts.materialId,
+      track: !opts.materialId ? subjectTrack(prefs.subject) : null,
     },
+    track: !opts.materialId ? subjectTrack(prefs.subject) : null,
+    trackLabel: !opts.materialId ? sourceTree.label : null,
+    generation: !opts.materialId ? { mode: 'curriculum', status: 'ready', provider: null, generatedAt: nowIso() } : undefined,
     generatedAt: nowIso(),
   };
 
@@ -618,4 +692,4 @@ function buildLearningMap(userId, opts = {}) {
   return map;
 }
 
-module.exports = { buildLearningMap };
+module.exports = { buildLearningMap, subjectTrack, _internals: { curriculumTreeForSubject, decorateCurriculumTree, subjectTrack } };

@@ -23,6 +23,10 @@ const Auth = ({ initialMode = 'signin', onComplete, onBack }) => {
     setSuccess('');
     if (!email || !password) { setError('Email and password are required'); return; }
     if (mode === 'signup' && !name.trim()) { setError('Full name is required'); return; }
+    if (mode === 'signup' && !window.NoesisPasswordPolicy.isValid(password)) {
+      setError(window.NoesisPasswordPolicy.message);
+      return;
+    }
     setBusy(true);
     try {
       const fn = mode === 'signin' ? window.NoesisAPI.auth.signin : window.NoesisAPI.auth.signup;
@@ -33,7 +37,7 @@ const Auth = ({ initialMode = 'signin', onComplete, onBack }) => {
     } catch (e) {
       const messages = {
         missing_fields: 'Email, password, and name are required.',
-        password_too_short: 'Password must be at least 8 characters.',
+        password_requirements_not_met: window.NoesisPasswordPolicy.message,
         email_exists: 'An account already exists for this email.',
         invalid_credentials: 'Email or password is incorrect.',
       };
@@ -70,7 +74,7 @@ const Auth = ({ initialMode = 'signin', onComplete, onBack }) => {
             </div>
             <div style={as.field}>
               <label style={as.label}>Password</label>
-              <input className="input" type="password" value={password} disabled={busy} onChange={e => setPassword(e.target.value)} placeholder="At least 8 characters" />
+              <input className="input" type="password" value={password} disabled={busy} onChange={e => setPassword(e.target.value)} placeholder={mode === 'signup' ? '8+ characters, uppercase, and number' : 'Your password'} />
             </div>
           </div>
 
@@ -206,7 +210,7 @@ const Onboarding = ({ onComplete }) => {
                   const C = Icon[o.icon];
                   const active = subject === o.id;
                   return (
-                    <button key={o.id} onClick={() => setSubject(o.id)} style={{ ...os.tile, ...(active ? os.tileActive : {}) }}>
+                    <button key={o.id} onClick={() => { setSubject(o.id); setCourses(o.id === 'oop' ? ['oop'] : (o.id === 'data-structures' ? ['ds'] : ['oop', 'ds'])); }} style={{ ...os.tile, ...(active ? os.tileActive : {}) }}>
                       <C size={20} style={{ color: active ? 'var(--accent)' : 'var(--fg-2)' }} />
                       <span style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: active ? 'var(--fg-0)' : 'var(--fg-1)' }}>{o.label}</span>
                     </button>
@@ -223,8 +227,11 @@ const Onboarding = ({ onComplete }) => {
                 ].map(c => {
                   const on = courses.includes(c.id);
                   return (
-                    <button key={c.id} onClick={() => setCourses(on ? courses.filter(x => x !== c.id) : [...courses, c.id])}
-                      style={{ ...os.course, ...(on ? os.courseActive : {}) }}>
+                    <button key={c.id} onClick={() => {
+                      const nextCourses = on ? courses.filter(x => x !== c.id) : [...courses, c.id];
+                      setCourses(nextCourses);
+                      setSubject(nextCourses.length > 1 ? 'computer-science' : (nextCourses[0] === 'oop' ? 'oop' : (nextCourses[0] === 'ds' ? 'data-structures' : 'computer-science')));
+                    }} style={{ ...os.course, ...(on ? os.courseActive : {}) }}>
                       <div style={{ ...os.check, background: on ? 'var(--accent)' : 'transparent', borderColor: on ? 'var(--accent)' : 'var(--line-strong)' }}>
                         {on && <Icon.Check size={10} style={{ color: 'var(--bg-0)' }}/>}
                       </div>
@@ -241,10 +248,10 @@ const Onboarding = ({ onComplete }) => {
             {step === 2 && (
               <div style={os.grid2}>
                 {[
-                  { id: 'exams', label: 'Ace my exams', sub: 'Turn material into reviewable exam prep', icon: 'Target' },
-                  { id: 'understand', label: 'Understand deeply', sub: 'Use tutor sessions for conceptual gaps', icon: 'Brain' },
-                  { id: 'retain', label: 'Retain long-term', sub: 'Use spaced repetition after each topic', icon: 'Bookmark' },
-                  { id: 'practice', label: 'Practice problems', sub: 'Use quizzes to expose weak topics', icon: 'Bolt' },
+                  { id: 'exams', label: 'Ace my exams', sub: 'Turn material into reviewable exam prep', effect: 'Pushes quizzes, weak topics, and exam notes first.', icon: 'Target' },
+                  { id: 'understand', label: 'Understand deeply', sub: 'Use tutor sessions for conceptual gaps', effect: 'Pushes tutor sessions and concept gaps first.', icon: 'Brain' },
+                  { id: 'retain', label: 'Retain long-term', sub: 'Use spaced repetition after each topic', effect: 'Pushes due cards and spaced review first.', icon: 'Bookmark' },
+                  { id: 'practice', label: 'Practice problems', sub: 'Use quizzes to expose weak topics', effect: 'Pushes quizzes, practice sets, and mistake review first.', icon: 'Bolt' },
                 ].map(o => {
                   const C = Icon[o.icon];
                   const active = goal === o.id;
@@ -254,6 +261,7 @@ const Onboarding = ({ onComplete }) => {
                       <div style={{ textAlign: 'left' }}>
                         <div style={{ fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{o.label}</div>
                         <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)', marginTop: 'calc(3px * var(--app-density-scale))' }}>{o.sub}</div>
+                        <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: active ? 'var(--accent)' : 'var(--fg-3)', marginTop: 'calc(8px * var(--app-density-scale))' }}>Effect: {o.effect}</div>
                       </div>
                     </button>
                   );

@@ -7,6 +7,7 @@ const learningMaps = require('../services/learning-map.service');
 const studyPlans = require('../services/study-plan.service');
 const gamification = require('../services/gamification.service');
 const leaderboards = require('../services/leaderboard.service');
+const { getGoalProfile, publicGoalProfile } = require('../services/goal-profile.service');
 
 const router = express.Router();
 
@@ -54,12 +55,169 @@ function streak(events) {
   return s;
 }
 
+function dashboardCopy(goalProfile, { dueCount, totalWeek, goalH }) {
+  if (goalProfile.id === 'retain' && dueCount > 0) {
+    return {
+      title: `You have ${dueCount} card${dueCount === 1 ? '' : 's'} due — lock them in before moving on.`,
+      subtitle: `${goalProfile.dashboardBias} You're at ${totalWeek.toFixed(1)}h this week of ${goalH}h goal.`,
+    };
+  }
+  const titles = {
+    exams: 'Exam mode: turn today into a checkpoint.',
+    understand: 'Deep mode: clear one concept gap today.',
+    retain: 'Retention mode: keep the memory loop alive.',
+    practice: 'Practice mode: expose one mistake and fix it.',
+  };
+  return {
+    title: titles[goalProfile.id] || titles.exams,
+    subtitle: `${goalProfile.dashboardBias} You're at ${totalWeek.toFixed(1)}h this week of ${goalH}h goal.`,
+  };
+}
+
+function buildGoalRecommendation(goalProfile, { latestMaterial, nextFocus, dueCount, counts, weakTopics }) {
+  if (!counts.materials) {
+    return {
+      title: 'Upload your first material',
+      description: 'Add a source first so Noesis can recommend a goal-specific next step.',
+      cta: 'Upload material',
+      route: 'materials',
+      action: 'upload_material',
+      reason: 'Noesis needs source material before it can personalize your recommendations.',
+    };
+  }
+  const topic = (weakTopics[0] && weakTopics[0].name) || nextFocus || (latestMaterial && latestMaterial.title) || 'this material';
+  const materialId = latestMaterial && latestMaterial.id;
+  const materialTitle = latestMaterial && latestMaterial.title;
+  if (goalProfile.id === 'retain') {
+    return dueCount > 0
+      ? {
+          title: 'Review due flashcards',
+          description: `${dueCount} card${dueCount === 1 ? '' : 's'} are ready for spaced recall.`,
+          cta: 'Review cards',
+          route: 'flashcards',
+          action: 'review_flashcards',
+          reason: `Because you chose ${goalProfile.label}, recall comes before new material.`,
+        }
+      : {
+          title: 'Generate flashcards from this material',
+          description: materialTitle ? `Turn ${materialTitle} into a spaced-review deck.` : 'Turn your newest material into a spaced-review deck.',
+          cta: 'Generate flashcards',
+          route: 'material',
+          action: 'generate_flashcards',
+          material_id: materialId,
+          reason: `Because you chose ${goalProfile.label}, Noesis should build recall cards first.`,
+        };
+  }
+  if (goalProfile.id === 'understand') {
+    return {
+      title: `Tutor deep dive: ${topic}`,
+      description: materialTitle ? `Use ${materialTitle} for a guided explanation and follow-up questions.` : 'Start a guided explanation and follow-up questions.',
+      cta: 'Study with tutor',
+      route: 'tutor',
+      action: 'start_tutor',
+      material_id: materialId,
+      topic,
+      reason: `Because you chose ${goalProfile.label}, Noesis should attack concept gaps first.`,
+    };
+  }
+  if (goalProfile.id === 'practice') {
+    return {
+      title: `Generate a practice quiz: ${topic}`,
+      description: materialTitle ? `Use ${materialTitle} to expose mistakes and review them right away.` : 'Create a short practice quiz to expose mistakes.',
+      cta: 'Generate practice quiz',
+      route: 'material',
+      action: 'generate_quiz',
+      material_id: materialId,
+      reason: `Because you chose ${goalProfile.label}, practice sets come first.`,
+    };
+  }
+  return {
+    title: `Generate an exam-style quiz: ${topic}`,
+    description: materialTitle ? `Turn ${materialTitle} into a checkpoint for exam prep.` : 'Create a checkpoint from your newest material.',
+    cta: 'Generate quiz',
+    route: 'material',
+    action: 'generate_quiz',
+    material_id: materialId,
+    reason: `Because you chose ${goalProfile.label}, checkpoints and weak-topic review come first.`,
+  };
+}
+
+function buildGoalRecommendations(goalProfile, context) {
+  const primary = buildGoalRecommendation(goalProfile, context);
+  const recommendations = [primary];
+  if (context.activePlan) {
+    recommendations.push({
+      title: `Continue study plan: ${context.nextFocus}`,
+      description: 'Your existing plan is still available, but the goal recommendation stays first.',
+      cta: 'Open study plan',
+      route: 'study-plan',
+      action: 'continue_plan',
+      reason: `This is secondary so it does not hide your ${goalProfile.label} recommendation.`,
+    });
+  }
+  return recommendations;
+}
+
+function recommendationAsAction(rec) {
+  return {
+    title: rec.title,
+    label: rec.cta || rec.title,
+    route: rec.route,
+    action: rec.action,
+    material_id: rec.material_id,
+    topic: rec.topic,
+    reason: rec.reason,
+  };
+}
+
+function goalInsights(goalProfile, { counts, dueNow, weakTopics, totalWeek, goalH, goalRecommendations }) {
+  const shared = [];
+  if (!counts.materials) {
+    return [{ icon: 'Upload', t: 'Start', d: 'Upload material to unlock goal-aware notes, cards, quizzes, and tutor sessions.', cta: 'Open Materials', route: 'materials' }];
+  }
+  if (!counts.notes) {
+    shared.push({ icon: 'PenNib', t: goalProfile.id === 'exams' ? 'Exam notes' : 'Summarize', d: 'Generate polished notes from your latest indexed material.', cta: 'Open Materials', route: 'materials' });
+  }
+  const dueText = `${dueNow.length} flashcard${dueNow.length === 1 ? '' : 's'} ready for spaced repetition.`;
+  const byGoal = {
+    exams: [
+      { icon: 'Target', t: 'Quiz checkpoint', d: weakTopics.length ? `Turn ${weakTopics[0].name} into a quick exam-style checkpoint.` : 'Generate or continue a quiz to check exam readiness.', cta: 'Open Quizzes', route: 'quizzes' },
+      ...(weakTopics.length ? [{ icon: 'Target', t: 'Weak topic', d: `${weakTopics[0].name} is your lowest mastery topic.`, cta: 'Open Progress', route: 'progress' }] : []),
+      ...(dueNow.length ? [{ icon: 'Cards', t: 'Review due', d: dueText, cta: 'Review now', route: 'flashcards' }] : []),
+    ],
+    understand: [
+      { icon: 'Brain', t: 'Tutor deep dive', d: weakTopics.length ? `Use the tutor to unpack ${weakTopics[0].name}.` : 'Start a tutor session to test your explanations.', cta: 'Start tutor', route: 'tutor' },
+      ...(weakTopics.length ? [{ icon: 'Target', t: 'Concept gap', d: `${weakTopics[0].name} needs the most attention on your map.`, cta: 'Open Progress', route: 'progress' }] : []),
+      ...(dueNow.length ? [{ icon: 'Cards', t: 'Review due', d: dueText, cta: 'Review now', route: 'flashcards' }] : []),
+    ],
+    retain: [
+      ...(dueNow.length ? [{ icon: 'Cards', t: 'Review due', d: dueText, cta: 'Review now', route: 'flashcards' }] : [{ icon: 'Cards', t: 'Build recall', d: 'Generate flashcards so spaced review has something to schedule.', cta: 'Open Materials', route: 'materials' }]),
+      { icon: 'Bookmark', t: 'Spaced review', d: 'Keep recall active before adding more new material.', cta: 'Open Flashcards', route: 'flashcards' },
+      ...(weakTopics.length ? [{ icon: 'Target', t: 'Weak recall', d: `${weakTopics[0].name} is a good candidate for new cards.`, cta: 'Open Progress', route: 'progress' }] : []),
+    ],
+    practice: [
+      { icon: 'Bolt', t: 'Practice set', d: weakTopics.length ? `Drill ${weakTopics[0].name} and review mistakes right after.` : 'Run a quiz to expose the next weak spot.', cta: 'Practice now', route: 'quizzes' },
+      ...(weakTopics.length ? [{ icon: 'Target', t: 'Mistake review', d: `${weakTopics[0].name} is the best place to practice next.`, cta: 'Open Progress', route: 'progress' }] : []),
+      ...(dueNow.length ? [{ icon: 'Cards', t: 'Review due', d: dueText, cta: 'Review now', route: 'flashcards' }] : []),
+    ],
+  };
+  const primary = goalRecommendations && goalRecommendations[0]
+    ? [{ icon: goalProfile.icon, t: goalRecommendations[0].title, d: goalRecommendations[0].description, cta: goalRecommendations[0].cta, route: goalRecommendations[0].route, action: goalRecommendations[0].action, material_id: goalRecommendations[0].material_id, reason: goalRecommendations[0].reason }]
+    : [];
+  const picked = [...primary, ...(byGoal[goalProfile.id] || byGoal.exams), ...shared];
+  if (!picked.length) {
+    picked.push({ icon: goalProfile.icon, t: goalProfile.shortLabel, d: `${totalWeek.toFixed(1)}h logged toward your ${goalH}h weekly target.`, cta: goalProfile.primaryCta, route: goalProfile.primaryRoute });
+  }
+  return picked.slice(0, 3);
+}
+
 router.get('/', requireAuth, (req, res, next) => {
   try {
     const db = getDb();
     const userId = req.user.id;
     const u = db.prepare('SELECT name FROM users WHERE id=?').get(userId);
-    const prefs = db.prepare('SELECT daily_minutes FROM user_prefs WHERE user_id=?').get(userId);
+    const prefs = db.prepare('SELECT goal, daily_minutes FROM user_prefs WHERE user_id=?').get(userId);
+    const goalProfile = getGoalProfile(prefs && prefs.goal);
     const dailyMin = (prefs && prefs.daily_minutes) || 45;
     const goalH = parseFloat((dailyMin * 7 / 60).toFixed(1));
     const events = db.prepare('SELECT kind, ref_id, duration_s, occurred_at FROM study_events WHERE user_id=? AND occurred_at >= ?')
@@ -125,31 +283,22 @@ router.get('/', requireAuth, (req, res, next) => {
       LIMIT 8
     `).all(userId);
 
-    const insights = [];
-    if (!counts.materials) {
-      insights.push({ icon: 'Upload', t: 'Start', d: 'Upload an OOP or Data Structures material to unlock notes, cards, quizzes, and tutor sessions.', cta: 'Open Materials', route: 'materials' });
-    } else if (!counts.notes) {
-      insights.push({ icon: 'PenNib', t: 'Summarize', d: 'Generate exam-ready notes from your latest indexed material.', cta: 'Open Materials', route: 'materials' });
-    }
-    if (dueNow.length) {
-      insights.push({ icon: 'Cards', t: 'Review due', d: `${dueNow.length} flashcard${dueNow.length === 1 ? '' : 's'} ready for spaced repetition.`, cta: 'Review now', route: 'flashcards' });
-    } else if (counts.materials && !counts.flashcards) {
-      insights.push({ icon: 'Cards', t: 'Make cards', d: 'Generate topic-tagged flashcards from a ready material.', cta: 'Open Materials', route: 'materials' });
-    }
-    if (weakTopics.length) {
-      insights.push({ icon: 'Target', t: 'Weak topic', d: `${weakTopics[0].name} is the lowest mastery topic in your map.`, cta: 'Open Progress', route: 'progress' });
-    }
-    if (!insights.length) {
-      insights.push({ icon: 'Bolt', t: 'Keep momentum', d: `${totalWeek.toFixed(1)}h logged toward your ${goalH}h weekly target.`, cta: 'Start session', route: 'tutor' });
-    }
     const activePlan = studyPlans.getPlan(userId);
     const learningMap = learningMaps.buildLearningMap(userId);
     const nextFocus = (activePlan && activePlan.plan && activePlan.plan.dailyPlan && activePlan.plan.dailyPlan[0] && activePlan.plan.dailyPlan[0].focusTopic)
       || (weakTopics[0] && weakTopics[0].name)
       || learningMap.startHere;
-    const nextRecommendedAction = activePlan
-      ? { title: `Continue ${nextFocus}`, route: 'study-plan', reason: 'Your active plan is ready for today.' }
-      : { title: `Start with ${nextFocus}`, route: 'study-plan', reason: 'Build a plan from your weak topics and available time.' };
+    const goalRecommendations = buildGoalRecommendations(goalProfile, {
+      activePlan,
+      latestMaterial: resume[0] || null,
+      nextFocus,
+      dueCount: dueNow.length,
+      counts,
+      weakTopics,
+    });
+    const nextRecommendedAction = recommendationAsAction(goalRecommendations[0]);
+    const insights = goalInsights(goalProfile, { counts, dueNow, weakTopics, totalWeek, goalH, goalRecommendations });
+    const hero = dashboardCopy(goalProfile, { dueCount: dueNow.length, totalWeek, goalH });
     const gamificationSummary = gamification.getSummary(userId);
     const leaderboardPreview = leaderboards.weekly(userId, 5).leaderboard;
 
@@ -158,6 +307,8 @@ router.get('/', requireAuth, (req, res, next) => {
       weekly_hours: weekly,
       total_week_hours: parseFloat(totalWeek.toFixed(1)),
       goal_hours: goalH,
+      goal_profile: publicGoalProfile(goalProfile.id),
+      dashboard_copy: hero,
       streak_days: streakDays,
       due_cards_count: dueNow.length,
       due_review_preview: dueSoon,
@@ -172,6 +323,7 @@ router.get('/', requireAuth, (req, res, next) => {
       learning_map: learningMap,
       active_study_plan: activePlan,
       next_recommended_action: nextRecommendedAction,
+      goal_recommendations: goalRecommendations,
       upcoming,
       summary: {
         ...counts,

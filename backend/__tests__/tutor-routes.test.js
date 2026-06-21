@@ -148,7 +148,7 @@ describe('AI tutor routes', () => {
     expect(res.status).toBe(200);
     const material = res.body.materials.find(m => m.id === materialId);
     expect(material.title).toBe('15');
-    expect(material.display_title).toBe('Chapter 10 — Polymorphism');
+    expect(material.display_title).toBe('Polymorphism');
   });
 
   it('starts an async structured tutor session and continues to the next step', async () => {

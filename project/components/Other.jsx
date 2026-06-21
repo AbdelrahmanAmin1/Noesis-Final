@@ -212,6 +212,28 @@ const Settings = ({ theme, setTheme, appearance, setAppearance, onLogout }) => {
   );
 };
 
+const TRACK_OPTIONS = [
+  { id: 'computer-science', label: 'Both', description: 'OOP + Data Structures' },
+  { id: 'oop', label: 'OOP', description: 'Object-Oriented Programming' },
+  { id: 'data-structures', label: 'Data Structures', description: 'Data Structures' },
+];
+
+function normalizeSubjectChoice(value) {
+  const raw = String(value || '').toLowerCase();
+  const hasDs = /data.?struct|\bds\b/.test(raw);
+  const hasOop = /oop|object|java/.test(raw);
+  if (/both|computer.?science|cs\b|combined|all/.test(raw) || (hasDs && hasOop)) return 'computer-science';
+  if (hasDs) return 'data-structures';
+  if (hasOop) return 'oop';
+  return 'computer-science';
+}
+
+function subjectChoiceLabel(value) {
+  const id = normalizeSubjectChoice(value);
+  const option = TRACK_OPTIONS.find(item => item.id === id) || TRACK_OPTIONS[0];
+  return option.description;
+}
+
 const ProfileTab = () => {
   const [me, setMe] = React.useState(null);
   const [name, setName] = React.useState('');
@@ -222,21 +244,24 @@ const ProfileTab = () => {
     window.NoesisAPI.auth.me().then(d => {
       setMe(d);
       setName((d && d.user && d.user.name) || '');
-      setSubject((d && d.prefs && d.prefs.subject) || (d && d.user && d.user.major) || '');
+      setSubject(normalizeSubjectChoice((d && d.prefs && d.prefs.subject) || (d && d.user && d.user.major) || 'computer-science'));
     }).catch(() => {});
   }, []);
 
   const save = async () => {
     setSaved('Saving...');
     try {
-      const d = await window.NoesisAPI.profile.update({ name, major: subject });
-      await window.NoesisAPI.user.updatePrefs({ subject });
+      const track = normalizeSubjectChoice(subject);
+      const d = await window.NoesisAPI.profile.update({ name, major: subjectChoiceLabel(track) });
+      await window.NoesisAPI.user.updatePrefs({ subject: track });
       setMe(d);
       setSaved('Saved');
     } catch (e) {
       setSaved('Failed: ' + (e.message || 'error'));
     }
   };
+
+  const trackIdx = Math.max(0, TRACK_OPTIONS.findIndex(option => option.id === normalizeSubjectChoice(subject)));
 
   return (
     <>
@@ -251,7 +276,9 @@ const ProfileTab = () => {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(18px * var(--app-density-scale))' }}>
         <SetRow label="Display name" sub="How the tutor addresses you."><input className="input" value={name} onChange={e => setName(e.target.value)} style={{ width: 240 }}/></SetRow>
-        <SetRow label="Focus" sub="Used for personalization and dashboard labels."><input className="input" value={subject} onChange={e => setSubject(e.target.value)} style={{ width: 240 }}/></SetRow>
+        <SetRow label="Curriculum track" sub="Used for the Study Plan map and dashboard labels. Refresh your plan after changing it.">
+          <Segmented options={TRACK_OPTIONS.map(option => option.label)} value={trackIdx} onChange={(i) => setSubject(TRACK_OPTIONS[i].id)}/>
+        </SetRow>
       </div>
     </>
   );
@@ -263,12 +290,12 @@ const LearningTab = () => {
   React.useEffect(() => {
     window.NoesisAPI.user.getPrefs().then(p => setPrefs(p || {})).catch(() => setPrefs({}));
   }, []);
-  const update = async (patch) => {
+  const update = async (patch, savedMessage = 'Saved') => {
     setStatus('Saving...');
     try {
       const next = await window.NoesisAPI.user.updatePrefs(patch);
       setPrefs((p) => ({ ...(p || {}), ...next }));
-      setStatus('Saved');
+      setStatus(savedMessage);
     } catch (e) {
       setStatus('Failed: ' + (e.message || 'error'));
     }
@@ -276,12 +303,23 @@ const LearningTab = () => {
   if (!prefs) return <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' }}>Loading...</div>;
   const modes = ['socratic', 'explain', 'example'];
   const aggs = ['gentle', 'balanced', 'aggressive'];
+  const goals = [
+    { id: 'exams', label: 'Exams', effect: 'Quizzes, weak topics, and exam-ready notes first.' },
+    { id: 'understand', label: 'Deep', effect: 'Tutor sessions and concept gaps first.' },
+    { id: 'retain', label: 'Retain', effect: 'Due cards and spaced review first.' },
+    { id: 'practice', label: 'Practice', effect: 'Practice quizzes and mistake review first.' },
+  ];
   const modeIdx = Math.max(0, modes.indexOf(prefs.default_tutor_mode || 'socratic'));
   const aggIdx = Math.max(0, aggs.indexOf(prefs.srs_aggression || 'balanced'));
+  const goalIdx = Math.max(0, goals.findIndex(g => g.id === (prefs.goal || 'exams')));
+  const activeGoal = goals[goalIdx] || goals[0];
   return (
     <>
       <SetHeader eyebrow="Learning style" title="How should Noesis teach?" sub="These backend preferences shape tutor mode, pacing, and flashcard scheduling."/>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(18px * var(--app-density-scale))' }}>
+        <SetRow label="Study goal" sub={`Affects dashboard recommendations and study-plan task mix. ${activeGoal.effect}`}>
+          <Segmented options={goals.map(g => g.label)} value={goalIdx} onChange={(i) => update({ goal: goals[i].id }, 'Saved - dashboard suggestions and future study plans will use this goal.')}/>
+        </SetRow>
         <SetRow label="Tutor default mode" sub="What the tutor does when you start a session.">
           <Segmented options={['Socratic', 'Explain first', 'Show example']} value={modeIdx} onChange={(i) => update({ default_tutor_mode: modes[i] })}/>
         </SetRow>
@@ -380,9 +418,76 @@ const DataTab = () => {
 
 const AccountTab = ({ onLogout }) => {
   const Icon = window.Icon;
+  const [currentPassword, setCurrentPassword] = React.useState('');
+  const [newPassword, setNewPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [success, setSuccess] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+
+  const submitPassword = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setError('');
+    setSuccess('');
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError('Current, new, and confirmation passwords are required.');
+      return;
+    }
+    if (!window.NoesisPasswordPolicy.isValid(newPassword)) {
+      setError(window.NoesisPasswordPolicy.message);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await window.NoesisAPI.user.changePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setSuccess('Password updated successfully.');
+    } catch (e) {
+      const messages = {
+        invalid_current_password: 'Current password is incorrect.',
+        missing_fields: 'Current and new passwords are required.',
+        password_requirements_not_met: window.NoesisPasswordPolicy.message,
+        password_too_long: 'Password must be 256 characters or fewer.',
+      };
+      setError(messages[e.code] || e.message || 'Password update failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
-      <SetHeader eyebrow="Account" title="Session access." sub="Manage this browser session."/>
+      <SetHeader eyebrow="Account" title="Account security." sub="Update your password and manage this browser session."/>
+      <form onSubmit={submitPassword} style={set.passwordForm}>
+        <div style={set.smallHead}>Change password</div>
+        <label style={set.fieldLabel}>
+          Current password
+          <input className="input" type="password" autoComplete="current-password" value={currentPassword} disabled={busy} onChange={e => setCurrentPassword(e.target.value)} />
+        </label>
+        <label style={set.fieldLabel}>
+          New password
+          <input className="input" type="password" autoComplete="new-password" value={newPassword} disabled={busy} onChange={e => setNewPassword(e.target.value)} placeholder="8+ characters, uppercase, and number" />
+        </label>
+        <label style={set.fieldLabel}>
+          Confirm new password
+          <input className="input" type="password" autoComplete="new-password" value={confirmPassword} disabled={busy} onChange={e => setConfirmPassword(e.target.value)} />
+        </label>
+        {error && <div role="alert" style={{ color: 'var(--err)', fontSize: 'calc(12px * var(--app-font-scale))' }}>{error}</div>}
+        {success && <div role="status" style={{ color: 'var(--ok)', fontSize: 'calc(12px * var(--app-font-scale))' }}>{success}</div>}
+        <button type="submit" className="btn btn-primary" disabled={busy} style={{ alignSelf: 'flex-start', opacity: busy ? 0.6 : 1 }}>
+          <Icon.Lock size={13}/> {busy ? 'Updating...' : 'Update password'}
+        </button>
+      </form>
       <div style={set.sessionBox}>
         <Icon.Monitor size={14} style={{ color: 'var(--fg-2)' }}/>
         <div style={{ flex: 1 }}>
@@ -437,6 +542,8 @@ const set = {
   profileCard: { display: 'flex', alignItems: 'center', gap: 'calc(20px * var(--app-density-scale))', marginBottom: 'calc(28px * var(--app-density-scale))', padding: 'calc(20px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', background: 'var(--bg-1)' },
   avatar: { width: 64, height: 64, borderRadius: 16, background: 'linear-gradient(135deg, var(--accent), var(--parchment))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontSize: 'calc(28px * var(--app-font-scale))', color: 'var(--bg-0)' },
   smallHead: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(12px * var(--app-density-scale))' },
+  passwordForm: { display: 'flex', flexDirection: 'column', gap: 'calc(14px * var(--app-density-scale))', maxWidth: 420, paddingBottom: 'calc(28px * var(--app-density-scale))', marginBottom: 'calc(28px * var(--app-density-scale))', borderBottom: '1px solid var(--line-soft)' },
+  fieldLabel: { display: 'flex', flexDirection: 'column', gap: 'calc(6px * var(--app-density-scale))', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)' },
   themeButton: { textAlign: 'left', padding: 'calc(14px * var(--app-density-scale))', borderRadius: 'var(--r-lg)', border: '1px solid', background: 'var(--bg-1)', transition: 'all 180ms var(--ease-out)' },
   sessionBox: { display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))', padding: 'calc(16px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)', marginBottom: 'calc(18px * var(--app-density-scale))' },
 };

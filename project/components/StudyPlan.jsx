@@ -5,16 +5,23 @@ const StudyPlan = ({ onNav }) => {
   const [busy, setBusy] = React.useState(false);
   const [status, setStatus] = React.useState('');
   const [highlightNode, setHighlightNode] = React.useState('');
+  const [prefs, setPrefs] = React.useState(null);
+  const [materials, setMaterials] = React.useState([]);
+  const [picker, setPicker] = React.useState(null);
 
   const load = React.useCallback(async () => {
     setStatus('');
     try {
-      const [planRes, mapRes] = await Promise.all([
+      const [planRes, mapRes, prefsRes, materialsRes] = await Promise.all([
         window.NoesisAPI.study.activePlan().catch(() => ({ study_plan: null })),
         window.NoesisAPI.study.learningMap().catch(() => ({ learning_map: null })),
+        window.NoesisAPI.user.getPrefs().catch(() => ({})),
+        window.NoesisAPI.materials.list().catch(() => ({ materials: [] })),
       ]);
       setPlan(planRes.study_plan || null);
       setMap(mapRes.learning_map || null);
+      setPrefs(prefsRes || {});
+      setMaterials((materialsRes.materials || []).filter(m => m.status === 'ready'));
     } catch (e) {
       setStatus(e.message || 'Could not load your plan.');
     }
@@ -64,7 +71,51 @@ const StudyPlan = ({ onNav }) => {
     }
   };
 
+  const startCurriculumTutor = (node) => {
+    const topic = node && node.label || (map && map.startHere) || 'Object-Oriented Programming basics';
+    sessionStorage.setItem('noesis.tutorConcept', topic);
+    sessionStorage.removeItem('noesis.tutorMaterialId');
+    sessionStorage.setItem('noesis.tutorAutoStart', 'core');
+    onNav('tutor');
+  };
+
+  const openMaterialPicker = (kind, node) => {
+    setPicker({ kind, topic: node && node.label || (map && map.startHere) || 'Core topic' });
+  };
+
+  const generateFromPickedMaterial = async (material) => {
+    if (!picker || !material || busy) return;
+    setBusy(true);
+    const topic = picker.topic;
+    setStatus(`Generating ${picker.kind === 'quiz' ? 'quiz' : 'cards'} for ${topic} from ${material.display_title || material.title}...`);
+    try {
+      if (picker.kind === 'quiz') {
+        const res = await window.NoesisAPI.quizzes.generate({ material_id: material.id, count: 6, difficulty: 'medium', sourceScope: 'material', topic });
+        if (!res || !res.quiz_id) throw new Error('Quiz generation did not return a quiz.');
+        sessionStorage.setItem('noesis.quizId', String(res.quiz_id));
+        setPicker(null);
+        onNav('quiz');
+      } else {
+        await window.NoesisAPI.flashcards.generate({ material_id: material.id, count: 8, regenerate: true, sourceScope: 'material', topic });
+        setPicker(null);
+        onNav('flashcards');
+      }
+    } catch (e) {
+      setStatus('Generation failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const planJson = plan && plan.plan ? plan.plan : null;
+  const currentGoal = (prefs && prefs.goal) || 'exams';
+  const planGoalId = planJson && planJson.goalId;
+  const goalLabels = { exams: 'Ace my exams', understand: 'Understand deeply', retain: 'Retain long-term', practice: 'Practice problems' };
+  const planNeedsGoalRefresh = !!(planJson && planGoalId && currentGoal && planGoalId !== currentGoal);
+  const currentTrack = trackFromSubjectClient(prefs && prefs.subject);
+  const planTrackId = planJson && planJson.trackId;
+  const trackLabels = { oop: 'Object-Oriented Programming', ds: 'Data Structures', both: 'OOP + Data Structures' };
+  const planNeedsTrackRefresh = !!(planJson && planTrackId && currentTrack && planTrackId !== currentTrack);
   const days = planJson && Array.isArray(planJson.dailyPlan) ? planJson.dailyPlan : [];
   const taskRows = plan && Array.isArray(plan.tasks) ? plan.tasks : [];
   const today = days[0] || null;
@@ -97,10 +148,21 @@ const StudyPlan = ({ onNav }) => {
             </p>
             <div style={{ display: 'flex', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(18px * var(--app-density-scale))', flexWrap: 'wrap' }}>
               {planJson && <span className="chip chip-accent">{plan.status}</span>}
+              {planJson && planJson.goalProfile && <span className="chip chip-accent">{planJson.goalProfile.short_label || planJson.goalProfile.label}</span>}
               {planJson && <span className="chip">{planJson.minutesPerSession || 45} min sessions</span>}
               {planJson && <span className="chip">{planJson.learningStyle || 'mixed'} learning</span>}
               {planJson && <span className="chip">{planJson.preferredLanguage || 'java'}</span>}
             </div>
+            {planNeedsGoalRefresh && (
+              <div style={sp.goalWarning}>
+                Your goal is now {goalLabels[currentGoal] || currentGoal}. Refresh the plan to apply that new recommendation mix.
+              </div>
+            )}
+            {planNeedsTrackRefresh && (
+              <div style={sp.goalWarning}>
+                Your track is now {trackLabels[currentTrack] || currentTrack}. Refresh the plan to rebuild the curriculum path.
+              </div>
+            )}
           </div>
           <div style={sp.actionCard}>
             <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)', marginBottom: 'calc(8px * var(--app-density-scale))' }}>Next action</div>
@@ -119,13 +181,22 @@ const StudyPlan = ({ onNav }) => {
         </section>
 
         <section style={sp.grid}>
-          <div className="card" style={{ padding: 'calc(22px * var(--app-density-scale))', gridColumn: 'span 2' }}>
+          <div style={sp.mapPanel}>
             <div style={sp.cardHead}>
-              <span style={sp.cardTitle}>Learning map</span>
+              <span style={sp.cardTitle}>Curriculum map</span>
               <button className="btn btn-bare" onClick={load} style={{ fontSize: 'calc(11.5px * var(--app-font-scale))' }}>Refresh <Icon.ArrowRight size={11}/></button>
             </div>
-            {window.LearningMap
-              ? <window.LearningMap map={map || (planJson && planJson.learningMap)} compact={false} highlightNode={highlightNode} />
+            {window.MaterialMindMap
+              ? <window.MaterialMindMap
+                  map={map || (planJson && planJson.learningMap)}
+                  eyebrow="Curriculum study map"
+                  subtitle="Driven by your selected OOP, Data Structures, or combined track."
+                  statusLabel={(map && map.trackLabel) || (planJson && planJson.trackLabel) || 'Curriculum path'}
+                  showRegenerate={false}
+                  onTutor={startCurriculumTutor}
+                  onQuiz={(node) => openMaterialPicker('quiz', node)}
+                  onFlashcards={(node) => openMaterialPicker('flashcards', node)}
+                />
               : <div style={sp.empty}>Learning map renderer is not loaded.</div>}
           </div>
 
@@ -189,10 +260,49 @@ const StudyPlan = ({ onNav }) => {
             </div>
           )}
         </section>
+        {picker && (
+          <div style={sp.pickerOverlay} onClick={() => !busy && setPicker(null)}>
+            <section style={sp.picker} onClick={event => event.stopPropagation()}>
+              <div style={sp.cardHead}>
+                <div>
+                  <div style={sp.pickerEyebrow}>{picker.kind === 'quiz' ? 'Choose quiz source' : 'Choose card source'}</div>
+                  <div style={sp.pickerTitle}>{picker.topic}</div>
+                </div>
+                <button className="btn btn-bare" disabled={busy} onClick={() => setPicker(null)}><Icon.X size={14}/></button>
+              </div>
+              {materials.length ? (
+                <div style={sp.materialList}>
+                  {materials.map(material => (
+                    <button key={material.id} disabled={busy} style={sp.materialChoice} onClick={() => generateFromPickedMaterial(material)}>
+                      <Icon.File size={14} style={{ color: 'var(--accent)' }}/>
+                      <span style={{ flex: 1, textAlign: 'left' }}>{material.display_title || material.title}</span>
+                      <Icon.ArrowRight size={12}/>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={sp.noMaterial}>
+                  <div>No ready uploads yet.</div>
+                  <button className="btn btn-accent" onClick={() => { setPicker(null); onNav('materials'); }}><Icon.Upload size={12}/> Upload material</button>
+                </div>
+              )}
+            </section>
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+function trackFromSubjectClient(subject) {
+  const raw = String(subject || '').toLowerCase();
+  const hasDs = /data.?struct|\bds\b/.test(raw);
+  const hasOop = /oop|object|java/.test(raw);
+  if (/both|computer.?science|cs\b|combined|all/.test(raw) || (hasDs && hasOop)) return 'both';
+  if (hasDs) return 'ds';
+  if (hasOop) return 'oop';
+  return 'both';
+}
 
 function taskIcon(type, Icon) {
   if (type === 'watch_video') return <Icon.Play size={9}/>;
@@ -216,8 +326,18 @@ const sp = {
   eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 'calc(10px * var(--app-density-scale))' },
   title: { fontFamily: 'var(--font-display)', fontSize: 'calc(44px * var(--app-font-scale))', fontWeight: 300, letterSpacing: '-0.02em', margin: 0, lineHeight: 1.08 },
   sub: { fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-2)', maxWidth: 680, lineHeight: 1.6 },
+  goalWarning: {
+    marginTop: 'calc(14px * var(--app-density-scale))',
+    padding: '10px 12px',
+    borderRadius: 'var(--r-sm)',
+    border: '1px solid var(--accent-soft)',
+    background: 'var(--accent-glow)',
+    color: 'var(--fg-1)',
+    fontSize: 'calc(12px * var(--app-font-scale))',
+  },
   actionCard: { padding: 'calc(20px * var(--app-density-scale))', borderRadius: 'var(--r-lg)', background: 'var(--bg-1)', border: '1px solid var(--line)' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'calc(14px * var(--app-density-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  mapPanel: { padding: 'calc(18px * var(--app-density-scale))', gridColumn: 'span 2', borderRadius: 'var(--r-lg)', background: 'var(--bg-1)', border: '1px solid var(--line)', minWidth: 0 },
   cardHead: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'calc(12px * var(--app-density-scale))' },
   cardTitle: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-1)', fontWeight: 500 },
   empty: { padding: 'calc(18px * var(--app-density-scale))', color: 'var(--fg-3)', fontSize: 'calc(12.5px * var(--app-font-scale))', textAlign: 'center' },
@@ -246,6 +366,13 @@ const sp = {
     display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', flexShrink: 0,
   },
   success: { borderTop: '1px solid var(--line-soft)', marginTop: 'calc(12px * var(--app-density-scale))', paddingTop: 'calc(10px * var(--app-density-scale))', color: 'var(--fg-3)', fontSize: 'calc(11.5px * var(--app-font-scale))', lineHeight: 1.45 },
+  pickerOverlay: { position: 'fixed', inset: 0, zIndex: 2600, display: 'grid', placeItems: 'center', padding: '20px', background: 'rgba(4,4,14,.72)', backdropFilter: 'blur(12px)' },
+  picker: { width: 'min(560px, 100%)', maxHeight: 'min(680px, calc(100vh - 40px))', overflow: 'auto', padding: 'calc(20px * var(--app-density-scale))', borderRadius: 'var(--r-lg)', border: '1px solid var(--line)', background: 'var(--bg-1)', boxShadow: 'var(--shadow-lg)' },
+  pickerEyebrow: { fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 5 },
+  pickerTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(24px * var(--app-font-scale))', color: 'var(--fg-0)', lineHeight: 1.15 },
+  materialList: { display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(18px * var(--app-density-scale))' },
+  materialChoice: { display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))', padding: '11px 12px', borderRadius: 'var(--r-sm)', border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--fg-1)', fontSize: 'calc(12.5px * var(--app-font-scale))' },
+  noMaterial: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'calc(12px * var(--app-density-scale))', marginTop: 'calc(18px * var(--app-density-scale))', padding: 'calc(14px * var(--app-density-scale))', borderRadius: 'var(--r-md)', background: 'var(--bg-2)', color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))' },
 };
 
 window.StudyPlan = StudyPlan;

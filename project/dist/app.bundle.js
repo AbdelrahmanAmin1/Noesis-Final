@@ -8,6 +8,12 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
 // Auto-redirects to auth on 401 via window event 'noesis:logout'.
 
 (function () {
+  const PASSWORD_REQUIREMENTS_MESSAGE = 'Password must be at least 8 characters long and include at least one uppercase letter and one number.';
+  window.NoesisPasswordPolicy = {
+    message: PASSWORD_REQUIREMENTS_MESSAGE,
+    isValid: (password) => String(password).length >= 8 && /[A-Z]/.test(String(password)) && /\d/.test(String(password)),
+  };
+
   const BASE = (window.NOESIS_API_BASE || 'http://localhost:3001') + '/api';
   const TOKEN_KEY = 'noesis.token';
 
@@ -78,7 +84,7 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
       getPrefs: () => req('GET', '/user/prefs'),
       updatePrefs: (b) => req('PUT', '/user/prefs', b),
       updateProfile: (b) => req('PUT', '/user/profile', b),
-      changePassword: (b) => req('PUT', '/user/password', b),
+      changePassword: (b) => req('PUT', '/user/password', b, { noLogout: true }),
     },
 
     profile: {
@@ -199,6 +205,7 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
 
     study: {
       learningMap: (materialId) => req('GET', '/study/learning-map' + (materialId ? '?material_id=' + encodeURIComponent(materialId) : '')),
+      regenerateLearningMap: (materialId) => req('POST', '/study/learning-map/regenerate', { material_id: materialId }),
       createPlan: (b) => req('POST', '/study/plans', b || {}),
       activePlan: () => req('GET', '/study/plans/active'),
       getPlan: (id) => req('GET', '/study/plans/' + id),
@@ -2425,6 +2432,10 @@ const Auth = ({
       setError('Full name is required');
       return;
     }
+    if (mode === 'signup' && !window.NoesisPasswordPolicy.isValid(password)) {
+      setError(window.NoesisPasswordPolicy.message);
+      return;
+    }
     setBusy(true);
     try {
       const fn = mode === 'signin' ? window.NoesisAPI.auth.signin : window.NoesisAPI.auth.signup;
@@ -2442,7 +2453,7 @@ const Auth = ({
     } catch (e) {
       const messages = {
         missing_fields: 'Email, password, and name are required.',
-        password_too_short: 'Password must be at least 8 characters.',
+        password_requirements_not_met: window.NoesisPasswordPolicy.message,
         email_exists: 'An account already exists for this email.',
         invalid_credentials: 'Email or password is incorrect.'
       };
@@ -2520,7 +2531,7 @@ const Auth = ({
     value: password,
     disabled: busy,
     onChange: e => setPassword(e.target.value),
-    placeholder: "At least 8 characters"
+    placeholder: mode === 'signup' ? '8+ characters, uppercase, and number' : 'Your password'
   }))), error && React.createElement("div", {
     style: {
       color: 'var(--err)',
@@ -2791,7 +2802,10 @@ const Onboarding = ({
     const active = subject === o.id;
     return React.createElement("button", {
       key: o.id,
-      onClick: () => setSubject(o.id),
+      onClick: () => {
+        setSubject(o.id);
+        setCourses(o.id === 'oop' ? ['oop'] : o.id === 'data-structures' ? ['ds'] : ['oop', 'ds']);
+      },
       style: {
         ...os.tile,
         ...(active ? os.tileActive : {})
@@ -2825,7 +2839,11 @@ const Onboarding = ({
     const on = courses.includes(c.id);
     return React.createElement("button", {
       key: c.id,
-      onClick: () => setCourses(on ? courses.filter(x => x !== c.id) : [...courses, c.id]),
+      onClick: () => {
+        const nextCourses = on ? courses.filter(x => x !== c.id) : [...courses, c.id];
+        setCourses(nextCourses);
+        setSubject(nextCourses.length > 1 ? 'computer-science' : nextCourses[0] === 'oop' ? 'oop' : nextCourses[0] === 'ds' ? 'data-structures' : 'computer-science');
+      },
       style: {
         ...os.course,
         ...(on ? os.courseActive : {})
@@ -2865,21 +2883,25 @@ const Onboarding = ({
     id: 'exams',
     label: 'Ace my exams',
     sub: 'Turn material into reviewable exam prep',
+    effect: 'Pushes quizzes, weak topics, and exam notes first.',
     icon: 'Target'
   }, {
     id: 'understand',
     label: 'Understand deeply',
     sub: 'Use tutor sessions for conceptual gaps',
+    effect: 'Pushes tutor sessions and concept gaps first.',
     icon: 'Brain'
   }, {
     id: 'retain',
     label: 'Retain long-term',
     sub: 'Use spaced repetition after each topic',
+    effect: 'Pushes due cards and spaced review first.',
     icon: 'Bookmark'
   }, {
     id: 'practice',
     label: 'Practice problems',
     sub: 'Use quizzes to expose weak topics',
+    effect: 'Pushes quizzes, practice sets, and mistake review first.',
     icon: 'Bolt'
   }].map(o => {
     const C = Icon[o.icon];
@@ -2912,7 +2934,13 @@ const Onboarding = ({
         color: 'var(--fg-2)',
         marginTop: 'calc(3px * var(--app-density-scale))'
       }
-    }, o.sub)));
+    }, o.sub), React.createElement("div", {
+      style: {
+        fontSize: 'calc(11px * var(--app-font-scale))',
+        color: active ? 'var(--accent)' : 'var(--fg-3)',
+        marginTop: 'calc(8px * var(--app-density-scale))'
+      }
+    }, "Effect: ", o.effect)));
   })), step === 3 && React.createElement("div", null, React.createElement("div", {
     style: {
       display: 'flex',
@@ -3236,6 +3264,8 @@ const Dashboard = ({
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const [data, setData] = React.useState(null);
   const [loadError, setLoadError] = React.useState('');
+  const [recBusy, setRecBusy] = React.useState(false);
+  const [recStatus, setRecStatus] = React.useState('');
   React.useEffect(() => {
     let alive = true;
     window.NoesisAPI.dashboard.get().then(d => {
@@ -3263,11 +3293,79 @@ const Dashboard = ({
   const summary = data && data.summary || {};
   const recentActivity = data && data.recent_activity || [];
   const nextAction = data && data.next_recommended_action;
+  const goalProfile = data && data.goal_profile;
+  const dashboardCopy = data && data.dashboard_copy;
+  const goalRecommendations = data && data.goal_recommendations || [];
+  const primaryGoalRecommendation = goalRecommendations[0] || null;
   const game = data && data.gamification;
   const xp = game && game.xp ? game.xp : {};
   const dailyGoal = game && game.daily_goal ? game.daily_goal : null;
   const recentBadges = game && game.achievements ? game.achievements.recent || [] : [];
   const leaderboardPreview = data && data.leaderboard_preview || [];
+  const handleRecommendation = async rec => {
+    if (!rec || recBusy) return;
+    const materialId = rec.material_id;
+    if (materialId) sessionStorage.setItem('noesis.materialId', String(materialId));
+    if (rec.action === 'start_tutor') {
+      if (materialId) sessionStorage.setItem('noesis.tutorMaterialId', String(materialId));
+      if (rec.topic || rec.title) sessionStorage.setItem('noesis.tutorConcept', rec.topic || rec.title);
+      onNav('tutor');
+      return;
+    }
+    if (rec.action === 'generate_quiz' && materialId) {
+      setRecBusy(true);
+      setRecStatus('Generating the recommended quiz...');
+      try {
+        let r = await window.NoesisAPI.quizzes.generate({
+          material_id: materialId,
+          count: 6,
+          difficulty: 'medium'
+        });
+        if (r && r.status === 'reindexing' && r.job_id) {
+          setRecStatus('Repairing the material index first...');
+          await window.NoesisAPI.pollJob(r.job_id, {
+            intervalMs: 1200,
+            onProgress: job => setRecStatus(`Repairing index... ${Math.max(0, Number(job.progress || 0))}%`)
+          });
+          r = await window.NoesisAPI.quizzes.generate({
+            material_id: materialId,
+            count: 6,
+            difficulty: 'medium'
+          });
+        }
+        if (!r || !r.quiz_id) throw new Error('quiz_not_created');
+        sessionStorage.setItem('noesis.quizId', String(r.quiz_id));
+        onNav('quiz');
+      } catch (e) {
+        setRecStatus(e && e.code === 'quiz_quality_failed' ? 'Could not create a grounded quiz yet. Try from the material page.' : 'Recommendation failed: ' + (e.message || 'error'));
+      } finally {
+        setRecBusy(false);
+      }
+      return;
+    }
+    if (rec.action === 'generate_flashcards' && materialId) {
+      setRecBusy(true);
+      setRecStatus('Generating the recommended flashcards...');
+      try {
+        await window.NoesisAPI.flashcards.generate({
+          material_id: materialId,
+          count: 8,
+          regenerate: true
+        });
+        onNav('flashcards');
+      } catch (e) {
+        setRecStatus('Recommendation failed: ' + (e.message || 'error'));
+      } finally {
+        setRecBusy(false);
+      }
+      return;
+    }
+    if (rec.route === 'material' && materialId) {
+      onNav('material');
+      return;
+    }
+    onNav(rec.route || 'study-plan');
+  };
   return React.createElement("div", {
     style: {
       background: 'var(--bg-0)',
@@ -3324,7 +3422,7 @@ const Dashboard = ({
     }
   }), greeting, ", ", userName), React.createElement("h1", {
     style: ds.heroTitle
-  }, dueCount > 0 ? React.createElement(React.Fragment, null, "You have ", React.createElement("em", {
+  }, dashboardCopy && dashboardCopy.title ? dashboardCopy.title : dueCount > 0 ? React.createElement(React.Fragment, null, "You have ", React.createElement("em", {
     style: {
       fontStyle: 'italic',
       color: 'var(--accent)'
@@ -3336,7 +3434,7 @@ const Dashboard = ({
     }
   }, "start something"), ".")), React.createElement("p", {
     style: ds.heroSub
-  }, "You're at ", totalWeek, "h this week of ", goalH, "h goal. Pick up where you left, or start a new tutor session."), React.createElement("div", {
+  }, dashboardCopy && dashboardCopy.subtitle ? dashboardCopy.subtitle : `You're at ${totalWeek}h this week of ${goalH}h goal. Pick up where you left, or start a new tutor session.`), React.createElement("div", {
     style: {
       display: 'flex',
       gap: 'calc(10px * var(--app-density-scale))',
@@ -3344,10 +3442,11 @@ const Dashboard = ({
     }
   }, React.createElement("button", {
     className: "btn btn-accent",
-    onClick: () => onNav(nextAction && nextAction.route || 'tutor')
+    disabled: recBusy,
+    onClick: () => handleRecommendation(primaryGoalRecommendation || nextAction)
   }, React.createElement(Icon.Play, {
     size: 12
-  }), " ", nextAction ? nextAction.label || nextAction.title : "Start today's session"), React.createElement("button", {
+  }), " ", recBusy ? 'Working...' : primaryGoalRecommendation ? primaryGoalRecommendation.cta || primaryGoalRecommendation.title : nextAction ? nextAction.label || nextAction.title : "Start today's session"), React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => onNav('study-plan')
   }, React.createElement(Icon.Calendar, {
@@ -3357,10 +3456,49 @@ const Dashboard = ({
     onClick: () => onNav('flashcards')
   }, React.createElement(Icon.Cards, {
     size: 13
-  }), " ", dueCount, " cards due"))), React.createElement("div", {
+  }), " ", dueCount, " cards due"), goalProfile && React.createElement("span", {
+    className: "chip chip-accent",
+    title: goalProfile.effect,
+    style: {
+      alignSelf: 'center'
+    }
+  }, goalProfile.short_label || goalProfile.label))), React.createElement("div", {
     style: ds.focusWrap
   }, React.createElement(FocusRing, {
     value: Math.min(100, Math.round(totalWeek / Math.max(0.001, goalH) * 100))
+  }))), primaryGoalRecommendation && goalProfile && React.createElement("section", {
+    className: "card reveal",
+    style: ds.goalRecCard
+  }, React.createElement("div", {
+    style: {
+      display: 'flex',
+      gap: 'calc(14px * var(--app-density-scale))',
+      alignItems: 'flex-start',
+      flex: 1
+    }
+  }, (() => {
+    const C = Icon[goalProfile.icon] || Icon.Sparkle;
+    return React.createElement(C, {
+      size: 18,
+      style: {
+        color: 'var(--accent)',
+        marginTop: 2
+      }
+    });
+  })(), React.createElement("div", null, React.createElement("div", {
+    style: ds.goalRecEyebrow
+  }, "Because you chose ", goalProfile.label), React.createElement("div", {
+    style: ds.goalRecTitle
+  }, primaryGoalRecommendation.title), React.createElement("div", {
+    style: ds.goalRecText
+  }, primaryGoalRecommendation.description || primaryGoalRecommendation.reason), recStatus && React.createElement("div", {
+    style: ds.goalRecStatus
+  }, recStatus))), React.createElement("button", {
+    className: "btn btn-accent",
+    disabled: recBusy,
+    onClick: () => handleRecommendation(primaryGoalRecommendation)
+  }, recBusy ? 'Working...' : primaryGoalRecommendation.cta || 'Start', " ", React.createElement(Icon.ArrowRight, {
+    size: 12
   }))), React.createElement("section", {
     style: ds.metrics,
     className: "reveal"
@@ -4208,6 +4346,40 @@ const ds = {
     margin: 0,
     maxWidth: 560
   },
+  goalRecCard: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 'calc(18px * var(--app-density-scale))',
+    padding: 'calc(18px * var(--app-density-scale)) calc(20px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))',
+    borderColor: 'var(--accent-soft)',
+    background: 'linear-gradient(135deg, var(--accent-glow), var(--bg-1) 58%)'
+  },
+  goalRecEyebrow: {
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
+    color: 'var(--accent)',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    marginBottom: 'calc(4px * var(--app-density-scale))'
+  },
+  goalRecTitle: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 'calc(24px * var(--app-font-scale))',
+    color: 'var(--fg-0)',
+    lineHeight: 1.1
+  },
+  goalRecText: {
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    color: 'var(--fg-2)',
+    marginTop: 'calc(6px * var(--app-density-scale))',
+    maxWidth: 720
+  },
+  goalRecStatus: {
+    fontSize: 'calc(11px * var(--app-font-scale))',
+    color: 'var(--fg-3)',
+    marginTop: 'calc(8px * var(--app-density-scale))'
+  },
   link: {
     color: 'var(--accent)',
     cursor: 'pointer',
@@ -4339,10 +4511,10 @@ const Materials = ({
   })[type] || 'var(--accent)';
   const materials = items.map(m => ({
     id: m.id,
-    t: m.title,
+    t: m.display_title || m.title,
+    rawTitle: m.title,
     type: m.type || 'pdf',
     course: m.status === 'ready' ? 'Library' : m.status || '',
-    chapters: m.chapters || 0,
     progress: m.progress || 0,
     updated: m.created_at ? new Date(m.created_at).toLocaleDateString() : '',
     color: colorFor(m.type)
@@ -4405,7 +4577,7 @@ const Materials = ({
       onClick: () => fileRef.current && fileRef.current.click()
     }, React.createElement(Icon.Upload, {
       size: 12
-    }), " ", busy ? 'Uploading…' : 'Upload'))
+    }), " ", busy ? 'Uploading...' : 'Upload'))
   }), React.createElement("div", {
     style: ms.page
   }, React.createElement("div", {
@@ -4486,7 +4658,7 @@ const Materials = ({
     className: "btn btn-ghost",
     onClick: () => fileRef.current && fileRef.current.click(),
     disabled: busy
-  }, busy ? 'Working…' : 'Choose file')), React.createElement("div", {
+  }, busy ? 'Working...' : 'Choose file')), React.createElement("div", {
     style: view === 'grid' ? ms.grid : ms.list
   }, materials.map(m => {
     const Ti = Icon[typeIcon[m.type]];
@@ -4558,9 +4730,10 @@ const Materials = ({
         fontSize: 'calc(11.5px * var(--app-font-scale))',
         color: 'var(--fg-3)',
         display: 'flex',
-        gap: 'calc(10px * var(--app-density-scale))'
+        gap: 'calc(10px * var(--app-density-scale))',
+        flexWrap: 'wrap'
       }
-    }, React.createElement("span", null, m.course), React.createElement("span", null, "\xB7"), React.createElement("span", null, m.chapters, " ch"), React.createElement("span", null, "\xB7"), React.createElement("span", null, m.updated))), view === 'list' && React.createElement("div", {
+    }, React.createElement("span", null, m.course), React.createElement("span", null, "|"), React.createElement("span", null, m.progress >= 100 ? 'Indexed' : `${m.progress}% indexed`), React.createElement("span", null, "|"), React.createElement("span", null, m.updated))), view === 'list' && React.createElement("div", {
       style: {
         width: 80
       }
@@ -4611,7 +4784,7 @@ const Materials = ({
         color: 'var(--fg-3)'
       },
       className: "mono"
-    }, React.createElement("span", null, m.progress, "% mastered"), React.createElement("span", null, Math.round(m.chapters * m.progress / 100), "/", m.chapters))));
+    }, React.createElement("span", null, m.progress >= 100 ? 'Ready' : `${m.progress}% indexed`), React.createElement("span", null, m.type.toUpperCase()))));
   }))));
 };
 const ms = {
@@ -4673,33 +4846,74 @@ const ms = {
     gap: 'calc(12px * var(--app-density-scale))'
   }
 };
+function normalizeGoalClient(goal) {
+  const raw = String(goal || '').toLowerCase();
+  if (['exams', 'understand', 'retain', 'practice'].includes(raw)) return raw;
+  if (/understand|deep|concept/.test(raw)) return 'understand';
+  if (/retain|spaced|recall|remember/.test(raw)) return 'retain';
+  if (/practice|problem|drill/.test(raw)) return 'practice';
+  return 'exams';
+}
+function materialGoalRecommendation(goal, material, focusLabel) {
+  const goalId = normalizeGoalClient(goal);
+  const title = material && material.title ? material.title : 'this material';
+  const focus = focusLabel || title;
+  const shared = {
+    exams: {
+      goalLabel: 'Ace my exams',
+      icon: 'Target',
+      title: 'Generate an exam-style quiz',
+      description: `Turn ${focus} into a checkpoint so you can see what is ready and what is weak.`,
+      cta: 'Generate quiz',
+      action: 'generate_quiz'
+    },
+    understand: {
+      goalLabel: 'Understand deeply',
+      icon: 'Brain',
+      title: 'Study this with the tutor',
+      description: `Use ${focus} for a guided explanation, examples, and follow-up questions.`,
+      cta: 'Study with tutor',
+      action: 'start_tutor'
+    },
+    retain: {
+      goalLabel: 'Retain long-term',
+      icon: 'Bookmark',
+      title: 'Generate flashcards',
+      description: `Turn ${focus} into recall cards so spaced repetition has something useful to schedule.`,
+      cta: 'Generate flashcards',
+      action: 'generate_flashcards'
+    },
+    practice: {
+      goalLabel: 'Practice problems',
+      icon: 'Bolt',
+      title: 'Generate a practice quiz',
+      description: `Use ${focus} to expose mistakes quickly, then review them while they are fresh.`,
+      cta: 'Generate practice quiz',
+      action: 'generate_quiz'
+    }
+  };
+  return shared[goalId] || shared.exams;
+}
 const MaterialDetail = ({
   onNav
 }) => {
   const Icon = window.Icon;
-  const [active, setActive] = React.useState(0);
   const [material, setMaterial] = React.useState(null);
-  const [chunks, setChunks] = React.useState([]);
-  const [chapters, setChapters] = React.useState([]);
-  const [chapterIds, setChapterIds] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const [genStatus, setGenStatus] = React.useState('');
   const [activeAction, setActiveAction] = React.useState('');
   const [video, setVideo] = React.useState(null);
   const [learningMap, setLearningMap] = React.useState(null);
-  const [sourceScope, setSourceScope] = React.useState('material');
+  const [mapStatus, setMapStatus] = React.useState('ready');
+  const [prefs, setPrefs] = React.useState(null);
+  const mapPollingRef = React.useRef('');
   const id = parseInt(sessionStorage.getItem('noesis.materialId') || '0', 10);
   React.useEffect(() => {
     if (!id) {
       onNav && onNav('materials');
       return;
     }
-    window.NoesisAPI.materials.get(id).then(m => {
-      setMaterial(m);
-      const titles = (m.chapters || []).map(c => c.title);
-      setChapters(titles);
-      setChapterIds((m.chapters || []).map(c => c.id));
-    }).catch(() => {});
+    window.NoesisAPI.materials.get(id).then(m => setMaterial(m)).catch(() => {});
   }, [id]);
   React.useEffect(() => {
     return () => {
@@ -4720,24 +4934,43 @@ const MaterialDetail = ({
       active = false;
     };
   }, [video]);
-  React.useEffect(() => {
-    if (!id) return;
-    const chId = chapterIds[active];
-    window.NoesisAPI.materials.chunks(id, chId).then(d => setChunks(d.chunks || [])).catch(() => setChunks([]));
-  }, [id, active, chapterIds]);
-  React.useEffect(() => {
-    if (!id) return;
-    window.NoesisAPI.study.learningMap(id).then(d => setLearningMap(d.learning_map || null)).catch(() => setLearningMap(null));
+  const loadLearningMap = React.useCallback(async (watchJob = true) => {
+    if (!id) return null;
+    try {
+      const data = await window.NoesisAPI.study.learningMap(id);
+      setLearningMap(data.learning_map || null);
+      setMapStatus(data.generation_status || 'ready');
+      const jobId = watchJob && data.generation_job_id;
+      if (jobId && mapPollingRef.current !== jobId) {
+        mapPollingRef.current = jobId;
+        window.NoesisAPI.pollJob(jobId, {
+          intervalMs: 1200,
+          onProgress: () => setMapStatus('refining')
+        }).then(() => {
+          mapPollingRef.current = '';
+          return loadLearningMap(false);
+        }).catch(() => {
+          mapPollingRef.current = '';
+          setMapStatus('ready');
+        });
+      }
+      return data.learning_map || null;
+    } catch (_) {
+      setLearningMap(null);
+      setMapStatus('ready');
+      return null;
+    }
   }, [id]);
-  const currentScopePayload = React.useCallback(() => {
-    const payload = {
-      sourceScope
-    };
-    if (sourceScope === 'chapter' && chapterIds[active]) payload.chapter_id = chapterIds[active];
-    if (sourceScope === 'chunk' && chunks[0] && chunks[0].id) payload.chunk_id = chunks[0].id;
-    return payload;
-  }, [sourceScope, chapterIds, active, chunks]);
-  const sourceScopeLabel = sourceScope === 'chapter' ? 'Current chapter' : sourceScope === 'chunk' ? 'Current section' : 'Entire material';
+  React.useEffect(() => {
+    loadLearningMap(true);
+  }, [loadLearningMap]);
+  React.useEffect(() => {
+    window.NoesisAPI.user.getPrefs().then(p => setPrefs(p || {})).catch(() => setPrefs({}));
+  }, []);
+  const currentScopePayload = React.useCallback(() => ({
+    sourceScope: 'material'
+  }), []);
+  const sourceScopeLabel = 'Entire lecture';
   const generate = async (kind, options = {}) => {
     if (!id || busy) return false;
     const labels = {
@@ -4750,9 +4983,13 @@ const MaterialDetail = ({
     setGenStatus(`Generating ${labels[kind] || kind} from ${sourceScopeLabel.toLowerCase()}...`);
     try {
       const scopePayload = currentScopePayload();
+      const topicPayload = options.topic ? {
+        topic: options.topic
+      } : {};
       if (kind === 'notes') await window.NoesisAPI.notes.generate({
         material_id: id,
-        ...scopePayload
+        ...scopePayload,
+        ...topicPayload
       });
       let flashcardResult = null;
       let quizResult = null;
@@ -4760,14 +4997,16 @@ const MaterialDetail = ({
         material_id: id,
         count: 8,
         regenerate: !!options.regenerate,
-        ...scopePayload
+        ...scopePayload,
+        ...topicPayload
       });
       if (kind === 'quiz') {
         const quizPayload = {
           material_id: id,
           count: 6,
           difficulty: 'medium',
-          ...scopePayload
+          ...scopePayload,
+          ...topicPayload
         };
         let r = await window.NoesisAPI.quizzes.generate(quizPayload);
         if (r && r.status === 'reindexing' && r.job_id) {
@@ -4800,13 +5039,83 @@ const MaterialDetail = ({
       setActiveAction('');
     }
   };
+  const regenerateMindMap = async () => {
+    if (!id || busy) return;
+    setBusy(true);
+    setActiveAction('mindmap');
+    setMapStatus('refining');
+    setGenStatus('Refining the mind map from this material...');
+    try {
+      const response = await window.NoesisAPI.study.regenerateLearningMap(id);
+      if (!response || !response.job_id) throw new Error('Mind-map generation did not start.');
+      mapPollingRef.current = response.job_id;
+      await window.NoesisAPI.pollJob(response.job_id, {
+        intervalMs: 1200,
+        onProgress: job => setGenStatus(`Refining mind map... ${Math.max(0, Number(job.progress || 0))}%`)
+      });
+      mapPollingRef.current = '';
+      const updated = await loadLearningMap(false);
+      const mode = updated && updated.generation && updated.generation.mode;
+      setGenStatus(mode === 'ai' ? 'Mind map refined from the uploaded material.' : 'Source-built mind map ready. AI refinement can be retried later.');
+    } catch (error) {
+      mapPollingRef.current = '';
+      setMapStatus('ready');
+      setGenStatus('Mind-map refresh failed: ' + (error.message || 'error'));
+    } finally {
+      setBusy(false);
+      setActiveAction('');
+    }
+  };
+  const studyMapNodeWithTutor = node => {
+    sessionStorage.setItem('noesis.tutorConcept', node && node.label || material && material.title || '');
+    sessionStorage.setItem('noesis.tutorMaterialId', String(id));
+    onNav('tutor');
+  };
+  const quizMapNode = async node => {
+    const ok = await generate('quiz', {
+      topic: node && node.label
+    });
+    if (ok) onNav('quiz');
+  };
+  const flashcardMapNode = async node => {
+    const ok = await generate('flashcards', {
+      regenerate: true,
+      topic: node && node.label
+    });
+    if (ok) onNav('flashcards');
+  };
+  const displayTitle = material && (material.display_title || material.title) || 'Material';
+  const goalRecommendation = materialGoalRecommendation(prefs && prefs.goal, material && {
+    ...material,
+    title: displayTitle
+  }, sourceScopeLabel.toLowerCase());
+  const runGoalRecommendation = async () => {
+    if (!id || busy) return;
+    if (goalRecommendation.action === 'start_tutor') {
+      sessionStorage.setItem('noesis.tutorConcept', displayTitle);
+      sessionStorage.setItem('noesis.tutorMaterialId', String(id));
+      onNav('tutor');
+      return;
+    }
+    if (goalRecommendation.action === 'generate_flashcards') {
+      const ok = await generate('flashcards', {
+        regenerate: true
+      });
+      if (ok) onNav('flashcards');
+      return;
+    }
+    if (goalRecommendation.action === 'generate_quiz') {
+      const ok = await generate('quiz');
+      if (ok) onNav('quiz');
+    }
+  };
   const generateVideo = async () => {
     if (!id || !material) return;
     setActiveAction('video');
     setBusy(true);
     setGenStatus('Generating storyboard for review...');
     try {
-      const concept = sourceScope === 'material' ? material && material.title : chapters[active] || null;
+      const concept = displayTitle;
       const r = await window.NoesisAPI.videos.createStoryboard({
         material_id: id,
         concept,
@@ -4824,7 +5133,6 @@ const MaterialDetail = ({
       setActiveAction('');
     }
   };
-  const articleText = chunks.length ? chunks.map(c => c.text).join('\n\n') : '';
   const deleteMaterial = async () => {
     if (!id || !window.confirm('Delete this material and its generated study data?')) return;
     setActiveAction('delete');
@@ -4841,9 +5149,12 @@ const MaterialDetail = ({
       setActiveAction('');
     }
   };
+  const ready = material && material.status === 'ready';
+  const progress = Math.max(0, Math.min(100, Number(material && material.progress || 0)));
+  const statusText = ready ? 'Indexed and ready for grounded generation.' : material ? `Indexing status: ${material.status || 'pending'}` : 'Loading material...';
   return React.createElement("div", null, React.createElement(window.Topbar, {
-    title: chapters[active] || material && material.title || 'Material',
-    crumbs: ['Library', material ? material.title : '...'],
+    title: displayTitle,
+    crumbs: ['Library', displayTitle],
     right: React.createElement(React.Fragment, null, React.createElement("button", {
       className: "btn btn-ghost",
       disabled: busy,
@@ -4853,8 +5164,9 @@ const MaterialDetail = ({
       }
     }, activeAction === 'delete' ? 'Deleting...' : 'Delete'), React.createElement("button", {
       className: "btn btn-accent",
+      disabled: !ready,
       onClick: () => {
-        sessionStorage.setItem('noesis.tutorConcept', chapters[active] || material && material.title || '');
+        sessionStorage.setItem('noesis.tutorConcept', displayTitle);
         sessionStorage.setItem('noesis.tutorMaterialId', String(id));
         onNav('tutor');
       }
@@ -4862,142 +5174,78 @@ const MaterialDetail = ({
       size: 12
     }), " Study with tutor"))
   }), React.createElement("div", {
+    className: "material-detail-layout",
     style: mds.layout
-  }, React.createElement("aside", {
-    style: mds.chapters
-  }, React.createElement("div", {
-    style: {
-      padding: '18px 18px 12px'
-    }
-  }, React.createElement("div", {
-    style: {
-      fontSize: 'calc(10.5px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      letterSpacing: '0.1em',
-      textTransform: 'uppercase'
-    }
-  }, "Chapters")), React.createElement("div", {
-    style: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 'calc(1px * var(--app-density-scale))',
-      padding: '0 8px'
-    }
-  }, chapters.map((c, i) => React.createElement("button", {
-    key: i,
-    onClick: () => setActive(i),
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      gap: 'calc(10px * var(--app-density-scale))',
-      padding: '8px 10px',
-      borderRadius: 'var(--r-sm)',
-      background: active === i ? 'var(--bg-2)' : 'transparent',
-      color: active === i ? 'var(--fg-0)' : 'var(--fg-2)',
-      fontSize: 'calc(12.5px * var(--app-font-scale))',
-      textAlign: 'left'
-    }
-  }, React.createElement("span", {
-    className: "mono",
-    style: {
-      fontSize: 'calc(9.5px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      width: 20
-    }
-  }, String(i + 1).padStart(2, '0')), React.createElement("span", {
-    style: {
-      flex: 1
-    }
-  }, c))))), React.createElement("main", {
+  }, React.createElement("main", {
+    className: "material-detail-reader",
     style: mds.reader
+  }, React.createElement("section", {
+    style: mds.headlinePanel
   }, React.createElement("div", {
-    style: mds.readerHead
+    style: mds.eyebrow
+  }, "Lecture headline"), React.createElement("h1", {
+    style: mds.title
+  }, displayTitle), React.createElement("div", {
+    style: mds.statusRow
+  }, React.createElement("span", {
+    style: {
+      ...mds.statusDot,
+      background: ready ? 'var(--ok)' : 'var(--warn)'
+    }
+  }), React.createElement("span", null, statusText)), React.createElement("div", {
+    style: mds.progressTrack
   }, React.createElement("div", {
     style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      letterSpacing: '0.1em',
-      textTransform: 'uppercase'
+      ...mds.progressFill,
+      width: `${progress}%`
     }
-  }, "Chapter ", active + 1, " \xB7 ", chunks.length, " chunks"), React.createElement("h1", {
-    style: {
-      fontFamily: 'var(--font-display)',
-      fontSize: 'calc(42px * var(--app-font-scale))',
-      fontWeight: 300,
-      letterSpacing: '-0.02em',
-      margin: '8px 0 6px'
-    }
-  }, chapters[active] || material && material.title || 'Material'), React.createElement("div", {
-    style: {
-      fontSize: 'calc(13px * var(--app-font-scale))',
-      color: 'var(--fg-2)'
-    }
-  }, material && material.status === 'ready' ? 'Indexed for tutor and quizzes.' : material ? `Status: ${material.status}` : 'Loading…')), React.createElement("div", {
-    style: mds.article
-  }, articleText ? React.createElement("p", {
-    style: {
-      ...mds.p,
-      whiteSpace: 'pre-wrap'
-    }
-  }, articleText) : React.createElement("p", {
-    style: mds.p
-  }, material && material.status !== 'ready' ? React.createElement("em", null, "Indexing\u2026 come back in a moment.") : React.createElement("em", null, "No chunks yet for this chapter.")))), React.createElement("aside", {
-    style: mds.rail
+  })), React.createElement("p", {
+    style: mds.hiddenSourceNote
+  }, "The extracted source stays indexed privately for notes, tutor sessions, quizzes, cards, video storyboards, and the mind map.")), React.createElement("section", {
+    style: mds.goalRec
   }, React.createElement("div", {
-    style: mds.railBlock
+    style: {
+      display: 'flex',
+      gap: 'calc(10px * var(--app-density-scale))',
+      alignItems: 'flex-start'
+    }
+  }, (() => {
+    const C = Icon[goalRecommendation.icon] || Icon.Sparkle;
+    return React.createElement(C, {
+      size: 16,
+      style: {
+        color: 'var(--accent)',
+        marginTop: 2
+      }
+    });
+  })(), React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
   }, React.createElement("div", {
-    style: mds.railHead
-  }, "Start here"), window.LearningMap && learningMap ? React.createElement(window.LearningMap, {
-    map: learningMap,
-    compact: true
-  }) : React.createElement("div", {
+    style: mds.goalRecEyebrow
+  }, "Recommended for ", goalRecommendation.goalLabel), React.createElement("div", {
+    style: mds.goalRecTitle
+  }, goalRecommendation.title), React.createElement("div", {
+    style: mds.goalRecText
+  }, goalRecommendation.description))), React.createElement("button", {
+    className: "btn btn-accent",
+    disabled: busy || !ready,
+    onClick: runGoalRecommendation,
     style: {
-      fontSize: 'calc(12px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      padding: '4px 0'
+      width: '100%',
+      justifyContent: 'center',
+      marginTop: 'calc(12px * var(--app-density-scale))'
     }
-  }, "Generate notes or a quiz to sharpen the learning map.")), React.createElement("div", {
-    style: mds.railBlock
-  }, React.createElement("div", {
-    style: mds.railHead
-  }, "Key concepts"), material && material.concepts && material.concepts.length ? material.concepts.map(c => React.createElement("div", {
-    key: c.id || c.name,
-    style: mds.concept
-  }, React.createElement("span", null, c.name), React.createElement("span", {
-    className: "mono",
-    style: {
-      fontSize: 'calc(10px * var(--app-font-scale))',
-      color: 'var(--fg-3)'
-    }
-  }, c.mastery_pct || 0, "%"))) : React.createElement("div", {
-    style: {
-      fontSize: 'calc(12px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      padding: '4px 0'
-    }
-  }, "Concepts will appear after AI generation.")), React.createElement("div", {
-    style: mds.railBlock
+  }, activeAction ? 'Working...' : goalRecommendation.cta, " ", React.createElement(Icon.ArrowRight, {
+    size: 12
+  }))), React.createElement("section", {
+    style: mds.toolPanel
   }, React.createElement("div", {
     style: mds.railHead
-  }, "Generate (AI)"), React.createElement("div", {
-    style: mds.scopeBox
-  }, React.createElement("label", {
-    style: mds.scopeLabel
-  }, "Source"), React.createElement("select", {
-    value: sourceScope,
-    onChange: e => setSourceScope(e.target.value),
-    style: mds.scopeSelect
-  }, React.createElement("option", {
-    value: "material"
-  }, "Entire material"), React.createElement("option", {
-    value: "chapter",
-    disabled: !chapterIds[active]
-  }, "Current chapter"), React.createElement("option", {
-    value: "chunk",
-    disabled: !chunks[0]
-  }, "Current section"))), React.createElement("button", {
+  }, "Generate from indexed lecture"), React.createElement("button", {
     style: mds.gen,
-    disabled: busy,
+    disabled: busy || !ready,
     onClick: () => generate('notes')
   }, React.createElement(Icon.PenNib, {
     size: 13,
@@ -5010,18 +5258,12 @@ const MaterialDetail = ({
       textAlign: 'left'
     }
   }, React.createElement("div", {
-    style: {
-      fontSize: 'calc(12.5px * var(--app-font-scale))',
-      color: 'var(--fg-0)'
-    }
+    style: mds.genTitle
   }, activeAction === 'notes' ? 'Generating notes...' : 'Summary notes'), React.createElement("div", {
-    style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)'
-    }
-  }, "From ", sourceScopeLabel.toLowerCase()))), React.createElement("button", {
+    style: mds.genSub
+  }, "Uses the full hidden lecture source"))), React.createElement("button", {
     style: mds.gen,
-    disabled: busy,
+    disabled: busy || !ready,
     onClick: async () => {
       const ok = await generate('flashcards', {
         regenerate: true
@@ -5039,18 +5281,12 @@ const MaterialDetail = ({
       textAlign: 'left'
     }
   }, React.createElement("div", {
-    style: {
-      fontSize: 'calc(12.5px * var(--app-font-scale))',
-      color: 'var(--fg-0)'
-    }
+    style: mds.genTitle
   }, activeAction === 'flashcards' ? 'Generating flashcards...' : 'Flashcards'), React.createElement("div", {
-    style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)'
-    }
-  }, "Create 6-8 cards from ", sourceScopeLabel.toLowerCase()))), React.createElement("button", {
+    style: mds.genSub
+  }, "Create recall cards from the full lecture"))), React.createElement("button", {
     style: mds.gen,
-    disabled: busy,
+    disabled: busy || !ready,
     onClick: async () => {
       const ok = await generate('quiz');
       if (ok) onNav('quiz');
@@ -5066,18 +5302,12 @@ const MaterialDetail = ({
       textAlign: 'left'
     }
   }, React.createElement("div", {
-    style: {
-      fontSize: 'calc(12.5px * var(--app-font-scale))',
-      color: 'var(--fg-0)'
-    }
+    style: mds.genTitle
   }, activeAction === 'quiz' ? 'Generating quiz...' : 'Practice quiz'), React.createElement("div", {
-    style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)'
-    }
-  }, "6 questions from ", sourceScopeLabel.toLowerCase()))), React.createElement("button", {
+    style: mds.genSub
+  }, "Six grounded questions from the full lecture"))), React.createElement("button", {
     style: mds.gen,
-    disabled: busy,
+    disabled: busy || !ready,
     onClick: generateVideo
   }, React.createElement(Icon.Play, {
     size: 13,
@@ -5090,21 +5320,11 @@ const MaterialDetail = ({
       textAlign: 'left'
     }
   }, React.createElement("div", {
-    style: {
-      fontSize: 'calc(12.5px * var(--app-font-scale))',
-      color: 'var(--fg-0)'
-    }
+    style: mds.genTitle
   }, activeAction === 'video' ? 'Creating storyboard...' : 'Tutor video storyboard'), React.createElement("div", {
-    style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)'
-    }
-  }, "Storyboard from ", sourceScopeLabel.toLowerCase()))), genStatus && React.createElement("div", {
-    style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      padding: '4px 4px 0'
-    }
+    style: mds.genSub
+  }, "Storyboard from the full lecture"))), genStatus && React.createElement("div", {
+    style: mds.genStatus
   }, genStatus), video && video.status === 'ready' && React.createElement("video", {
     src: video.file,
     controls: true,
@@ -5119,99 +5339,124 @@ const MaterialDetail = ({
     src: video.captions,
     srcLang: "en",
     label: "English"
-  }))), React.createElement("div", {
-    style: mds.railBlock
+  }))), React.createElement("section", {
+    style: mds.conceptPanel
   }, React.createElement("div", {
     style: mds.railHead
-  }, "Your highlights"), React.createElement("div", {
+  }, "Indexed concepts"), material && material.concepts && material.concepts.length ? material.concepts.map(c => React.createElement("div", {
+    key: c.id || c.name,
+    style: mds.concept
+  }, React.createElement("span", null, c.name), React.createElement("span", {
+    className: "mono",
     style: {
-      fontSize: 'calc(12px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      padding: '4px 0'
+      fontSize: 'calc(10px * var(--app-font-scale))',
+      color: 'var(--fg-3)'
     }
-  }, "No highlights yet.")))));
+  }, c.mastery_pct || 0, "%"))) : React.createElement("div", {
+    style: mds.emptySmall
+  }, "Concepts appear after the lecture has enough indexed signal."))), React.createElement("aside", {
+    className: "material-detail-map-rail",
+    style: mds.rail
+  }, window.MaterialMindMap && learningMap ? React.createElement(window.MaterialMindMap, {
+    map: learningMap,
+    generationStatus: mapStatus,
+    busy: busy,
+    onRegenerate: regenerateMindMap,
+    onTutor: studyMapNodeWithTutor,
+    onQuiz: quizMapNode,
+    onFlashcards: flashcardMapNode
+  }) : React.createElement("div", {
+    style: mds.mapLoading
+  }, React.createElement(Icon.Tree, {
+    size: 22
+  }), "Building a dynamic map from this material..."))));
 };
 const mds = {
   layout: {
     display: 'grid',
-    gridTemplateColumns: '240px 1fr 300px',
-    minHeight: 'calc(100vh - 57px)'
-  },
-  chapters: {
-    borderRight: '1px solid var(--line)',
-    background: 'var(--bg-0)'
+    minHeight: 'calc(100vh - 57px)',
+    alignItems: 'start'
   },
   reader: {
-    padding: '40px 56px',
-    maxWidth: 780,
-    margin: '0 auto'
-  },
-  readerHead: {
-    marginBottom: 'calc(36px * var(--app-density-scale))'
-  },
-  article: {
-    fontSize: 'calc(14.5px * var(--app-font-scale))',
-    lineHeight: 1.75,
-    color: 'var(--fg-1)'
-  },
-  p: {
-    margin: '0 0 18px'
-  },
-  h2: {
-    fontFamily: 'var(--font-display)',
-    fontSize: 'calc(26px * var(--app-font-scale))',
-    fontWeight: 400,
-    letterSpacing: '-0.01em',
-    margin: '36px 0 14px',
-    color: 'var(--fg-0)'
-  },
-  mark: {
-    background: 'var(--accent-glow)',
-    color: 'var(--accent)',
-    padding: '1px 4px',
-    borderRadius: 3
-  },
-  code: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: 'calc(12.5px * var(--app-font-scale))',
-    background: 'var(--bg-2)',
-    padding: '1px 5px',
-    borderRadius: 3,
-    color: 'var(--fg-0)'
-  },
-  pre: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: 'calc(12.5px * var(--app-font-scale))',
-    background: 'var(--bg-1)',
-    border: '1px solid var(--line)',
-    padding: 'calc(18px * var(--app-density-scale))',
-    borderRadius: 'var(--r-md)',
-    overflow: 'auto',
-    lineHeight: 1.6,
-    color: 'var(--fg-0)',
-    margin: '18px 0'
-  },
-  callout: {
+    padding: '32px clamp(22px, 3.2vw, 52px)',
+    boxSizing: 'border-box',
+    width: '100%',
     display: 'flex',
-    gap: 'calc(12px * var(--app-density-scale))',
-    padding: 'calc(16px * var(--app-density-scale))',
-    borderRadius: 'var(--r-md)',
-    background: 'var(--accent-glow)',
-    border: '1px solid var(--accent-soft)',
-    margin: '20px 0'
+    flexDirection: 'column',
+    gap: 'calc(16px * var(--app-density-scale))'
+  },
+  headlinePanel: {
+    padding: 'calc(24px * var(--app-density-scale))',
+    border: '1px solid var(--line)',
+    borderRadius: 'var(--r-lg)',
+    background: 'var(--bg-1)'
+  },
+  eyebrow: {
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
+    color: 'var(--accent)',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    marginBottom: 'calc(10px * var(--app-density-scale))'
+  },
+  title: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 'calc(42px * var(--app-font-scale))',
+    fontWeight: 300,
+    letterSpacing: '-0.02em',
+    lineHeight: 1.08,
+    margin: 0,
+    color: 'var(--fg-0)'
+  },
+  statusRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    color: 'var(--fg-2)',
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    marginTop: 'calc(14px * var(--app-density-scale))'
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 99,
+    boxShadow: '0 0 12px currentColor'
+  },
+  progressTrack: {
+    height: 5,
+    borderRadius: 99,
+    background: 'var(--bg-2)',
+    overflow: 'hidden',
+    marginTop: 'calc(14px * var(--app-density-scale))'
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 99,
+    background: 'linear-gradient(90deg, var(--accent), var(--ok))'
+  },
+  hiddenSourceNote: {
+    color: 'var(--fg-3)',
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    lineHeight: 1.55,
+    margin: 'calc(14px * var(--app-density-scale)) 0 0'
   },
   rail: {
     borderLeft: '1px solid var(--line)',
-    padding: 'calc(20px * var(--app-density-scale))',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'calc(20px * var(--app-density-scale))',
-    background: 'var(--bg-0)'
+    padding: 'calc(24px * var(--app-density-scale))',
+    background: 'var(--bg-0)',
+    boxSizing: 'border-box',
+    minWidth: 0
   },
-  railBlock: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'calc(4px * var(--app-density-scale))'
+  mapLoading: {
+    minHeight: 420,
+    border: '1px solid var(--line)',
+    borderRadius: 'var(--r-xl)',
+    display: 'grid',
+    placeItems: 'center',
+    alignContent: 'center',
+    gap: 10,
+    color: 'var(--fg-3)',
+    background: 'var(--bg-1)',
+    fontSize: 'calc(12px * var(--app-font-scale))'
   },
   railHead: {
     fontSize: 'calc(10.5px * var(--app-font-scale))',
@@ -5220,26 +5465,50 @@ const mds = {
     textTransform: 'uppercase',
     marginBottom: 'calc(8px * var(--app-density-scale))'
   },
-  scopeBox: {
+  goalRec: {
     display: 'flex',
-    alignItems: 'center',
+    flexDirection: 'column',
+    padding: 'calc(14px * var(--app-density-scale))',
+    borderRadius: 'var(--r-md)',
+    border: '1px solid var(--accent-soft)',
+    background: 'linear-gradient(135deg, var(--accent-glow), var(--bg-1) 70%)'
+  },
+  goalRecEyebrow: {
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    color: 'var(--accent)',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    marginBottom: 'calc(5px * var(--app-density-scale))'
+  },
+  goalRecTitle: {
+    fontSize: 'calc(13.5px * var(--app-font-scale))',
+    color: 'var(--fg-0)',
+    fontWeight: 600,
+    lineHeight: 1.25
+  },
+  goalRecText: {
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
+    color: 'var(--fg-2)',
+    lineHeight: 1.45,
+    marginTop: 'calc(5px * var(--app-density-scale))'
+  },
+  toolPanel: {
+    display: 'flex',
+    flexDirection: 'column',
     gap: 'calc(8px * var(--app-density-scale))',
-    marginBottom: 'calc(6px * var(--app-density-scale))'
-  },
-  scopeLabel: {
-    fontSize: 'calc(11px * var(--app-font-scale))',
-    color: 'var(--fg-3)'
-  },
-  scopeSelect: {
-    flex: 1,
-    minWidth: 0,
-    height: 30,
-    borderRadius: 'var(--r-sm)',
+    padding: 'calc(16px * var(--app-density-scale))',
     border: '1px solid var(--line)',
-    background: 'var(--bg-1)',
-    color: 'var(--fg-1)',
-    fontSize: 'calc(12px * var(--app-font-scale))',
-    padding: '0 8px'
+    borderRadius: 'var(--r-md)',
+    background: 'var(--bg-1)'
+  },
+  conceptPanel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'calc(4px * var(--app-density-scale))',
+    padding: 'calc(16px * var(--app-density-scale))',
+    border: '1px solid var(--line)',
+    borderRadius: 'var(--r-md)',
+    background: 'var(--bg-1)'
   },
   concept: {
     display: 'flex',
@@ -5261,6 +5530,25 @@ const mds = {
     border: '1px solid var(--line)',
     background: 'var(--bg-1)',
     transition: 'all 140ms var(--ease-out)'
+  },
+  genTitle: {
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    color: 'var(--fg-0)'
+  },
+  genSub: {
+    fontSize: 'calc(11px * var(--app-font-scale))',
+    color: 'var(--fg-3)'
+  },
+  genStatus: {
+    fontSize: 'calc(11px * var(--app-font-scale))',
+    color: 'var(--fg-3)',
+    padding: '4px 4px 0'
+  },
+  emptySmall: {
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    color: 'var(--fg-3)',
+    padding: '4px 0',
+    lineHeight: 1.5
   },
   highlight: {
     display: 'flex',
@@ -5716,11 +6004,20 @@ const Tutor = ({
     let alive = true;
     const storedConcept = sessionStorage.getItem('noesis.tutorConcept') || '';
     const storedMatId = parseInt(sessionStorage.getItem('noesis.tutorMaterialId') || '0', 10) || null;
+    const autoStart = sessionStorage.getItem('noesis.tutorAutoStart') || '';
     setConceptInput(isGenericLabel(storedConcept) ? '' : storedConcept);
     window.NoesisAPI.materials.list().then(d => {
       if (!alive) return;
       const ready = (d.materials || []).filter(m => m.status === 'ready');
       setMaterials(ready);
+      if (autoStart === 'core') {
+        sessionStorage.removeItem('noesis.tutorAutoStart');
+        startSession({
+          materialId: null,
+          concept: storedConcept || 'Object-Oriented Programming basics'
+        });
+        return;
+      }
       const stored = ready.find(m => m.id === storedMatId);
       const first = stored || ready[0];
       if (first) {
@@ -11769,6 +12066,830 @@ window.LearningMap = LearningMap;
 })();
 
 
+// ---- components/MaterialMindMap.jsx ----
+(function () {
+  window.__NOESIS_BOOT.files.push("components/MaterialMindMap.jsx");
+const MATERIAL_MAP_COLORS = ['var(--accent)', 'var(--accent-2, #c99afc)', 'var(--accent-3, #6ad0e8)', 'var(--ok)', 'var(--warn)', '#e889b5', '#73c7a3'];
+function clampMapValue(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+function materialMapNodeId(node, fallback) {
+  return String(node && (node.id || node.label) || fallback || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+function materialMapLayout(tree, expanded = {}) {
+  if (!tree) return {
+    nodes: [],
+    edges: [],
+    width: 900,
+    height: 620
+  };
+  const rootW = 230,
+    rootH = 84,
+    branchW = 192,
+    branchH = 70,
+    leafW = 164,
+    leafH = 54;
+  const branches = tree.children || [];
+  const left = [],
+    right = [];
+  branches.forEach((branch, index) => (index % 2 === 0 ? right : left).push({
+    branch,
+    index
+  }));
+  const positions = [];
+  const edges = [];
+  const addSide = (items, side) => {
+    const largestExpandedBranch = items.reduce((max, entry) => {
+      const id = materialMapNodeId(entry.branch, `branch-${entry.index}`);
+      return expanded[id] ? Math.max(max, (entry.branch.children || []).length) : max;
+    }, 0);
+    const gap = Math.max(items.length > 3 ? 154 : 182, largestExpandedBranch ? largestExpandedBranch * 76 + 36 : 0);
+    items.forEach((entry, sideIndex) => {
+      const branch = entry.branch;
+      const branchId = materialMapNodeId(branch, `branch-${entry.index}`);
+      const branchY = (sideIndex - (items.length - 1) / 2) * gap;
+      const branchX = side * 310;
+      positions.push({
+        id: branchId,
+        node: branch,
+        x: branchX,
+        y: branchY,
+        w: branchW,
+        h: branchH,
+        depth: 1,
+        colorIndex: entry.index
+      });
+      edges.push({
+        from: materialMapNodeId(tree, 'root'),
+        to: branchId,
+        colorIndex: entry.index,
+        depth: 1
+      });
+      if (!expanded[branchId]) return;
+      const children = (branch.children || []).slice(0, 5);
+      const childGap = children.length > 3 ? 66 : 76;
+      children.forEach((child, childIndex) => {
+        const childId = materialMapNodeId(child, `${branchId}-${childIndex}`);
+        const childY = branchY + (childIndex - (children.length - 1) / 2) * childGap;
+        const childX = side * 610;
+        positions.push({
+          id: childId,
+          node: child,
+          x: childX,
+          y: childY,
+          w: leafW,
+          h: leafH,
+          depth: 2,
+          colorIndex: entry.index
+        });
+        edges.push({
+          from: branchId,
+          to: childId,
+          colorIndex: entry.index,
+          depth: 2
+        });
+      });
+    });
+  };
+  const rootId = materialMapNodeId(tree, 'root');
+  positions.push({
+    id: rootId,
+    node: tree,
+    x: 0,
+    y: 0,
+    w: rootW,
+    h: rootH,
+    depth: 0,
+    colorIndex: -1
+  });
+  addSide(right, 1);
+  addSide(left, -1);
+  const pad = 90;
+  const minX = Math.min(...positions.map(pos => pos.x - pos.w / 2)) - pad;
+  const maxX = Math.max(...positions.map(pos => pos.x + pos.w / 2)) + pad;
+  const minY = Math.min(...positions.map(pos => pos.y - pos.h / 2)) - pad;
+  const maxY = Math.max(...positions.map(pos => pos.y + pos.h / 2)) + pad;
+  const offsetX = -minX;
+  const offsetY = -minY;
+  positions.forEach(pos => {
+    pos.x += offsetX;
+    pos.y += offsetY;
+  });
+  return {
+    nodes: positions,
+    edges,
+    width: Math.max(900, maxX - minX),
+    height: Math.max(620, maxY - minY)
+  };
+}
+function materialMapEdgePath(from, to) {
+  const direction = to.x >= from.x ? 1 : -1;
+  const x1 = from.x + direction * from.w / 2;
+  const x2 = to.x - direction * to.w / 2;
+  const bend = Math.max(46, Math.abs(x2 - x1) * 0.52);
+  return `M ${x1} ${from.y} C ${x1 + direction * bend} ${from.y}, ${x2 - direction * bend} ${to.y}, ${x2} ${to.y}`;
+}
+const MapControlIcon = ({
+  type
+}) => {
+  if (type === 'fit') return React.createElement("svg", {
+    viewBox: "0 0 20 20",
+    width: "14",
+    height: "14"
+  }, React.createElement("path", {
+    d: "M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.7",
+    strokeLinecap: "round"
+  }));
+  if (type === 'full') return React.createElement("svg", {
+    viewBox: "0 0 20 20",
+    width: "14",
+    height: "14"
+  }, React.createElement("path", {
+    d: "M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.7",
+    strokeLinecap: "round"
+  }), React.createElement("path", {
+    d: "M7 10h6",
+    stroke: "currentColor",
+    strokeWidth: "1.3",
+    opacity: ".45"
+  }));
+  return null;
+};
+const MaterialMindMap = ({
+  map,
+  generationStatus = 'ready',
+  busy = false,
+  eyebrow = 'Dynamic material map',
+  subtitle = 'Explore how the ideas in this upload connect.',
+  statusLabel,
+  emptyText = 'Building a map from this material...',
+  showRegenerate,
+  onRegenerate,
+  onTutor,
+  onQuiz,
+  onFlashcards
+}) => {
+  const Icon = window.Icon;
+  const tree = map && map.tree;
+  const [expanded, setExpanded] = React.useState({});
+  const [selectedId, setSelectedId] = React.useState('');
+  const [scale, setScale] = React.useState(0.75);
+  const [pan, setPan] = React.useState({
+    x: 0,
+    y: 0
+  });
+  const [fullScreen, setFullScreen] = React.useState(false);
+  const viewportRef = React.useRef(null);
+  const dragRef = React.useRef(null);
+  const layout = React.useMemo(() => materialMapLayout(tree, expanded), [tree, expanded]);
+  const byId = React.useMemo(() => new Map(layout.nodes.map(pos => [pos.id, pos])), [layout]);
+  const selected = byId.get(selectedId) || null;
+  const fitMap = React.useCallback(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const rect = viewport.getBoundingClientRect();
+    const nextScale = clampMapValue(Math.min((rect.width - 46) / layout.width, (rect.height - 46) / layout.height), 0.42, 1.15);
+    setScale(nextScale);
+    setPan({
+      x: (rect.width - layout.width * nextScale) / 2,
+      y: (rect.height - layout.height * nextScale) / 2
+    });
+  }, [layout.width, layout.height, fullScreen]);
+  React.useEffect(() => {
+    const timer = setTimeout(fitMap, 0);
+    const viewport = viewportRef.current;
+    const observer = viewport && window.ResizeObserver ? new ResizeObserver(fitMap) : null;
+    if (observer && viewport) observer.observe(viewport);
+    return () => {
+      clearTimeout(timer);
+      if (observer) observer.disconnect();
+    };
+  }, [fitMap]);
+  React.useEffect(() => {
+    if (!tree) return;
+    const first = (tree.children || [])[0];
+    setSelectedId(materialMapNodeId(first || tree, 'root'));
+    setExpanded(first ? {
+      [materialMapNodeId(first, 'first-branch')]: true
+    } : {});
+  }, [tree && tree.id, map && map.generatedAt]);
+  React.useEffect(() => {
+    if (!fullScreen) return undefined;
+    const onKey = event => {
+      if (event.key === 'Escape') setFullScreen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullScreen]);
+  const changeZoom = React.useCallback((next, anchor) => {
+    const viewport = viewportRef.current;
+    const rect = viewport && viewport.getBoundingClientRect();
+    const nextScale = clampMapValue(next, 0.4, 1.65);
+    const point = anchor || {
+      x: rect ? rect.width / 2 : 0,
+      y: rect ? rect.height / 2 : 0
+    };
+    setPan(current => ({
+      x: point.x - (point.x - current.x) / scale * nextScale,
+      y: point.y - (point.y - current.y) / scale * nextScale
+    }));
+    setScale(nextScale);
+  }, [scale]);
+  const onWheel = event => {
+    event.preventDefault();
+    const rect = viewportRef.current.getBoundingClientRect();
+    const factor = event.deltaY > 0 ? 0.9 : 1.1;
+    changeZoom(scale * factor, {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    });
+  };
+  const onPointerDown = event => {
+    if (event.button !== 0) return;
+    dragRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      panX: pan.x,
+      panY: pan.y,
+      moved: false
+    };
+    event.currentTarget.setPointerCapture && event.currentTarget.setPointerCapture(event.pointerId);
+  };
+  const onPointerMove = event => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dx = event.clientX - drag.x;
+    const dy = event.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    setPan({
+      x: drag.panX + dx,
+      y: drag.panY + dy
+    });
+  };
+  const stopDragging = () => {
+    dragRef.current = null;
+  };
+  const toggleBranch = (id, event) => {
+    event.stopPropagation();
+    setExpanded(current => ({
+      ...current,
+      [id]: !current[id]
+    }));
+  };
+  const mode = map && map.generation && map.generation.mode;
+  const statusText = generationStatus === 'refining' ? 'AI refining...' : statusLabel || (mode === 'ai' ? 'AI refined' : mode === 'curriculum' ? 'Curriculum path' : 'Source built');
+  const canRegenerate = showRegenerate == null ? !!onRegenerate : !!showRegenerate;
+  if (!tree) {
+    return React.createElement("section", {
+      style: mm.shell
+    }, React.createElement("div", {
+      style: mm.empty
+    }, React.createElement(Icon.Tree, {
+      size: 22
+    }), React.createElement("div", null, emptyText)));
+  }
+  const content = React.createElement("section", {
+    style: {
+      ...mm.shell,
+      ...(fullScreen ? mm.fullShell : {})
+    },
+    "aria-label": "Interactive material mind map"
+  }, React.createElement("header", {
+    style: mm.header
+  }, React.createElement("div", {
+    style: {
+      minWidth: 0
+    }
+  }, React.createElement("div", {
+    style: mm.eyebrow
+  }, React.createElement(Icon.Sparkles, {
+    size: 12
+  }), " ", eyebrow), React.createElement("h2", {
+    style: mm.title
+  }, map.rootTopic || tree.label), React.createElement("div", {
+    style: mm.sub
+  }, subtitle)), React.createElement("div", {
+    style: mm.headerActions
+  }, React.createElement("span", {
+    style: {
+      ...mm.modeChip,
+      ...(generationStatus === 'refining' ? mm.modeChipBusy : {})
+    }
+  }, React.createElement("span", {
+    style: mm.liveDot
+  }), statusText), canRegenerate && React.createElement("button", {
+    className: "btn btn-bare",
+    disabled: busy || generationStatus === 'refining',
+    onClick: onRegenerate,
+    style: mm.regenButton
+  }, React.createElement(Icon.RotateCcw, {
+    size: 12
+  }), busy ? 'Working...' : 'Regenerate'))), React.createElement("div", {
+    style: {
+      ...mm.viewport,
+      ...(fullScreen ? mm.fullViewport : {})
+    },
+    ref: viewportRef,
+    onWheel: onWheel,
+    onPointerDown: onPointerDown,
+    onPointerMove: onPointerMove,
+    onPointerUp: stopDragging,
+    onPointerCancel: stopDragging
+  }, React.createElement("div", {
+    style: mm.aurora
+  }), React.createElement("div", {
+    style: mm.grid
+  }), React.createElement("div", {
+    style: {
+      ...mm.world,
+      width: layout.width,
+      height: layout.height,
+      transform: `translate(${pan.x}px, ${pan.y}px) scale(${scale})`
+    }
+  }, React.createElement("svg", {
+    width: layout.width,
+    height: layout.height,
+    style: mm.edges,
+    "aria-hidden": "true"
+  }, React.createElement("defs", null, React.createElement("filter", {
+    id: "materialMapGlow",
+    x: "-30%",
+    y: "-30%",
+    width: "160%",
+    height: "160%"
+  }, React.createElement("feGaussianBlur", {
+    stdDeviation: "3",
+    result: "blur"
+  }), React.createElement("feMerge", null, React.createElement("feMergeNode", {
+    in: "blur"
+  }), React.createElement("feMergeNode", {
+    in: "SourceGraphic"
+  })))), layout.edges.map((edge, index) => {
+    const from = byId.get(edge.from),
+      to = byId.get(edge.to);
+    if (!from || !to) return null;
+    const color = MATERIAL_MAP_COLORS[edge.colorIndex % MATERIAL_MAP_COLORS.length];
+    return React.createElement("g", {
+      key: `${edge.from}-${edge.to}`
+    }, React.createElement("path", {
+      d: materialMapEdgePath(from, to),
+      fill: "none",
+      stroke: color,
+      strokeWidth: edge.depth === 1 ? 7 : 4,
+      opacity: ".08",
+      filter: "url(#materialMapGlow)"
+    }), React.createElement("path", {
+      className: "material-map-edge",
+      d: materialMapEdgePath(from, to),
+      fill: "none",
+      stroke: color,
+      strokeWidth: edge.depth === 1 ? 2.2 : 1.45,
+      opacity: edge.depth === 1 ? .82 : .52,
+      strokeLinecap: "round"
+    }));
+  })), layout.nodes.map(pos => {
+    const node = pos.node;
+    const isRoot = pos.depth === 0;
+    const isSelected = selectedId === pos.id;
+    const hasChildren = pos.depth === 1 && (node.children || []).length > 0;
+    const isExpanded = !!expanded[pos.id];
+    const color = isRoot ? 'var(--accent)' : MATERIAL_MAP_COLORS[pos.colorIndex % MATERIAL_MAP_COLORS.length];
+    return React.createElement("button", {
+      type: "button",
+      key: pos.id,
+      className: "material-map-node",
+      onPointerDown: event => event.stopPropagation(),
+      onClick: () => setSelectedId(pos.id),
+      style: {
+        ...mm.node,
+        ...(isRoot ? mm.rootNode : pos.depth === 1 ? mm.branchNode : mm.leafNode),
+        ...(isSelected ? mm.selectedNode : {}),
+        left: pos.x - pos.w / 2,
+        top: pos.y - pos.h / 2,
+        width: pos.w,
+        height: pos.h,
+        '--map-node-color': color
+      }
+    }, !isRoot && React.createElement("span", {
+      style: {
+        ...mm.nodeDot,
+        background: color,
+        boxShadow: `0 0 12px ${color}`
+      }
+    }), React.createElement("span", {
+      style: mm.nodeText
+    }, node.label), hasChildren && React.createElement("span", {
+      role: "button",
+      "aria-label": isExpanded ? 'Collapse branch' : 'Expand branch',
+      onClick: event => toggleBranch(pos.id, event),
+      style: mm.branchToggle
+    }, isExpanded ? '-' : '+'));
+  })), React.createElement("div", {
+    style: mm.controls,
+    onPointerDown: event => event.stopPropagation()
+  }, React.createElement("button", {
+    "aria-label": "Zoom out",
+    title: "Zoom out",
+    style: mm.control,
+    onClick: () => changeZoom(scale - .12)
+  }, "-"), React.createElement("span", {
+    style: mm.zoomLabel
+  }, Math.round(scale * 100), "%"), React.createElement("button", {
+    "aria-label": "Zoom in",
+    title: "Zoom in",
+    style: mm.control,
+    onClick: () => changeZoom(scale + .12)
+  }, "+"), React.createElement("span", {
+    style: mm.controlDivider
+  }), React.createElement("button", {
+    "aria-label": "Fit map",
+    title: "Fit map",
+    style: mm.control,
+    onClick: fitMap
+  }, React.createElement(MapControlIcon, {
+    type: "fit"
+  })), React.createElement("button", {
+    "aria-label": fullScreen ? 'Exit full screen' : 'Open full screen',
+    title: fullScreen ? 'Exit full screen' : 'Open full screen',
+    style: mm.control,
+    onClick: () => setFullScreen(value => !value)
+  }, fullScreen ? React.createElement(Icon.X, {
+    size: 14
+  }) : React.createElement(MapControlIcon, {
+    type: "full"
+  }))), React.createElement("div", {
+    style: mm.hint
+  }, "Drag to move \xB7 Scroll to zoom \xB7 Select a concept to study it")), selected && React.createElement("div", {
+    style: mm.detail
+  }, React.createElement("div", {
+    style: mm.detailCopy
+  }, React.createElement("div", {
+    style: mm.detailMeta
+  }, React.createElement("span", {
+    style: {
+      ...mm.detailDot,
+      background: selected.depth === 0 ? 'var(--accent)' : MATERIAL_MAP_COLORS[selected.colorIndex % MATERIAL_MAP_COLORS.length]
+    }
+  }), selected.node.relationship || (selected.depth === 0 ? 'Map overview' : 'Grounded concept')), React.createElement("div", {
+    style: mm.detailTitle
+  }, selected.node.label), React.createElement("div", {
+    style: mm.detailText
+  }, selected.node.summary || selected.node.reason || 'Explore this concept with the tutor or create focused practice.')), React.createElement("div", {
+    style: mm.studyActions
+  }, React.createElement("button", {
+    className: "btn btn-accent",
+    disabled: busy,
+    onClick: () => onTutor && onTutor(selected.node)
+  }, React.createElement(Icon.Sparkle, {
+    size: 12
+  }), " Tutor"), React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: busy,
+    onClick: () => onQuiz && onQuiz(selected.node)
+  }, React.createElement(Icon.Target, {
+    size: 12
+  }), " Quiz"), React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: busy,
+    onClick: () => onFlashcards && onFlashcards(selected.node)
+  }, React.createElement(Icon.Cards, {
+    size: 12
+  }), " Cards"))));
+  return fullScreen ? React.createElement("div", {
+    style: mm.overlay
+  }, content) : content;
+};
+const mm = {
+  overlay: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 3000,
+    padding: '18px',
+    background: 'rgba(4,4,14,.88)',
+    backdropFilter: 'blur(18px)'
+  },
+  shell: {
+    border: '1px solid var(--line)',
+    borderRadius: 'var(--r-xl)',
+    background: 'linear-gradient(160deg, color-mix(in srgb, var(--bg-1) 94%, var(--accent) 6%), var(--bg-0))',
+    boxShadow: 'var(--shadow-lg)',
+    overflow: 'hidden'
+  },
+  fullShell: {
+    height: 'calc(100vh - 36px)',
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 16,
+    padding: '18px 18px 14px',
+    borderBottom: '1px solid var(--line-soft)'
+  },
+  eyebrow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    color: 'var(--accent)',
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    letterSpacing: '.12em',
+    textTransform: 'uppercase',
+    fontWeight: 700
+  },
+  title: {
+    margin: '6px 0 0',
+    fontFamily: 'var(--font-display)',
+    fontWeight: 400,
+    fontSize: 'calc(22px * var(--app-font-scale))',
+    lineHeight: 1.08,
+    color: 'var(--fg-0)',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+  },
+  sub: {
+    marginTop: 5,
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
+    color: 'var(--fg-2)'
+  },
+  headerActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 7,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end'
+  },
+  modeChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
+    padding: '5px 8px',
+    borderRadius: 999,
+    border: '1px solid var(--line)',
+    background: 'var(--bg-2)',
+    color: 'var(--fg-2)',
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    whiteSpace: 'nowrap'
+  },
+  modeChipBusy: {
+    color: 'var(--accent)',
+    borderColor: 'var(--accent-soft)',
+    background: 'var(--accent-glow)'
+  },
+  liveDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 99,
+    background: 'var(--accent)',
+    boxShadow: '0 0 9px var(--accent)'
+  },
+  regenButton: {
+    display: 'inline-flex',
+    gap: 5,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
+    whiteSpace: 'nowrap'
+  },
+  viewport: {
+    position: 'relative',
+    height: 520,
+    overflow: 'hidden',
+    cursor: 'grab',
+    touchAction: 'none',
+    background: 'linear-gradient(180deg, color-mix(in srgb, var(--bg-0) 93%, var(--accent) 7%), var(--bg-0))',
+    userSelect: 'none'
+  },
+  fullViewport: {
+    flex: 1,
+    height: 'auto',
+    minHeight: 420
+  },
+  aurora: {
+    position: 'absolute',
+    inset: '-25%',
+    background: 'radial-gradient(circle at 50% 45%, var(--accent-glow), transparent 28%), radial-gradient(circle at 16% 25%, color-mix(in srgb, var(--accent-2, #c99afc) 12%, transparent), transparent 24%), radial-gradient(circle at 82% 72%, color-mix(in srgb, var(--accent-3, #6ad0e8) 10%, transparent), transparent 26%)',
+    pointerEvents: 'none'
+  },
+  grid: {
+    position: 'absolute',
+    inset: 0,
+    opacity: .17,
+    backgroundImage: 'linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px)',
+    backgroundSize: '34px 34px',
+    maskImage: 'radial-gradient(circle at center, black, transparent 80%)',
+    pointerEvents: 'none'
+  },
+  world: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    transformOrigin: '0 0',
+    willChange: 'transform'
+  },
+  edges: {
+    position: 'absolute',
+    inset: 0,
+    overflow: 'visible',
+    pointerEvents: 'none'
+  },
+  node: {
+    position: 'absolute',
+    border: '1px solid var(--line)',
+    color: 'var(--fg-0)',
+    boxSizing: 'border-box',
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    textAlign: 'center',
+    transition: 'transform 180ms var(--ease-out), box-shadow 180ms var(--ease-out), border-color 180ms var(--ease-out)',
+    zIndex: 2
+  },
+  rootNode: {
+    padding: '12px 18px',
+    borderRadius: 24,
+    borderColor: 'var(--accent-soft)',
+    background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent) 86%, white 14%), var(--accent))',
+    color: 'var(--bg-0)',
+    boxShadow: '0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 18px 46px var(--accent-glow)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 'calc(17px * var(--app-font-scale))',
+    fontWeight: 600
+  },
+  branchNode: {
+    padding: '10px 12px',
+    borderRadius: 16,
+    borderColor: 'color-mix(in srgb, var(--map-node-color) 62%, var(--line))',
+    background: 'linear-gradient(145deg, color-mix(in srgb, var(--bg-elev) 88%, var(--map-node-color) 12%), var(--bg-1))',
+    boxShadow: '0 10px 28px rgba(0,0,0,.25)',
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    fontWeight: 700
+  },
+  leafNode: {
+    padding: '8px 10px',
+    borderRadius: 13,
+    borderColor: 'color-mix(in srgb, var(--map-node-color) 36%, var(--line))',
+    background: 'color-mix(in srgb, var(--bg-2) 94%, var(--map-node-color) 6%)',
+    fontSize: 'calc(11px * var(--app-font-scale))',
+    fontWeight: 600,
+    color: 'var(--fg-1)'
+  },
+  selectedNode: {
+    borderColor: 'var(--map-node-color)',
+    boxShadow: '0 0 0 2px color-mix(in srgb, var(--map-node-color) 30%, transparent), 0 14px 34px rgba(0,0,0,.3)',
+    transform: 'translateY(-2px)'
+  },
+  nodeDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 99,
+    flexShrink: 0
+  },
+  nodeText: {
+    minWidth: 0,
+    overflow: 'hidden',
+    display: '-webkit-box',
+    WebkitLineClamp: 3,
+    WebkitBoxOrient: 'vertical',
+    lineHeight: 1.2
+  },
+  branchToggle: {
+    position: 'absolute',
+    right: -7,
+    top: -7,
+    width: 21,
+    height: 21,
+    borderRadius: 99,
+    display: 'grid',
+    placeItems: 'center',
+    border: '1px solid var(--line-strong)',
+    background: 'var(--bg-elev)',
+    color: 'var(--fg-1)',
+    fontSize: 14,
+    boxShadow: 'var(--shadow-sm)'
+  },
+  controls: {
+    position: 'absolute',
+    right: 12,
+    top: 12,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 3,
+    padding: 4,
+    border: '1px solid var(--line)',
+    borderRadius: 11,
+    background: 'color-mix(in srgb, var(--bg-elev) 88%, transparent)',
+    backdropFilter: 'blur(12px)',
+    boxShadow: 'var(--shadow-md)',
+    zIndex: 4
+  },
+  control: {
+    width: 29,
+    height: 29,
+    display: 'grid',
+    placeItems: 'center',
+    borderRadius: 7,
+    color: 'var(--fg-1)',
+    background: 'transparent',
+    fontSize: 17
+  },
+  zoomLabel: {
+    minWidth: 35,
+    textAlign: 'center',
+    color: 'var(--fg-3)',
+    fontFamily: 'var(--font-mono)',
+    fontSize: 'calc(9px * var(--app-font-scale))'
+  },
+  controlDivider: {
+    width: 1,
+    height: 18,
+    background: 'var(--line)',
+    margin: '0 2px'
+  },
+  hint: {
+    position: 'absolute',
+    left: 12,
+    bottom: 10,
+    padding: '5px 8px',
+    borderRadius: 8,
+    background: 'color-mix(in srgb, var(--bg-0) 80%, transparent)',
+    color: 'var(--fg-3)',
+    fontSize: 'calc(9.5px * var(--app-font-scale))',
+    pointerEvents: 'none'
+  },
+  detail: {
+    display: 'flex',
+    gap: 18,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '14px 16px 16px',
+    borderTop: '1px solid var(--line-soft)',
+    background: 'linear-gradient(90deg, color-mix(in srgb, var(--bg-1) 94%, var(--accent) 6%), var(--bg-1))'
+  },
+  detailCopy: {
+    minWidth: 0,
+    flex: 1
+  },
+  detailMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    color: 'var(--fg-3)',
+    textTransform: 'uppercase',
+    letterSpacing: '.08em',
+    fontSize: 'calc(9px * var(--app-font-scale))'
+  },
+  detailDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 99
+  },
+  detailTitle: {
+    marginTop: 5,
+    color: 'var(--fg-0)',
+    fontSize: 'calc(14px * var(--app-font-scale))',
+    fontWeight: 700
+  },
+  detailText: {
+    marginTop: 4,
+    color: 'var(--fg-2)',
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
+    lineHeight: 1.45,
+    maxWidth: 620
+  },
+  studyActions: {
+    display: 'flex',
+    gap: 6,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end'
+  },
+  empty: {
+    minHeight: 420,
+    display: 'grid',
+    placeItems: 'center',
+    alignContent: 'center',
+    gap: 10,
+    color: 'var(--fg-3)',
+    fontSize: 'calc(12px * var(--app-font-scale))'
+  }
+};
+window.NoesisMaterialMapInternals = {
+  materialMapLayout,
+  materialMapEdgePath,
+  materialMapNodeId
+};
+window.MaterialMindMap = MaterialMindMap;
+})();
+
+
 // ---- components/StoryboardReview.jsx ----
 (function () {
   window.__NOESIS_BOOT.files.push("components/StoryboardReview.jsx");
@@ -13300,16 +14421,23 @@ const StudyPlan = ({
   const [busy, setBusy] = React.useState(false);
   const [status, setStatus] = React.useState('');
   const [highlightNode, setHighlightNode] = React.useState('');
+  const [prefs, setPrefs] = React.useState(null);
+  const [materials, setMaterials] = React.useState([]);
+  const [picker, setPicker] = React.useState(null);
   const load = React.useCallback(async () => {
     setStatus('');
     try {
-      const [planRes, mapRes] = await Promise.all([window.NoesisAPI.study.activePlan().catch(() => ({
+      const [planRes, mapRes, prefsRes, materialsRes] = await Promise.all([window.NoesisAPI.study.activePlan().catch(() => ({
         study_plan: null
       })), window.NoesisAPI.study.learningMap().catch(() => ({
         learning_map: null
+      })), window.NoesisAPI.user.getPrefs().catch(() => ({})), window.NoesisAPI.materials.list().catch(() => ({
+        materials: []
       }))]);
       setPlan(planRes.study_plan || null);
       setMap(mapRes.learning_map || null);
+      setPrefs(prefsRes || {});
+      setMaterials((materialsRes.materials || []).filter(m => m.status === 'ready'));
     } catch (e) {
       setStatus(e.message || 'Could not load your plan.');
     }
@@ -13358,7 +14486,72 @@ const StudyPlan = ({
       setBusy(false);
     }
   };
+  const startCurriculumTutor = node => {
+    const topic = node && node.label || map && map.startHere || 'Object-Oriented Programming basics';
+    sessionStorage.setItem('noesis.tutorConcept', topic);
+    sessionStorage.removeItem('noesis.tutorMaterialId');
+    sessionStorage.setItem('noesis.tutorAutoStart', 'core');
+    onNav('tutor');
+  };
+  const openMaterialPicker = (kind, node) => {
+    setPicker({
+      kind,
+      topic: node && node.label || map && map.startHere || 'Core topic'
+    });
+  };
+  const generateFromPickedMaterial = async material => {
+    if (!picker || !material || busy) return;
+    setBusy(true);
+    const topic = picker.topic;
+    setStatus(`Generating ${picker.kind === 'quiz' ? 'quiz' : 'cards'} for ${topic} from ${material.display_title || material.title}...`);
+    try {
+      if (picker.kind === 'quiz') {
+        const res = await window.NoesisAPI.quizzes.generate({
+          material_id: material.id,
+          count: 6,
+          difficulty: 'medium',
+          sourceScope: 'material',
+          topic
+        });
+        if (!res || !res.quiz_id) throw new Error('Quiz generation did not return a quiz.');
+        sessionStorage.setItem('noesis.quizId', String(res.quiz_id));
+        setPicker(null);
+        onNav('quiz');
+      } else {
+        await window.NoesisAPI.flashcards.generate({
+          material_id: material.id,
+          count: 8,
+          regenerate: true,
+          sourceScope: 'material',
+          topic
+        });
+        setPicker(null);
+        onNav('flashcards');
+      }
+    } catch (e) {
+      setStatus('Generation failed: ' + (e.message || 'error'));
+    } finally {
+      setBusy(false);
+    }
+  };
   const planJson = plan && plan.plan ? plan.plan : null;
+  const currentGoal = prefs && prefs.goal || 'exams';
+  const planGoalId = planJson && planJson.goalId;
+  const goalLabels = {
+    exams: 'Ace my exams',
+    understand: 'Understand deeply',
+    retain: 'Retain long-term',
+    practice: 'Practice problems'
+  };
+  const planNeedsGoalRefresh = !!(planJson && planGoalId && currentGoal && planGoalId !== currentGoal);
+  const currentTrack = trackFromSubjectClient(prefs && prefs.subject);
+  const planTrackId = planJson && planJson.trackId;
+  const trackLabels = {
+    oop: 'Object-Oriented Programming',
+    ds: 'Data Structures',
+    both: 'OOP + Data Structures'
+  };
+  const planNeedsTrackRefresh = !!(planJson && planTrackId && currentTrack && planTrackId !== currentTrack);
   const days = planJson && Array.isArray(planJson.dailyPlan) ? planJson.dailyPlan : [];
   const taskRows = plan && Array.isArray(plan.tasks) ? plan.tasks : [];
   const today = days[0] || null;
@@ -13404,13 +14597,19 @@ const StudyPlan = ({
     }
   }, planJson && React.createElement("span", {
     className: "chip chip-accent"
-  }, plan.status), planJson && React.createElement("span", {
+  }, plan.status), planJson && planJson.goalProfile && React.createElement("span", {
+    className: "chip chip-accent"
+  }, planJson.goalProfile.short_label || planJson.goalProfile.label), planJson && React.createElement("span", {
     className: "chip"
   }, planJson.minutesPerSession || 45, " min sessions"), planJson && React.createElement("span", {
     className: "chip"
   }, planJson.learningStyle || 'mixed', " learning"), planJson && React.createElement("span", {
     className: "chip"
-  }, planJson.preferredLanguage || 'java'))), React.createElement("div", {
+  }, planJson.preferredLanguage || 'java')), planNeedsGoalRefresh && React.createElement("div", {
+    style: sp.goalWarning
+  }, "Your goal is now ", goalLabels[currentGoal] || currentGoal, ". Refresh the plan to apply that new recommendation mix."), planNeedsTrackRefresh && React.createElement("div", {
+    style: sp.goalWarning
+  }, "Your track is now ", trackLabels[currentTrack] || currentTrack, ". Refresh the plan to rebuild the curriculum path.")), React.createElement("div", {
     style: sp.actionCard
   }, React.createElement("div", {
     style: {
@@ -13444,16 +14643,12 @@ const StudyPlan = ({
   }), " Approve plan"))), React.createElement("section", {
     style: sp.grid
   }, React.createElement("div", {
-    className: "card",
-    style: {
-      padding: 'calc(22px * var(--app-density-scale))',
-      gridColumn: 'span 2'
-    }
+    style: sp.mapPanel
   }, React.createElement("div", {
     style: sp.cardHead
   }, React.createElement("span", {
     style: sp.cardTitle
-  }, "Learning map"), React.createElement("button", {
+  }, "Curriculum map"), React.createElement("button", {
     className: "btn btn-bare",
     onClick: load,
     style: {
@@ -13461,10 +14656,15 @@ const StudyPlan = ({
     }
   }, "Refresh ", React.createElement(Icon.ArrowRight, {
     size: 11
-  }))), window.LearningMap ? React.createElement(window.LearningMap, {
+  }))), window.MaterialMindMap ? React.createElement(window.MaterialMindMap, {
     map: map || planJson && planJson.learningMap,
-    compact: false,
-    highlightNode: highlightNode
+    eyebrow: "Curriculum study map",
+    subtitle: "Driven by your selected OOP, Data Structures, or combined track.",
+    statusLabel: map && map.trackLabel || planJson && planJson.trackLabel || 'Curriculum path',
+    showRegenerate: false,
+    onTutor: startCurriculumTutor,
+    onQuiz: node => openMaterialPicker('quiz', node),
+    onFlashcards: node => openMaterialPicker('flashcards', node)
   }) : React.createElement("div", {
     style: sp.empty
   }, "Learning map renderer is not loaded.")), React.createElement("div", {
@@ -13576,8 +14776,64 @@ const StudyPlan = ({
     }, t.estimatedMinutes || 0, "m"));
   })), React.createElement("div", {
     style: sp.success
-  }, day.successCriteria)))))));
+  }, day.successCriteria))))), picker && React.createElement("div", {
+    style: sp.pickerOverlay,
+    onClick: () => !busy && setPicker(null)
+  }, React.createElement("section", {
+    style: sp.picker,
+    onClick: event => event.stopPropagation()
+  }, React.createElement("div", {
+    style: sp.cardHead
+  }, React.createElement("div", null, React.createElement("div", {
+    style: sp.pickerEyebrow
+  }, picker.kind === 'quiz' ? 'Choose quiz source' : 'Choose card source'), React.createElement("div", {
+    style: sp.pickerTitle
+  }, picker.topic)), React.createElement("button", {
+    className: "btn btn-bare",
+    disabled: busy,
+    onClick: () => setPicker(null)
+  }, React.createElement(Icon.X, {
+    size: 14
+  }))), materials.length ? React.createElement("div", {
+    style: sp.materialList
+  }, materials.map(material => React.createElement("button", {
+    key: material.id,
+    disabled: busy,
+    style: sp.materialChoice,
+    onClick: () => generateFromPickedMaterial(material)
+  }, React.createElement(Icon.File, {
+    size: 14,
+    style: {
+      color: 'var(--accent)'
+    }
+  }), React.createElement("span", {
+    style: {
+      flex: 1,
+      textAlign: 'left'
+    }
+  }, material.display_title || material.title), React.createElement(Icon.ArrowRight, {
+    size: 12
+  })))) : React.createElement("div", {
+    style: sp.noMaterial
+  }, React.createElement("div", null, "No ready uploads yet."), React.createElement("button", {
+    className: "btn btn-accent",
+    onClick: () => {
+      setPicker(null);
+      onNav('materials');
+    }
+  }, React.createElement(Icon.Upload, {
+    size: 12
+  }), " Upload material"))))));
 };
+function trackFromSubjectClient(subject) {
+  const raw = String(subject || '').toLowerCase();
+  const hasDs = /data.?struct|\bds\b/.test(raw);
+  const hasOop = /oop|object|java/.test(raw);
+  if (/both|computer.?science|cs\b|combined|all/.test(raw) || hasDs && hasOop) return 'both';
+  if (hasDs) return 'ds';
+  if (hasOop) return 'oop';
+  return 'both';
+}
 function taskIcon(type, Icon) {
   if (type === 'watch_video') return React.createElement(Icon.Play, {
     size: 9
@@ -13638,6 +14894,15 @@ const sp = {
     maxWidth: 680,
     lineHeight: 1.6
   },
+  goalWarning: {
+    marginTop: 'calc(14px * var(--app-density-scale))',
+    padding: '10px 12px',
+    borderRadius: 'var(--r-sm)',
+    border: '1px solid var(--accent-soft)',
+    background: 'var(--accent-glow)',
+    color: 'var(--fg-1)',
+    fontSize: 'calc(12px * var(--app-font-scale))'
+  },
   actionCard: {
     padding: 'calc(20px * var(--app-density-scale))',
     borderRadius: 'var(--r-lg)',
@@ -13649,6 +14914,14 @@ const sp = {
     gridTemplateColumns: 'repeat(3, 1fr)',
     gap: 'calc(14px * var(--app-density-scale))',
     marginBottom: 'calc(14px * var(--app-density-scale))'
+  },
+  mapPanel: {
+    padding: 'calc(18px * var(--app-density-scale))',
+    gridColumn: 'span 2',
+    borderRadius: 'var(--r-lg)',
+    background: 'var(--bg-1)',
+    border: '1px solid var(--line)',
+    minWidth: 0
   },
   cardHead: {
     display: 'flex',
@@ -13751,6 +15024,68 @@ const sp = {
     color: 'var(--fg-3)',
     fontSize: 'calc(11.5px * var(--app-font-scale))',
     lineHeight: 1.45
+  },
+  pickerOverlay: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 2600,
+    display: 'grid',
+    placeItems: 'center',
+    padding: '20px',
+    background: 'rgba(4,4,14,.72)',
+    backdropFilter: 'blur(12px)'
+  },
+  picker: {
+    width: 'min(560px, 100%)',
+    maxHeight: 'min(680px, calc(100vh - 40px))',
+    overflow: 'auto',
+    padding: 'calc(20px * var(--app-density-scale))',
+    borderRadius: 'var(--r-lg)',
+    border: '1px solid var(--line)',
+    background: 'var(--bg-1)',
+    boxShadow: 'var(--shadow-lg)'
+  },
+  pickerEyebrow: {
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    color: 'var(--accent)',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    marginBottom: 5
+  },
+  pickerTitle: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 'calc(24px * var(--app-font-scale))',
+    color: 'var(--fg-0)',
+    lineHeight: 1.15
+  },
+  materialList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginTop: 'calc(18px * var(--app-density-scale))'
+  },
+  materialChoice: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'calc(10px * var(--app-density-scale))',
+    padding: '11px 12px',
+    borderRadius: 'var(--r-sm)',
+    border: '1px solid var(--line)',
+    background: 'var(--bg-2)',
+    color: 'var(--fg-1)',
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
+  },
+  noMaterial: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 'calc(12px * var(--app-density-scale))',
+    marginTop: 'calc(18px * var(--app-density-scale))',
+    padding: 'calc(14px * var(--app-density-scale))',
+    borderRadius: 'var(--r-md)',
+    background: 'var(--bg-2)',
+    color: 'var(--fg-2)',
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
   }
 };
 window.StudyPlan = StudyPlan;
@@ -17083,6 +18418,33 @@ const Settings = ({
     onLogout: onLogout
   }))));
 };
+const TRACK_OPTIONS = [{
+  id: 'computer-science',
+  label: 'Both',
+  description: 'OOP + Data Structures'
+}, {
+  id: 'oop',
+  label: 'OOP',
+  description: 'Object-Oriented Programming'
+}, {
+  id: 'data-structures',
+  label: 'Data Structures',
+  description: 'Data Structures'
+}];
+function normalizeSubjectChoice(value) {
+  const raw = String(value || '').toLowerCase();
+  const hasDs = /data.?struct|\bds\b/.test(raw);
+  const hasOop = /oop|object|java/.test(raw);
+  if (/both|computer.?science|cs\b|combined|all/.test(raw) || hasDs && hasOop) return 'computer-science';
+  if (hasDs) return 'data-structures';
+  if (hasOop) return 'oop';
+  return 'computer-science';
+}
+function subjectChoiceLabel(value) {
+  const id = normalizeSubjectChoice(value);
+  const option = TRACK_OPTIONS.find(item => item.id === id) || TRACK_OPTIONS[0];
+  return option.description;
+}
 const ProfileTab = () => {
   const [me, setMe] = React.useState(null);
   const [name, setName] = React.useState('');
@@ -17092,18 +18454,19 @@ const ProfileTab = () => {
     window.NoesisAPI.auth.me().then(d => {
       setMe(d);
       setName(d && d.user && d.user.name || '');
-      setSubject(d && d.prefs && d.prefs.subject || d && d.user && d.user.major || '');
+      setSubject(normalizeSubjectChoice(d && d.prefs && d.prefs.subject || d && d.user && d.user.major || 'computer-science'));
     }).catch(() => {});
   }, []);
   const save = async () => {
     setSaved('Saving...');
     try {
+      const track = normalizeSubjectChoice(subject);
       const d = await window.NoesisAPI.profile.update({
         name,
-        major: subject
+        major: subjectChoiceLabel(track)
       });
       await window.NoesisAPI.user.updatePrefs({
-        subject
+        subject: track
       });
       setMe(d);
       setSaved('Saved');
@@ -17111,6 +18474,7 @@ const ProfileTab = () => {
       setSaved('Failed: ' + (e.message || 'error'));
     }
   };
+  const trackIdx = Math.max(0, TRACK_OPTIONS.findIndex(option => option.id === normalizeSubjectChoice(subject)));
   return React.createElement(React.Fragment, null, React.createElement(SetHeader, {
     eyebrow: "Profile",
     title: "Your learning profile.",
@@ -17155,15 +18519,12 @@ const ProfileTab = () => {
       width: 240
     }
   })), React.createElement(SetRow, {
-    label: "Focus",
-    sub: "Used for personalization and dashboard labels."
-  }, React.createElement("input", {
-    className: "input",
-    value: subject,
-    onChange: e => setSubject(e.target.value),
-    style: {
-      width: 240
-    }
+    label: "Curriculum track",
+    sub: "Used for the Study Plan map and dashboard labels. Refresh your plan after changing it."
+  }, React.createElement(Segmented, {
+    options: TRACK_OPTIONS.map(option => option.label),
+    value: trackIdx,
+    onChange: i => setSubject(TRACK_OPTIONS[i].id)
   }))));
 };
 const LearningTab = () => {
@@ -17172,7 +18533,7 @@ const LearningTab = () => {
   React.useEffect(() => {
     window.NoesisAPI.user.getPrefs().then(p => setPrefs(p || {})).catch(() => setPrefs({}));
   }, []);
-  const update = async patch => {
+  const update = async (patch, savedMessage = 'Saved') => {
     setStatus('Saving...');
     try {
       const next = await window.NoesisAPI.user.updatePrefs(patch);
@@ -17180,7 +18541,7 @@ const LearningTab = () => {
         ...(p || {}),
         ...next
       }));
-      setStatus('Saved');
+      setStatus(savedMessage);
     } catch (e) {
       setStatus('Failed: ' + (e.message || 'error'));
     }
@@ -17193,8 +18554,27 @@ const LearningTab = () => {
   }, "Loading...");
   const modes = ['socratic', 'explain', 'example'];
   const aggs = ['gentle', 'balanced', 'aggressive'];
+  const goals = [{
+    id: 'exams',
+    label: 'Exams',
+    effect: 'Quizzes, weak topics, and exam-ready notes first.'
+  }, {
+    id: 'understand',
+    label: 'Deep',
+    effect: 'Tutor sessions and concept gaps first.'
+  }, {
+    id: 'retain',
+    label: 'Retain',
+    effect: 'Due cards and spaced review first.'
+  }, {
+    id: 'practice',
+    label: 'Practice',
+    effect: 'Practice quizzes and mistake review first.'
+  }];
   const modeIdx = Math.max(0, modes.indexOf(prefs.default_tutor_mode || 'socratic'));
   const aggIdx = Math.max(0, aggs.indexOf(prefs.srs_aggression || 'balanced'));
+  const goalIdx = Math.max(0, goals.findIndex(g => g.id === (prefs.goal || 'exams')));
+  const activeGoal = goals[goalIdx] || goals[0];
   return React.createElement(React.Fragment, null, React.createElement(SetHeader, {
     eyebrow: "Learning style",
     title: "How should Noesis teach?",
@@ -17206,6 +18586,15 @@ const LearningTab = () => {
       gap: 'calc(18px * var(--app-density-scale))'
     }
   }, React.createElement(SetRow, {
+    label: "Study goal",
+    sub: `Affects dashboard recommendations and study-plan task mix. ${activeGoal.effect}`
+  }, React.createElement(Segmented, {
+    options: goals.map(g => g.label),
+    value: goalIdx,
+    onChange: i => update({
+      goal: goals[i].id
+    }, 'Saved - dashboard suggestions and future study plans will use this goal.')
+  })), React.createElement(SetRow, {
     label: "Tutor default mode",
     sub: "What the tutor does when you start a session."
   }, React.createElement(Segmented, {
@@ -17465,11 +18854,111 @@ const AccountTab = ({
   onLogout
 }) => {
   const Icon = window.Icon;
+  const [currentPassword, setCurrentPassword] = React.useState('');
+  const [newPassword, setNewPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [success, setSuccess] = React.useState('');
+  const [busy, setBusy] = React.useState(false);
+  const submitPassword = async e => {
+    e.preventDefault();
+    if (busy) return;
+    setError('');
+    setSuccess('');
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setError('Current, new, and confirmation passwords are required.');
+      return;
+    }
+    if (!window.NoesisPasswordPolicy.isValid(newPassword)) {
+      setError(window.NoesisPasswordPolicy.message);
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('New password and confirmation do not match.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await window.NoesisAPI.user.changePassword({
+        current_password: currentPassword,
+        new_password: newPassword
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setSuccess('Password updated successfully.');
+    } catch (e) {
+      const messages = {
+        invalid_current_password: 'Current password is incorrect.',
+        missing_fields: 'Current and new passwords are required.',
+        password_requirements_not_met: window.NoesisPasswordPolicy.message,
+        password_too_long: 'Password must be 256 characters or fewer.'
+      };
+      setError(messages[e.code] || e.message || 'Password update failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
   return React.createElement(React.Fragment, null, React.createElement(SetHeader, {
     eyebrow: "Account",
-    title: "Session access.",
-    sub: "Manage this browser session."
-  }), React.createElement("div", {
+    title: "Account security.",
+    sub: "Update your password and manage this browser session."
+  }), React.createElement("form", {
+    onSubmit: submitPassword,
+    style: set.passwordForm
+  }, React.createElement("div", {
+    style: set.smallHead
+  }, "Change password"), React.createElement("label", {
+    style: set.fieldLabel
+  }, "Current password", React.createElement("input", {
+    className: "input",
+    type: "password",
+    autoComplete: "current-password",
+    value: currentPassword,
+    disabled: busy,
+    onChange: e => setCurrentPassword(e.target.value)
+  })), React.createElement("label", {
+    style: set.fieldLabel
+  }, "New password", React.createElement("input", {
+    className: "input",
+    type: "password",
+    autoComplete: "new-password",
+    value: newPassword,
+    disabled: busy,
+    onChange: e => setNewPassword(e.target.value),
+    placeholder: "8+ characters, uppercase, and number"
+  })), React.createElement("label", {
+    style: set.fieldLabel
+  }, "Confirm new password", React.createElement("input", {
+    className: "input",
+    type: "password",
+    autoComplete: "new-password",
+    value: confirmPassword,
+    disabled: busy,
+    onChange: e => setConfirmPassword(e.target.value)
+  })), error && React.createElement("div", {
+    role: "alert",
+    style: {
+      color: 'var(--err)',
+      fontSize: 'calc(12px * var(--app-font-scale))'
+    }
+  }, error), success && React.createElement("div", {
+    role: "status",
+    style: {
+      color: 'var(--ok)',
+      fontSize: 'calc(12px * var(--app-font-scale))'
+    }
+  }, success), React.createElement("button", {
+    type: "submit",
+    className: "btn btn-primary",
+    disabled: busy,
+    style: {
+      alignSelf: 'flex-start',
+      opacity: busy ? 0.6 : 1
+    }
+  }, React.createElement(Icon.Lock, {
+    size: 13
+  }), " ", busy ? 'Updating...' : 'Update password')), React.createElement("div", {
     style: set.sessionBox
   }, React.createElement(Icon.Monitor, {
     size: 14,
@@ -17671,6 +19160,22 @@ const set = {
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
     marginBottom: 'calc(12px * var(--app-density-scale))'
+  },
+  passwordForm: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'calc(14px * var(--app-density-scale))',
+    maxWidth: 420,
+    paddingBottom: 'calc(28px * var(--app-density-scale))',
+    marginBottom: 'calc(28px * var(--app-density-scale))',
+    borderBottom: '1px solid var(--line-soft)'
+  },
+  fieldLabel: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'calc(6px * var(--app-density-scale))',
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    color: 'var(--fg-2)'
   },
   themeButton: {
     textAlign: 'left',

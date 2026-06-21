@@ -5,6 +5,8 @@ const Dashboard = ({ onNav }) => {
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
   const [data, setData] = React.useState(null);
   const [loadError, setLoadError] = React.useState('');
+  const [recBusy, setRecBusy] = React.useState(false);
+  const [recStatus, setRecStatus] = React.useState('');
   React.useEffect(() => {
     let alive = true;
     window.NoesisAPI.dashboard.get()
@@ -25,11 +27,60 @@ const Dashboard = ({ onNav }) => {
   const summary = (data && data.summary) || {};
   const recentActivity = (data && data.recent_activity) || [];
   const nextAction = data && data.next_recommended_action;
+  const goalProfile = data && data.goal_profile;
+  const dashboardCopy = data && data.dashboard_copy;
+  const goalRecommendations = (data && data.goal_recommendations) || [];
+  const primaryGoalRecommendation = goalRecommendations[0] || null;
   const game = data && data.gamification;
   const xp = game && game.xp ? game.xp : {};
   const dailyGoal = game && game.daily_goal ? game.daily_goal : null;
   const recentBadges = game && game.achievements ? (game.achievements.recent || []) : [];
   const leaderboardPreview = (data && data.leaderboard_preview) || [];
+
+  const handleRecommendation = async (rec) => {
+    if (!rec || recBusy) return;
+    const materialId = rec.material_id;
+    if (materialId) sessionStorage.setItem('noesis.materialId', String(materialId));
+    if (rec.action === 'start_tutor') {
+      if (materialId) sessionStorage.setItem('noesis.tutorMaterialId', String(materialId));
+      if (rec.topic || rec.title) sessionStorage.setItem('noesis.tutorConcept', rec.topic || rec.title);
+      onNav('tutor');
+      return;
+    }
+    if (rec.action === 'generate_quiz' && materialId) {
+      setRecBusy(true); setRecStatus('Generating the recommended quiz...');
+      try {
+        let r = await window.NoesisAPI.quizzes.generate({ material_id: materialId, count: 6, difficulty: 'medium' });
+        if (r && r.status === 'reindexing' && r.job_id) {
+          setRecStatus('Repairing the material index first...');
+          await window.NoesisAPI.pollJob(r.job_id, { intervalMs: 1200, onProgress: job => setRecStatus(`Repairing index... ${Math.max(0, Number(job.progress || 0))}%`) });
+          r = await window.NoesisAPI.quizzes.generate({ material_id: materialId, count: 6, difficulty: 'medium' });
+        }
+        if (!r || !r.quiz_id) throw new Error('quiz_not_created');
+        sessionStorage.setItem('noesis.quizId', String(r.quiz_id));
+        onNav('quiz');
+      } catch (e) {
+        setRecStatus(e && e.code === 'quiz_quality_failed' ? 'Could not create a grounded quiz yet. Try from the material page.' : 'Recommendation failed: ' + (e.message || 'error'));
+      } finally {
+        setRecBusy(false);
+      }
+      return;
+    }
+    if (rec.action === 'generate_flashcards' && materialId) {
+      setRecBusy(true); setRecStatus('Generating the recommended flashcards...');
+      try {
+        await window.NoesisAPI.flashcards.generate({ material_id: materialId, count: 8, regenerate: true });
+        onNav('flashcards');
+      } catch (e) {
+        setRecStatus('Recommendation failed: ' + (e.message || 'error'));
+      } finally {
+        setRecBusy(false);
+      }
+      return;
+    }
+    if (rec.route === 'material' && materialId) { onNav('material'); return; }
+    onNav(rec.route || 'study-plan');
+  };
 
   return (
     <div style={{ background: 'var(--bg-0)', minHeight: '100vh', position: 'relative' }}>
@@ -60,15 +111,19 @@ const Dashboard = ({ onNav }) => {
               {greeting}, {userName}
             </div>
             <h1 style={ds.heroTitle}>
-              {dueCount > 0 ? <>You have <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>{dueCount}</em> cards due — let's work through them.</> : <>A clean slate. Let's <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>start something</em>.</>}
+              {dashboardCopy && dashboardCopy.title
+                ? dashboardCopy.title
+                : (dueCount > 0 ? <>You have <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>{dueCount}</em> cards due — let's work through them.</> : <>A clean slate. Let's <em style={{ fontStyle: 'italic', color: 'var(--accent)' }}>start something</em>.</>)}
             </h1>
             <p style={ds.heroSub}>
-              You're at {totalWeek}h this week of {goalH}h goal. Pick up where you left, or start a new tutor session.
+              {dashboardCopy && dashboardCopy.subtitle
+                ? dashboardCopy.subtitle
+                : `You're at ${totalWeek}h this week of ${goalH}h goal. Pick up where you left, or start a new tutor session.`}
             </p>
 
             <div style={{ display: 'flex', gap: 'calc(10px * var(--app-density-scale))', marginTop: 'calc(24px * var(--app-density-scale))' }}>
-              <button className="btn btn-accent" onClick={() => onNav(nextAction && nextAction.route || 'tutor')}>
-                <Icon.Play size={12} /> {nextAction ? (nextAction.label || nextAction.title) : "Start today's session"}
+              <button className="btn btn-accent" disabled={recBusy} onClick={() => handleRecommendation(primaryGoalRecommendation || nextAction)}>
+                <Icon.Play size={12} /> {recBusy ? 'Working...' : (primaryGoalRecommendation ? (primaryGoalRecommendation.cta || primaryGoalRecommendation.title) : (nextAction ? (nextAction.label || nextAction.title) : "Start today's session"))}
               </button>
               <button className="btn btn-ghost" onClick={() => onNav('study-plan')}>
                 <Icon.Calendar size={13}/> Study plan
@@ -76,6 +131,11 @@ const Dashboard = ({ onNav }) => {
               <button className="btn btn-ghost" onClick={() => onNav('flashcards')}>
                 <Icon.Cards size={13}/> {dueCount} cards due
               </button>
+              {goalProfile && (
+                <span className="chip chip-accent" title={goalProfile.effect} style={{ alignSelf: 'center' }}>
+                  {goalProfile.short_label || goalProfile.label}
+                </span>
+              )}
             </div>
           </div>
 
@@ -84,6 +144,26 @@ const Dashboard = ({ onNav }) => {
             <FocusRing value={Math.min(100, Math.round((totalWeek / Math.max(0.001, goalH)) * 100))} />
           </div>
         </section>
+
+        {primaryGoalRecommendation && goalProfile && (
+          <section className="card reveal" style={ds.goalRecCard}>
+            <div style={{ display: 'flex', gap: 'calc(14px * var(--app-density-scale))', alignItems: 'flex-start', flex: 1 }}>
+              {(() => {
+                const C = Icon[goalProfile.icon] || Icon.Sparkle;
+                return <C size={18} style={{ color: 'var(--accent)', marginTop: 2 }}/>;
+              })()}
+              <div>
+                <div style={ds.goalRecEyebrow}>Because you chose {goalProfile.label}</div>
+                <div style={ds.goalRecTitle}>{primaryGoalRecommendation.title}</div>
+                <div style={ds.goalRecText}>{primaryGoalRecommendation.description || primaryGoalRecommendation.reason}</div>
+                {recStatus && <div style={ds.goalRecStatus}>{recStatus}</div>}
+              </div>
+            </div>
+            <button className="btn btn-accent" disabled={recBusy} onClick={() => handleRecommendation(primaryGoalRecommendation)}>
+              {recBusy ? 'Working...' : (primaryGoalRecommendation.cta || 'Start')} <Icon.ArrowRight size={12}/>
+            </button>
+          </section>
+        )}
 
         <section style={ds.metrics} className="reveal">
           {[
@@ -402,6 +482,18 @@ const ds = {
   eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(14px * var(--app-density-scale))' },
   heroTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(44px * var(--app-font-scale))', fontWeight: 300, letterSpacing: '-0.02em', lineHeight: 1.1, margin: '0 0 14px', maxWidth: 680 },
   heroSub: { fontSize: 'calc(14px * var(--app-font-scale))', color: 'var(--fg-2)', margin: 0, maxWidth: 560 },
+  goalRecCard: {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    gap: 'calc(18px * var(--app-density-scale))',
+    padding: 'calc(18px * var(--app-density-scale)) calc(20px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))',
+    borderColor: 'var(--accent-soft)',
+    background: 'linear-gradient(135deg, var(--accent-glow), var(--bg-1) 58%)',
+  },
+  goalRecEyebrow: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(4px * var(--app-density-scale))' },
+  goalRecTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(24px * var(--app-font-scale))', color: 'var(--fg-0)', lineHeight: 1.1 },
+  goalRecText: { fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-2)', marginTop: 'calc(6px * var(--app-density-scale))', maxWidth: 720 },
+  goalRecStatus: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(8px * var(--app-density-scale))' },
   link: { color: 'var(--accent)', cursor: 'pointer', borderBottom: '1px dotted var(--accent-soft)' },
   focusWrap: { padding: 'calc(10px * var(--app-density-scale))' },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'calc(14px * var(--app-density-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },

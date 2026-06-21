@@ -22,7 +22,8 @@ function main() {
     refs.push(value);
   }
   const localReferences = refs.map(value => {
-    const full = path.join(PROJECT, value);
+    const cleanValue = value.split(/[?#]/)[0];
+    const full = path.join(PROJECT, cleanValue);
     return { reference: value, file: rel(full), exists: fs.existsSync(full) };
   });
 

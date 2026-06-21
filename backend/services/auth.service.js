@@ -5,9 +5,18 @@ const { getDb } = require('../config/db');
 const { signToken } = require('../middleware/auth');
 const { HttpError } = require('../middleware/error');
 const gamification = require('./gamification.service');
+const { normalizeGoal } = require('./goal-profile.service');
 
 const TIMING_SAFE_BCRYPT_HASH = '$2a$12$C0sGEj9xD2l2i4uE8.n1uO4m8XsOQ0vlX61e/1kvT2uVdxV.NgUKG';
 const MAX_PASSWORD_LENGTH = 256;
+const PASSWORD_REQUIREMENTS_MESSAGE = 'Password must be at least 8 characters long and include at least one uppercase letter and one number.';
+
+function validatePasswordRequirements(password) {
+  const value = String(password);
+  if (value.length < 8 || !/[A-Z]/.test(value) || !/\d/.test(value)) {
+    throw new HttpError(400, 'password_requirements_not_met', PASSWORD_REQUIREMENTS_MESSAGE);
+  }
+}
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -19,14 +28,14 @@ const SEED_CONCEPTS = [
 
 async function signup({ email, password, name }) {
   if (!email || !password || !name) throw new HttpError(400, 'missing_fields');
-  if (password.length < 8) throw new HttpError(400, 'password_too_short');
-  if (password.length > MAX_PASSWORD_LENGTH) throw new HttpError(400, 'password_too_long');
+  if (String(password).length > MAX_PASSWORD_LENGTH) throw new HttpError(400, 'password_too_long');
+  validatePasswordRequirements(password);
   const lcEmail = String(email).toLowerCase().trim();
   if (lcEmail === 'system@noesis.local') throw new HttpError(400, 'reserved_email');
   const db = getDb();
   const existing = db.prepare('SELECT id FROM users WHERE email=?').get(lcEmail);
   if (existing) throw new HttpError(409, 'email_exists');
-  const hash = await bcrypt.hash(password, 12);
+  const hash = await bcrypt.hash(String(password), 12);
   const info = db.prepare(
     'INSERT INTO users (email, password_hash, name, created_at) VALUES (?,?,?,?)'
   ).run(lcEmail, hash, name, nowIso());
@@ -56,9 +65,9 @@ async function changePassword(userId, payload) {
   const current = payload.current_password ?? payload.currentPassword;
   const next = payload.new_password ?? payload.newPassword;
   if (!current || !next) throw new HttpError(400, 'missing_fields');
-  if (String(next).length < 8) throw new HttpError(400, 'password_too_short');
   if (String(next).length > MAX_PASSWORD_LENGTH) throw new HttpError(400, 'password_too_long');
   if (String(current).length > MAX_PASSWORD_LENGTH) throw new HttpError(400, 'password_too_long');
+  validatePasswordRequirements(next);
   const db = getDb();
   const u = db.prepare('SELECT id, password_hash FROM users WHERE id=?').get(userId);
   const ok = await bcrypt.compare(String(current), u ? u.password_hash : TIMING_SAFE_BCRYPT_HASH);
@@ -92,6 +101,7 @@ function saveOnboarding(userId, payload) {
     confidence,
   } = payload || {};
   const db = getDb();
+  const normalizedGoal = normalizeGoal(goal);
   const profile = {
     currentLevel: current_level || payload.currentLevel || 'beginner',
     deadline: deadline || '',
@@ -101,10 +111,10 @@ function saveOnboarding(userId, payload) {
     weakTopics: Array.isArray(weak_topics || payload.weakTopics) ? (weak_topics || payload.weakTopics).slice(0, 12) : [],
     preferredLanguage: preferred_language || payload.preferredLanguage || 'java',
     confidence: confidence || payload.confidence || 'medium',
-    goal: goal || 'understand',
+    goal: normalizedGoal,
   };
   db.prepare(`UPDATE user_prefs SET subject=?, goal=?, daily_minutes=?, study_profile_json=? WHERE user_id=?`)
-    .run(subject || null, goal || null, parseInt(daily_minutes || profile.minutesPerSession || 45, 10), JSON.stringify(profile), userId);
+    .run(subject || null, normalizedGoal, parseInt(daily_minutes || profile.minutesPerSession || 45, 10), JSON.stringify(profile), userId);
   if (Array.isArray(courses)) {
     const ins = db.prepare('INSERT INTO courses (user_id, code, title, professor) VALUES (?,?,?,?)');
     const tx = db.transaction((items) => {
@@ -137,7 +147,7 @@ function updatePrefs(userId, patch) {
   const cur = getPrefs(userId) || {};
   const next = {
     subject: patch.subject ?? cur.subject,
-    goal: patch.goal ?? cur.goal,
+    goal: patch.goal == null ? (cur.goal || 'exams') : normalizeGoal(patch.goal),
     daily_minutes: patch.daily_minutes ?? cur.daily_minutes ?? 45,
     theme: patch.theme ?? cur.theme ?? 'dark',
     default_tutor_mode: patch.default_tutor_mode ?? cur.default_tutor_mode ?? 'socratic',

@@ -432,12 +432,18 @@ const Tutor = ({ onNav }) => {
     let alive = true;
     const storedConcept = sessionStorage.getItem('noesis.tutorConcept') || '';
     const storedMatId = parseInt(sessionStorage.getItem('noesis.tutorMaterialId') || '0', 10) || null;
+    const autoStart = sessionStorage.getItem('noesis.tutorAutoStart') || '';
     setConceptInput(isGenericLabel(storedConcept) ? '' : storedConcept);
     window.NoesisAPI.materials.list()
       .then(d => {
         if (!alive) return;
         const ready = (d.materials || []).filter(m => m.status === 'ready');
         setMaterials(ready);
+        if (autoStart === 'core') {
+          sessionStorage.removeItem('noesis.tutorAutoStart');
+          startSession({ materialId: null, concept: storedConcept || 'Object-Oriented Programming basics' });
+          return;
+        }
         const stored = ready.find(m => m.id === storedMatId);
         const first = stored || ready[0];
         if (first) {

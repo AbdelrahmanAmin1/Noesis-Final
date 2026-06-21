@@ -177,7 +177,7 @@ async function main() {
 
     await step('auth', 'Signup, invalid login, valid login, and onboarding', async () => {
       const email = `smoke-${Date.now()}@example.com`;
-      const password = 'password123';
+      const password = 'Password123';
       const signup = await fetchJson(server.base, 'POST', '/api/auth/signup', { body: { email, password, name: 'Smoke User' } });
       if (!signup.ok || !signup.data.token) throw new Error(`signup_failed_${signup.status}`);
       const invalid = await fetchJson(server.base, 'POST', '/api/auth/signin', { body: { email, password: 'wrong-password' } });
@@ -295,7 +295,7 @@ async function main() {
     }, { requires: () => !!state.materialId, environmentDependent: true });
 
     await step('ownership-export-delete', 'Cross-user ownership, export, and delete', async () => {
-      const other = await fetchJson(server.base, 'POST', '/api/auth/signup', { body: { email: `other-${Date.now()}@example.com`, password: 'password123', name: 'Other User' } });
+      const other = await fetchJson(server.base, 'POST', '/api/auth/signup', { body: { email: `other-${Date.now()}@example.com`, password: 'Password123', name: 'Other User' } });
       if (!other.ok) throw new Error(`other_signup_failed_${other.status}`);
       const denied = await fetchJson(server.base, 'GET', `/api/materials/${state.materialId}`, { token: other.data.token });
       if (denied.status !== 404) throw new Error(`ownership_expected_404_got_${denied.status}`);

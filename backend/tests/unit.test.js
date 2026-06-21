@@ -171,13 +171,13 @@ test('auth requireAuth rejects missing tokens', () => {
 
 test('auth service rejects reserved system email', async () => {
   await assert.rejects(
-    () => authSvc.signup({ email: 'system@noesis.local', password: 'password123', name: 'System' }),
+    () => authSvc.signup({ email: 'system@noesis.local', password: 'Password123', name: 'System' }),
     err => err.status === 400 && err.message === 'reserved_email',
   );
 });
 
 test('auth service creates users, prefs, and seeded concepts', async () => {
-  const result = await authSvc.signup({ email: 'unit@example.com', password: 'password123', name: 'Unit User' });
+  const result = await authSvc.signup({ email: 'unit@example.com', password: 'Password123', name: 'Unit User' });
   assert.ok(result.token);
   const db = getDb();
   const prefs = db.prepare('SELECT * FROM user_prefs WHERE user_id=?').get(result.user.id);
@@ -188,7 +188,7 @@ test('auth service creates users, prefs, and seeded concepts', async () => {
 
 test('auth service rejects duplicate emails', async () => {
   await assert.rejects(
-    () => authSvc.signup({ email: 'unit@example.com', password: 'password123', name: 'Again' }),
+    () => authSvc.signup({ email: 'unit@example.com', password: 'Password123', name: 'Again' }),
     err => err.status === 409 && err.message === 'email_exists',
   );
 });
@@ -201,7 +201,7 @@ test('auth service rejects invalid credentials', async () => {
 });
 
 test('auth service updates preferences and exports user-scoped data', async () => {
-  const signed = await authSvc.signin({ email: 'unit@example.com', password: 'password123' });
+  const signed = await authSvc.signin({ email: 'unit@example.com', password: 'Password123' });
   const prefs = authSvc.updatePrefs(signed.user.id, { subject: 'Data Structures', daily_minutes: 30 });
   assert.equal(prefs.subject, 'Data Structures');
   const exported = authSvc.exportData(signed.user.id);

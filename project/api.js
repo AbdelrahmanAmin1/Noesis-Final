@@ -2,6 +2,12 @@
 // Auto-redirects to auth on 401 via window event 'noesis:logout'.
 
 (function () {
+  const PASSWORD_REQUIREMENTS_MESSAGE = 'Password must be at least 8 characters long and include at least one uppercase letter and one number.';
+  window.NoesisPasswordPolicy = {
+    message: PASSWORD_REQUIREMENTS_MESSAGE,
+    isValid: (password) => String(password).length >= 8 && /[A-Z]/.test(String(password)) && /\d/.test(String(password)),
+  };
+
   const BASE = (window.NOESIS_API_BASE || 'http://localhost:3001') + '/api';
   const TOKEN_KEY = 'noesis.token';
 
@@ -72,7 +78,7 @@
       getPrefs: () => req('GET', '/user/prefs'),
       updatePrefs: (b) => req('PUT', '/user/prefs', b),
       updateProfile: (b) => req('PUT', '/user/profile', b),
-      changePassword: (b) => req('PUT', '/user/password', b),
+      changePassword: (b) => req('PUT', '/user/password', b, { noLogout: true }),
     },
 
     profile: {
@@ -193,6 +199,7 @@
 
     study: {
       learningMap: (materialId) => req('GET', '/study/learning-map' + (materialId ? '?material_id=' + encodeURIComponent(materialId) : '')),
+      regenerateLearningMap: (materialId) => req('POST', '/study/learning-map/regenerate', { material_id: materialId }),
       createPlan: (b) => req('POST', '/study/plans', b || {}),
       activePlan: () => req('GET', '/study/plans/active'),
       getPlan: (id) => req('GET', '/study/plans/' + id),

@@ -123,7 +123,7 @@ test.after(() => {
 
 test('live backend API workflow with isolated storage and live Ollama', async (t) => {
   const email = `integration-${Date.now()}@example.com`;
-  const password = 'password123';
+  const password = 'Password123';
   let token;
   let materialId;
   let chapterId;

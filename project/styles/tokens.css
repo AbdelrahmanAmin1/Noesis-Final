@@ -48,6 +48,63 @@
   --s-16: calc(64px * var(--app-density-scale));
 }
 
+/* Material workspace: headline and tools on the left, dynamic map on the right. */
+.material-detail-layout {
+  grid-template-columns: minmax(360px, 0.72fr) minmax(560px, 1.28fr);
+  grid-template-areas: 'reader map';
+}
+
+.material-detail-reader { grid-area: reader; }
+.material-detail-map-rail {
+  grid-area: map;
+  position: sticky;
+  top: 57px;
+  align-self: start;
+  max-height: calc(100vh - 57px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.material-map-node:hover {
+  transform: translateY(-3px) scale(1.018);
+  filter: brightness(1.08);
+}
+
+.material-map-edge {
+  stroke-dasharray: 7 5;
+  animation: materialMapFlow 18s linear infinite;
+}
+
+@keyframes materialMapFlow {
+  to { stroke-dashoffset: -120; }
+}
+
+[data-motion='off'] .material-map-edge { animation: none; }
+[data-motion='off'] .material-map-node { transition: none !important; }
+
+@media (max-width: 1550px) {
+  .material-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'reader'
+      'map';
+  }
+  .material-detail-map-rail {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    border-top: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 900px) {
+  .material-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'reader' 'map';
+  }
+  .material-detail-map-rail { border-left: 0 !important; }
+}
+
 /* Cosmic — default, matches brand logo */
 [data-theme='dark'] {
   --bg-0: #08081a;

@@ -3,6 +3,7 @@
 const { getDb } = require('../config/db');
 const learningMaps = require('./learning-map.service');
 const gamification = require('./gamification.service');
+const { getGoalProfile, normalizeGoal, publicGoalProfile } = require('./goal-profile.service');
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -12,6 +13,33 @@ function parseJson(text, fallback = {}) {
 
 function task(type, title, minutes, successCriteria) {
   return { type, title, estimatedMinutes: minutes, successCriteria };
+}
+
+function goalTask(type, topic, minutes, goalId) {
+  if (type === 'quiz') {
+    const title = goalId === 'practice' ? `${topic} practice set` : `${topic} checkpoint`;
+    const criteria = goalId === 'practice'
+      ? `Attempt a short practice set and write down one mistake pattern for ${topic}.`
+      : `Score at least 80% or mark ${topic} weak.`;
+    return task('quiz', title, minutes, criteria);
+  }
+  if (type === 'flashcards') {
+    const title = goalId === 'retain' ? `${topic} spaced recall` : `${topic} recall cards`;
+    return task('flashcards', title, minutes, 'Review due cards and rate honestly.');
+  }
+  if (type === 'tutor_session') {
+    const title = goalId === 'understand' ? `${topic} deep dive` : `${topic} Socratic check`;
+    return task('tutor_session', title, minutes, 'Answer one tutor question without notes.');
+  }
+  return task('read_notes', `${topic} polished notes`, minutes, `Write one sentence summarizing ${topic}.`);
+}
+
+function goalSuccessCriteria(goalId, topic) {
+  if (goalId === 'exams') return `Finish the ${topic} checkpoint and name one exam-risk weak spot.`;
+  if (goalId === 'understand') return `Explain ${topic} in your own words and answer one follow-up question.`;
+  if (goalId === 'retain') return `Recall ${topic} without notes, then review any shaky cards.`;
+  if (goalId === 'practice') return `Attempt ${topic} practice and record one mistake to fix next time.`;
+  return `Finish the ${topic} tasks and identify one weak spot.`;
 }
 
 function recentReadyMaterials(db, userId) {
@@ -68,10 +96,9 @@ function buildPlan(userId, opts = {}) {
   const db = getDb();
   const prefs = db.prepare('SELECT * FROM user_prefs WHERE user_id=?').get(userId) || {};
   const profile = parseJson(prefs.study_profile_json, {});
-  const materials = opts.materialId ? [] : recentReadyMaterials(db, userId);
-  const map = opts.materialId || !materials.length
-    ? learningMaps.buildLearningMap(userId, { materialId: opts.materialId })
-    : buildCombinedMap(userId, materials);
+  const goalProfile = getGoalProfile(profile.goal || prefs.goal);
+  const goalId = normalizeGoal(goalProfile.id);
+  const map = learningMaps.buildLearningMap(userId);
   const daysPerWeek = Math.max(1, Math.min(7, Number(profile.daysPerWeek || profile.days_per_week || 5)));
   const minutes = Math.max(20, Math.min(180, Number(profile.minutesPerSession || prefs.daily_minutes || 45)));
   const deadline = profile.deadline || '';
@@ -82,31 +109,38 @@ function buildPlan(userId, opts = {}) {
   const dailyPlan = [];
   for (let day = 1; day <= Math.min(durationDays, 14); day++) {
     const topic = path[(day - 1) % path.length] || map.startHere || 'Core topic';
-    const isQuizDay = day % 2 === 0;
-    const isReviewDay = day % 3 === 0;
+    const planBias = goalProfile.plan || {};
+    const primaryType = planBias.primaryType || 'tutor_session';
+    const secondaryType = planBias.secondaryType || 'quiz';
+    const secondaryEvery = Math.max(2, Number(planBias.secondaryEvery || 3));
     const tasks = [
-      task('watch_video', `${topic} visual explanation`, Math.min(18, Math.floor(minutes * 0.4)), `Explain the visual model for ${topic}.`),
-      task('read_notes', `${topic} polished notes`, Math.min(15, Math.floor(minutes * 0.3)), `Write one sentence summarizing ${topic}.`),
+      task('watch_video', `${topic} visual explanation`, Math.max(8, Math.min(18, Math.floor(minutes * 0.35))), `Explain the visual model for ${topic}.`),
+      task('read_notes', `${topic} polished notes`, Math.max(7, Math.min(15, Math.floor(minutes * 0.25))), `Write one sentence summarizing ${topic}.`),
     ];
-    if (isQuizDay) tasks.push(task('quiz', `${topic} checkpoint`, Math.min(12, Math.floor(minutes * 0.25)), `Score at least 80% or mark ${topic} weak.`));
-    if (isReviewDay) tasks.push(task('flashcards', `${topic} recall cards`, 8, 'Review due cards and rate honestly.'));
-    if (!isQuizDay && !isReviewDay) tasks.push(task('tutor_session', `${topic} Socratic check`, 10, 'Answer one tutor question without notes.'));
+    tasks.push(goalTask(primaryType, topic, Math.max(8, Math.min(14, Math.floor(minutes * 0.25))), goalId));
+    if (day % secondaryEvery === 0 || (minutes >= 60 && day % 2 === 0)) {
+      tasks.push(goalTask(secondaryType, topic, Math.max(6, Math.min(10, Math.floor(minutes * 0.15))), goalId));
+    }
     dailyPlan.push({
       day,
       focusTopic: topic,
       estimatedMinutes: Math.min(minutes, tasks.reduce((s, t) => s + t.estimatedMinutes, 0)),
       tasks,
-      successCriteria: `Finish the ${topic} tasks and identify one weak spot.`,
+      successCriteria: goalSuccessCriteria(goalId, topic),
     });
   }
   return {
     planTitle: `${durationDays <= 14 ? '2-Week' : `${durationDays}-Day`} ${map.rootTopic || 'Study'} Plan`,
-    goal: profile.goal || prefs.goal || 'deep understanding',
+    goal: goalProfile.label,
+    goalId,
+    goalProfile: publicGoalProfile(goalId),
+    trackId: map.track || (map.materialGrounding && map.materialGrounding.track) || 'both',
+    trackLabel: map.trackLabel || map.rootTopic || 'OOP + Data Structures',
     durationDays,
     daysPerWeek,
     minutesPerSession: minutes,
     learningStyle: profile.learningStyle || 'mixed',
-    preferredLanguage: profile.preferredLanguage || (map.materialGrounding && map.materialGrounding.domain && map.materialGrounding.domain.domain !== 'cs' ? 'general' : 'java'),
+    preferredLanguage: profile.preferredLanguage || 'java',
     weakTopics: map.nodes.filter(n => n.type === 'weak').map(n => n.label).slice(0, 6),
     dailyPlan,
     learningMap: map,

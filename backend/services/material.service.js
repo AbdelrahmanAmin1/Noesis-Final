@@ -20,6 +20,8 @@ const topicResolver = require('./topic-resolver.service');
 const gamification = require('./gamification.service');
 const sourceVisualCandidates = require('./source-visual-candidates.service');
 const materialTopicMap = require('./material-topic-map.service');
+const materialLearningMaps = require('./material-learning-map.service');
+const sourceTextQuality = require('./source-text-quality.service');
 
 const EXTRACTION_PIPELINE_VERSION = 2;
 
@@ -40,7 +42,7 @@ function fileTypeFromExt(ext) {
 
 function listForUser(userId) {
   const db = getDb();
-  const rows = db.prepare(`SELECT id, title, type, status, progress, created_at, ocr_status, ocr_provider,
+  const rows = db.prepare(`SELECT id, title, type, status, progress, created_at, ocr_status, ocr_provider, topic_map_json,
                      (SELECT COUNT(*) FROM chapters c WHERE c.material_id = m.id) AS chapters
                      FROM materials m WHERE user_id=? ORDER BY created_at DESC`).all(userId);
   return rows.map(row => ({ ...row, display_title: displayTitleForMaterial(db, row) }));
@@ -70,15 +72,88 @@ function isGenericMaterialTitle(title) {
   return topicResolver.isGenericTopic(title) || /^\d+$/.test(String(title || '').trim());
 }
 
+function parseJson(value, fallback = {}) {
+  try { return value ? JSON.parse(value) : fallback; } catch (_) { return fallback; }
+}
+
+function splitCompactTitle(value) {
+  const text = String(value || '')
+    .replace(/\.[a-z0-9]{2,5}$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/^\s*(?:\d+\s*){1,3}/, '')
+    .replace(/\b(?:unit|chapter|lecture|lec|slide|deck|pdf|pptx?|docx?)\b/gi, ' ')
+    .replace(/\b(?:cs|ds)\s*\d{2,4}\b/gi, ' ')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (/^(?:[A-Z]{1,4}|\d+)(?:\s+(?:[A-Z]{1,4}|\d+))*$/i.test(text)) return '';
+  return text;
+}
+
+function isCodeLikeTitle(value) {
+  const text = String(value || '').trim();
+  if (!text) return true;
+  if (/[_-]|\d/.test(text) && !/\s/.test(text)) return true;
+  if (/^(?:[A-Z]{2,6}|\d+)(?:[-_\s]+(?:[A-Z]{2,6}|\d+))*$/.test(text)) return true;
+  return false;
+}
+
+function cleanHeadlineCandidate(value) {
+  const text = sourceTextQuality.cleanVisible(value)
+    .replace(/^\d+\.\s*/, '')
+    .replace(/^\d{1,3}\s+(?=[A-Za-z])/, '')
+    .replace(/^(?:[A-Z]{2,6}\s*)?(?:design|handout|lecture|chapter|unit|module)\s*#?\d+\s*(?:--|-|:)\s*/i, '')
+    .replace(/\b(?:lecture|slides?|chapter|unit|module|handout)\b\s*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!text || text.length < 3 || text.length > 90) return '';
+  if (sourceTextQuality.isWeakHeading(text) || sourceTextQuality.isDocumentMetadata(text) || sourceTextQuality.isIncompleteLabel(text)) return '';
+  if (/^(?:source excerpt|document|page|slide|lecture|chapter|unit|module|contents?)\b/i.test(text)) return '';
+  if (text.split(/\s+/).length > 10) return '';
+  if (/[.!?]$/.test(text) && text.split(/\s+/).length > 5) return '';
+  return text;
+}
+
+function addTitleCandidate(out, seen, value) {
+  const cleaned = cleanHeadlineCandidate(value);
+  const key = sourceTextQuality.normalize(cleaned);
+  if (!cleaned || !key || seen.has(key)) return;
+  seen.add(key);
+  out.push(cleaned);
+}
+
+function topicMapTitleCandidates(material) {
+  const parsed = parseJson(material && material.topic_map_json, {});
+  const out = [];
+  const addSplit = value => String(value || '').split(/\s+\/\s+|\s+[>›]\s+|\s+—\s+/).forEach(part => out.push(part));
+  addSplit(parsed.title);
+  out.push(parsed.sourceOutline && parsed.sourceOutline.mainTopic);
+  for (const topic of (parsed.topics || [])) out.push(topic && topic.name);
+  for (const topic of (parsed.sourceOutline && parsed.sourceOutline.majorTopics || [])) out.push(topic && topic.topic);
+  return out;
+}
+
 function displayTitleForMaterial(db, material) {
   const title = String(material && material.title || '').replace(/\s+/g, ' ').trim();
-  if (!isGenericMaterialTitle(title)) return title || `Material #${material.id}`;
+  const candidates = [];
+  const seen = new Set();
+  const topicMapJson = material && material.topic_map_json != null
+    ? material.topic_map_json
+    : (material && material.id ? (db.prepare('SELECT topic_map_json FROM materials WHERE id=?').get(material.id) || {}).topic_map_json : null);
+  const withTopicMap = { ...(material || {}), topic_map_json: topicMapJson };
+  if (!isGenericMaterialTitle(title) && !isCodeLikeTitle(title)) addTitleCandidate(candidates, seen, title);
+  if (isCodeLikeTitle(title)) addTitleCandidate(candidates, seen, splitCompactTitle(title));
+  for (const candidate of topicMapTitleCandidates(withTopicMap)) addTitleCandidate(candidates, seen, candidate);
   const chunks = db.prepare(`SELECT id, idx, text, chapter_title, heading, slide_title, section_title
                              FROM chunks WHERE material_id=? ORDER BY idx LIMIT 8`).all(material.id);
+  for (const c of chunks) addTitleCandidate(candidates, seen, c.heading || c.slide_title || c.section_title || c.chapter_title);
   const ranked = topicResolver.rankTopicsFromChunks(chunks);
-  const sourceTitle = chunks.map(c => c.chapter_title || c.heading || c.slide_title || c.section_title).find(Boolean);
+  addTitleCandidate(candidates, seen, ranked && ranked.topic);
+  if (!candidates.length && title) addTitleCandidate(candidates, seen, splitCompactTitle(title) || title);
+  if (candidates.length) return candidates[0];
+  const sourceTitle = chunks.map(c => cleanHeadlineCandidate(c.heading || c.slide_title || c.section_title || c.chapter_title)).find(Boolean);
   const topic = ranked && ranked.topic;
-  if (sourceTitle && topic) return `${sourceTitle} — ${topic}`;
   if (topic) return topic;
   if (sourceTitle) return sourceTitle;
   return `Material #${material.id}`;
@@ -323,8 +398,9 @@ async function processMaterial(materialId, jobId, opts = {}) {
       sourceVisualCandidates: visualCandidates.length,
       extractionPipelineVersion: EXTRACTION_PIPELINE_VERSION,
     });
+    let refreshedTopicMap = null;
     try {
-      materialTopicMap.refresh(m.user_id, materialId, { hint: m.title, limit: 120 });
+      refreshedTopicMap = materialTopicMap.refresh(m.user_id, materialId, { hint: m.title, limit: 120 });
     } catch (e) {
       log.warn('material_topic_map_failed', e.message || e);
     }
@@ -340,6 +416,17 @@ async function processMaterial(materialId, jobId, opts = {}) {
       if (concepts.length) log.info(`material concepts ${materialId}: ${concepts.join(', ')}`);
     } catch (e) {
       log.warn('concept_extract_failed', e.message || e);
+    }
+
+    if (jobId) jobs.update(jobId, { progress: 90, stage: 'Building material mind map...' });
+    try {
+      await materialLearningMaps.generateAndPersist(m.user_id, materialId, {
+        topicMap: refreshedTopicMap,
+        timeoutMs: materialLearningMaps.AI_TIMEOUT_MS,
+      });
+    } catch (e) {
+      log.warn('material_learning_map_failed', e.message || e);
+      materialLearningMaps.getOrBuild(m.user_id, materialId, { topicMap: refreshedTopicMap, force: true, persist: true });
     }
 
     setStatus('ready', 100);

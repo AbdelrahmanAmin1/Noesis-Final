@@ -18,9 +18,9 @@ const Materials = ({ onNav }) => {
 
   const colorFor = (type) => ({ pdf: 'var(--accent)', slides: 'var(--info)', video: 'var(--ok)', note: 'var(--warn)' }[type] || 'var(--accent)');
   const materials = items.map(m => ({
-    id: m.id, t: m.title, type: m.type || 'pdf',
+    id: m.id, t: m.display_title || m.title, rawTitle: m.title, type: m.type || 'pdf',
     course: m.status === 'ready' ? 'Library' : (m.status || ''),
-    chapters: m.chapters || 0, progress: m.progress || 0,
+    progress: m.progress || 0,
     updated: m.created_at ? new Date(m.created_at).toLocaleDateString() : '',
     color: colorFor(m.type),
   }));
@@ -64,7 +64,7 @@ const Materials = ({ onNav }) => {
           <input ref={fileRef} type="file" accept=".pdf,.docx,.doc,.txt,.md,.pptx" style={{ display: 'none' }}
                  onChange={(e) => onUpload(e.target.files && e.target.files[0])}/>
           <button className="btn btn-accent" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}>
-            <Icon.Upload size={12}/> {busy ? 'Uploading…' : 'Upload'}
+            <Icon.Upload size={12}/> {busy ? 'Uploading...' : 'Upload'}
           </button>
         </>}
       />
@@ -98,7 +98,7 @@ const Materials = ({ onNav }) => {
               <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-2)', marginTop: 'calc(2px * var(--app-density-scale))' }}>Noesis extracts documents and PowerPoint slides for notes, flashcards, quizzes, and tutoring. Save legacy PPT decks as PPTX first.</div>
             </div>
           </div>
-          <button className="btn btn-ghost" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}>{busy ? 'Working…' : 'Choose file'}</button>
+          <button className="btn btn-ghost" onClick={() => fileRef.current && fileRef.current.click()} disabled={busy}>{busy ? 'Working...' : 'Choose file'}</button>
         </div>
 
         <div style={view === 'grid' ? ms.grid : ms.list}>
@@ -116,8 +116,8 @@ const Materials = ({ onNav }) => {
                   {view === 'list' && <Ti size={18} style={{ color: m.color }}/>}
                   <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
                     <div style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(16px * var(--app-font-scale))', color: 'var(--fg-0)', marginBottom: 'calc(4px * var(--app-density-scale))', fontWeight: 400, letterSpacing: '-0.005em' }}>{m.t}</div>
-                    <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', display: 'flex', gap: 'calc(10px * var(--app-density-scale))' }}>
-                      <span>{m.course}</span><span>·</span><span>{m.chapters} ch</span><span>·</span><span>{m.updated}</span>
+                    <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', display: 'flex', gap: 'calc(10px * var(--app-density-scale))', flexWrap: 'wrap' }}>
+                      <span>{m.course}</span><span>|</span><span>{m.progress >= 100 ? 'Indexed' : `${m.progress}% indexed`}</span><span>|</span><span>{m.updated}</span>
                     </div>
                   </div>
                   {view === 'list' && (
@@ -135,8 +135,8 @@ const Materials = ({ onNav }) => {
                       <div style={{ height: '100%', width: m.progress + '%', background: m.color, borderRadius: 2 }}/>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'calc(6px * var(--app-density-scale))', fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)' }} className="mono">
-                      <span>{m.progress}% mastered</span>
-                      <span>{Math.round(m.chapters * m.progress / 100)}/{m.chapters}</span>
+                      <span>{m.progress >= 100 ? 'Ready' : `${m.progress}% indexed`}</span>
+                      <span>{m.type.toUpperCase()}</span>
                     </div>
                   </div>
                 )}
@@ -166,30 +166,73 @@ const ms = {
   rowCard: { padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))' },
 };
 
+function normalizeGoalClient(goal) {
+  const raw = String(goal || '').toLowerCase();
+  if (['exams', 'understand', 'retain', 'practice'].includes(raw)) return raw;
+  if (/understand|deep|concept/.test(raw)) return 'understand';
+  if (/retain|spaced|recall|remember/.test(raw)) return 'retain';
+  if (/practice|problem|drill/.test(raw)) return 'practice';
+  return 'exams';
+}
+
+function materialGoalRecommendation(goal, material, focusLabel) {
+  const goalId = normalizeGoalClient(goal);
+  const title = material && material.title ? material.title : 'this material';
+  const focus = focusLabel || title;
+  const shared = {
+    exams: {
+      goalLabel: 'Ace my exams',
+      icon: 'Target',
+      title: 'Generate an exam-style quiz',
+      description: `Turn ${focus} into a checkpoint so you can see what is ready and what is weak.`,
+      cta: 'Generate quiz',
+      action: 'generate_quiz',
+    },
+    understand: {
+      goalLabel: 'Understand deeply',
+      icon: 'Brain',
+      title: 'Study this with the tutor',
+      description: `Use ${focus} for a guided explanation, examples, and follow-up questions.`,
+      cta: 'Study with tutor',
+      action: 'start_tutor',
+    },
+    retain: {
+      goalLabel: 'Retain long-term',
+      icon: 'Bookmark',
+      title: 'Generate flashcards',
+      description: `Turn ${focus} into recall cards so spaced repetition has something useful to schedule.`,
+      cta: 'Generate flashcards',
+      action: 'generate_flashcards',
+    },
+    practice: {
+      goalLabel: 'Practice problems',
+      icon: 'Bolt',
+      title: 'Generate a practice quiz',
+      description: `Use ${focus} to expose mistakes quickly, then review them while they are fresh.`,
+      cta: 'Generate practice quiz',
+      action: 'generate_quiz',
+    },
+  };
+  return shared[goalId] || shared.exams;
+}
+
 // Material Detail
 const MaterialDetail = ({ onNav }) => {
   const Icon = window.Icon;
-  const [active, setActive] = React.useState(0);
   const [material, setMaterial] = React.useState(null);
-  const [chunks, setChunks] = React.useState([]);
-  const [chapters, setChapters] = React.useState([]);
-  const [chapterIds, setChapterIds] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const [genStatus, setGenStatus] = React.useState('');
   const [activeAction, setActiveAction] = React.useState('');
   const [video, setVideo] = React.useState(null);
   const [learningMap, setLearningMap] = React.useState(null);
-  const [sourceScope, setSourceScope] = React.useState('material');
+  const [mapStatus, setMapStatus] = React.useState('ready');
+  const [prefs, setPrefs] = React.useState(null);
+  const mapPollingRef = React.useRef('');
   const id = parseInt(sessionStorage.getItem('noesis.materialId') || '0', 10);
 
   React.useEffect(() => {
     if (!id) { onNav && onNav('materials'); return; }
-    window.NoesisAPI.materials.get(id).then(m => {
-      setMaterial(m);
-      const titles = (m.chapters || []).map(c => c.title);
-      setChapters(titles);
-      setChapterIds((m.chapters || []).map(c => c.id));
-    }).catch(() => {});
+    window.NoesisAPI.materials.get(id).then(m => setMaterial(m)).catch(() => {});
   }, [id]);
 
   React.useEffect(() => {
@@ -211,29 +254,43 @@ const MaterialDetail = ({ onNav }) => {
     return () => { active = false; };
   }, [video]);
 
-  React.useEffect(() => {
-    if (!id) return;
-    const chId = chapterIds[active];
-    window.NoesisAPI.materials.chunks(id, chId).then(d => setChunks(d.chunks || [])).catch(() => setChunks([]));
-  }, [id, active, chapterIds]);
-
-  React.useEffect(() => {
-    if (!id) return;
-    window.NoesisAPI.study.learningMap(id)
-      .then(d => setLearningMap(d.learning_map || null))
-      .catch(() => setLearningMap(null));
+  const loadLearningMap = React.useCallback(async (watchJob = true) => {
+    if (!id) return null;
+    try {
+      const data = await window.NoesisAPI.study.learningMap(id);
+      setLearningMap(data.learning_map || null);
+      setMapStatus(data.generation_status || 'ready');
+      const jobId = watchJob && data.generation_job_id;
+      if (jobId && mapPollingRef.current !== jobId) {
+        mapPollingRef.current = jobId;
+        window.NoesisAPI.pollJob(jobId, {
+          intervalMs: 1200,
+          onProgress: () => setMapStatus('refining'),
+        }).then(() => {
+          mapPollingRef.current = '';
+          return loadLearningMap(false);
+        }).catch(() => {
+          mapPollingRef.current = '';
+          setMapStatus('ready');
+        });
+      }
+      return data.learning_map || null;
+    } catch (_) {
+      setLearningMap(null);
+      setMapStatus('ready');
+      return null;
+    }
   }, [id]);
 
-  const currentScopePayload = React.useCallback(() => {
-    const payload = { sourceScope };
-    if (sourceScope === 'chapter' && chapterIds[active]) payload.chapter_id = chapterIds[active];
-    if (sourceScope === 'chunk' && chunks[0] && chunks[0].id) payload.chunk_id = chunks[0].id;
-    return payload;
-  }, [sourceScope, chapterIds, active, chunks]);
+  React.useEffect(() => { loadLearningMap(true); }, [loadLearningMap]);
 
-  const sourceScopeLabel = sourceScope === 'chapter'
-    ? 'Current chapter'
-    : (sourceScope === 'chunk' ? 'Current section' : 'Entire material');
+  React.useEffect(() => {
+    window.NoesisAPI.user.getPrefs().then(p => setPrefs(p || {})).catch(() => setPrefs({}));
+  }, []);
+
+  const currentScopePayload = React.useCallback(() => ({ sourceScope: 'material' }), []);
+
+  const sourceScopeLabel = 'Entire lecture';
 
   const generate = async (kind, options = {}) => {
     if (!id || busy) return false;
@@ -242,12 +299,13 @@ const MaterialDetail = ({ onNav }) => {
     setBusy(true); setGenStatus(`Generating ${labels[kind] || kind} from ${sourceScopeLabel.toLowerCase()}...`);
     try {
       const scopePayload = currentScopePayload();
-      if (kind === 'notes') await window.NoesisAPI.notes.generate({ material_id: id, ...scopePayload });
+      const topicPayload = options.topic ? { topic: options.topic } : {};
+      if (kind === 'notes') await window.NoesisAPI.notes.generate({ material_id: id, ...scopePayload, ...topicPayload });
       let flashcardResult = null;
       let quizResult = null;
-      if (kind === 'flashcards') flashcardResult = await window.NoesisAPI.flashcards.generate({ material_id: id, count: 8, regenerate: !!options.regenerate, ...scopePayload });
+      if (kind === 'flashcards') flashcardResult = await window.NoesisAPI.flashcards.generate({ material_id: id, count: 8, regenerate: !!options.regenerate, ...scopePayload, ...topicPayload });
       if (kind === 'quiz') {
-        const quizPayload = { material_id: id, count: 6, difficulty: 'medium', ...scopePayload };
+        const quizPayload = { material_id: id, count: 6, difficulty: 'medium', ...scopePayload, ...topicPayload };
         let r = await window.NoesisAPI.quizzes.generate(quizPayload);
         if (r && r.status === 'reindexing' && r.job_id) {
           setGenStatus('Repairing extracted text and rebuilding the study index...');
@@ -286,12 +344,77 @@ const MaterialDetail = ({ onNav }) => {
     }
   };
 
+  const regenerateMindMap = async () => {
+    if (!id || busy) return;
+    setBusy(true);
+    setActiveAction('mindmap');
+    setMapStatus('refining');
+    setGenStatus('Refining the mind map from this material...');
+    try {
+      const response = await window.NoesisAPI.study.regenerateLearningMap(id);
+      if (!response || !response.job_id) throw new Error('Mind-map generation did not start.');
+      mapPollingRef.current = response.job_id;
+      await window.NoesisAPI.pollJob(response.job_id, {
+        intervalMs: 1200,
+        onProgress: job => setGenStatus(`Refining mind map... ${Math.max(0, Number(job.progress || 0))}%`),
+      });
+      mapPollingRef.current = '';
+      const updated = await loadLearningMap(false);
+      const mode = updated && updated.generation && updated.generation.mode;
+      setGenStatus(mode === 'ai' ? 'Mind map refined from the uploaded material.' : 'Source-built mind map ready. AI refinement can be retried later.');
+    } catch (error) {
+      mapPollingRef.current = '';
+      setMapStatus('ready');
+      setGenStatus('Mind-map refresh failed: ' + (error.message || 'error'));
+    } finally {
+      setBusy(false);
+      setActiveAction('');
+    }
+  };
+
+  const studyMapNodeWithTutor = node => {
+    sessionStorage.setItem('noesis.tutorConcept', node && node.label || (material && material.title) || '');
+    sessionStorage.setItem('noesis.tutorMaterialId', String(id));
+    onNav('tutor');
+  };
+
+  const quizMapNode = async node => {
+    const ok = await generate('quiz', { topic: node && node.label });
+    if (ok) onNav('quiz');
+  };
+
+  const flashcardMapNode = async node => {
+    const ok = await generate('flashcards', { regenerate: true, topic: node && node.label });
+    if (ok) onNav('flashcards');
+  };
+
+  const displayTitle = (material && (material.display_title || material.title)) || 'Material';
+  const goalRecommendation = materialGoalRecommendation(prefs && prefs.goal, material && { ...material, title: displayTitle }, sourceScopeLabel.toLowerCase());
+  const runGoalRecommendation = async () => {
+    if (!id || busy) return;
+    if (goalRecommendation.action === 'start_tutor') {
+      sessionStorage.setItem('noesis.tutorConcept', displayTitle);
+      sessionStorage.setItem('noesis.tutorMaterialId', String(id));
+      onNav('tutor');
+      return;
+    }
+    if (goalRecommendation.action === 'generate_flashcards') {
+      const ok = await generate('flashcards', { regenerate: true });
+      if (ok) onNav('flashcards');
+      return;
+    }
+    if (goalRecommendation.action === 'generate_quiz') {
+      const ok = await generate('quiz');
+      if (ok) onNav('quiz');
+    }
+  };
+
   const generateVideo = async () => {
     if (!id || !material) return;
     setActiveAction('video');
     setBusy(true); setGenStatus('Generating storyboard for review...');
     try {
-      const concept = sourceScope === 'material' ? (material && material.title) : (chapters[active] || null);
+      const concept = displayTitle;
       const r = await window.NoesisAPI.videos.createStoryboard({ material_id: id, concept, ...currentScopePayload() });
       const storyboardId = r.storyboard_id || (r.storyboard && r.storyboard.id);
       if (!storyboardId) throw new Error('storyboard_not_created');
@@ -302,7 +425,6 @@ const MaterialDetail = ({ onNav }) => {
     finally { setBusy(false); setActiveAction(''); }
   };
 
-  const articleText = chunks.length ? chunks.map(c => c.text).join('\n\n') : '';
   const deleteMaterial = async () => {
     if (!id || !window.confirm('Delete this material and its generated study data?')) return;
     setActiveAction('delete');
@@ -319,75 +441,90 @@ const MaterialDetail = ({ onNav }) => {
     }
   };
 
+  const ready = material && material.status === 'ready';
+  const progress = Math.max(0, Math.min(100, Number(material && material.progress || 0)));
+  const statusText = ready ? 'Indexed and ready for grounded generation.' : (material ? `Indexing status: ${material.status || 'pending'}` : 'Loading material...');
+
   return (
     <div>
       <window.Topbar
-        title={chapters[active] || (material && material.title) || 'Material'}
-        crumbs={['Library', material ? material.title : '...']}
+        title={displayTitle}
+        crumbs={['Library', displayTitle]}
         right={<>
           <button className="btn btn-ghost" disabled={busy} onClick={deleteMaterial} style={{ color: 'var(--err)' }}>{activeAction === 'delete' ? 'Deleting...' : 'Delete'}</button>
-          <button className="btn btn-accent" onClick={() => { sessionStorage.setItem('noesis.tutorConcept', chapters[active] || (material && material.title) || ''); sessionStorage.setItem('noesis.tutorMaterialId', String(id)); onNav('tutor'); }}><Icon.Sparkle size={12}/> Study with tutor</button>
+          <button className="btn btn-accent" disabled={!ready} onClick={() => { sessionStorage.setItem('noesis.tutorConcept', displayTitle); sessionStorage.setItem('noesis.tutorMaterialId', String(id)); onNav('tutor'); }}><Icon.Sparkle size={12}/> Study with tutor</button>
         </>}
       />
-      <div style={mds.layout}>
-        {/* Chapter nav */}
-        <aside style={mds.chapters}>
-          <div style={{ padding: '18px 18px 12px' }}>
-            <div style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Chapters</div>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'calc(1px * var(--app-density-scale))', padding: '0 8px' }}>
-            {chapters.map((c, i) => (
-              <button key={i} onClick={() => setActive(i)} style={{
-                display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))',
-                padding: '8px 10px', borderRadius: 'var(--r-sm)',
-                background: active === i ? 'var(--bg-2)' : 'transparent',
-                color: active === i ? 'var(--fg-0)' : 'var(--fg-2)',
-                fontSize: 'calc(12.5px * var(--app-font-scale))', textAlign: 'left',
-              }}>
-                <span className="mono" style={{ fontSize: 'calc(9.5px * var(--app-font-scale))', color: 'var(--fg-3)', width: 20 }}>{String(i+1).padStart(2,'0')}</span>
-                <span style={{ flex: 1 }}>{c}</span>
-              </button>
-            ))}
-          </div>
-        </aside>
+      <div className="material-detail-layout" style={mds.layout}>
+        <main className="material-detail-reader" style={mds.reader}>
+          <section style={mds.headlinePanel}>
+            <div style={mds.eyebrow}>Lecture headline</div>
+            <h1 style={mds.title}>{displayTitle}</h1>
+            <div style={mds.statusRow}>
+              <span style={{ ...mds.statusDot, background: ready ? 'var(--ok)' : 'var(--warn)' }}/>
+              <span>{statusText}</span>
+            </div>
+            <div style={mds.progressTrack}><div style={{ ...mds.progressFill, width: `${progress}%` }}/></div>
+            <p style={mds.hiddenSourceNote}>The extracted source stays indexed privately for notes, tutor sessions, quizzes, cards, video storyboards, and the mind map.</p>
+          </section>
 
-        {/* Reader */}
-        <main style={mds.reader}>
-          <div style={mds.readerHead}>
-            <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Chapter {active + 1} · {chunks.length} chunks</div>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(42px * var(--app-font-scale))', fontWeight: 300, letterSpacing: '-0.02em', margin: '8px 0 6px' }}>{chapters[active] || (material && material.title) || 'Material'}</h1>
-            <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-2)' }}>{material && material.status === 'ready' ? 'Indexed for tutor and quizzes.' : (material ? `Status: ${material.status}` : 'Loading…')}</div>
-          </div>
-
-          <div style={mds.article}>
-            {articleText ? (
-              <p style={{ ...mds.p, whiteSpace: 'pre-wrap' }}>{articleText}</p>
-            ) : (
-              <p style={mds.p}>
-                {material && material.status !== 'ready'
-                  ? <em>Indexing… come back in a moment.</em>
-                  : <em>No chunks yet for this chapter.</em>}
-              </p>
-            )}
-
-          </div>
-        </main>
-
-        {/* Right rail */}
-        <aside style={mds.rail}>
-          <div style={mds.railBlock}>
-            <div style={mds.railHead}>Start here</div>
-            {window.LearningMap && learningMap ? (
-              <window.LearningMap map={learningMap} compact />
-            ) : (
-              <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)', padding: '4px 0' }}>
-                Generate notes or a quiz to sharpen the learning map.
+          <section style={mds.goalRec}>
+            <div style={{ display: 'flex', gap: 'calc(10px * var(--app-density-scale))', alignItems: 'flex-start' }}>
+              {(() => {
+                const C = Icon[goalRecommendation.icon] || Icon.Sparkle;
+                return <C size={16} style={{ color: 'var(--accent)', marginTop: 2 }}/>;
+              })()}
+              <div style={{ minWidth: 0 }}>
+                <div style={mds.goalRecEyebrow}>Recommended for {goalRecommendation.goalLabel}</div>
+                <div style={mds.goalRecTitle}>{goalRecommendation.title}</div>
+                <div style={mds.goalRecText}>{goalRecommendation.description}</div>
               </div>
-            )}
-          </div>
+            </div>
+            <button className="btn btn-accent" disabled={busy || !ready} onClick={runGoalRecommendation} style={{ width: '100%', justifyContent: 'center', marginTop: 'calc(12px * var(--app-density-scale))' }}>
+              {activeAction ? 'Working...' : goalRecommendation.cta} <Icon.ArrowRight size={12}/>
+            </button>
+          </section>
 
-          <div style={mds.railBlock}>
-            <div style={mds.railHead}>Key concepts</div>
+          <section style={mds.toolPanel}>
+            <div style={mds.railHead}>Generate from indexed lecture</div>
+            <button style={mds.gen} disabled={busy || !ready} onClick={() => generate('notes')}>
+              <Icon.PenNib size={13} style={{ color: 'var(--accent)' }}/>
+              <div style={{ flex: 1, textAlign: 'left' }}>
+                <div style={mds.genTitle}>{activeAction === 'notes' ? 'Generating notes...' : 'Summary notes'}</div>
+                <div style={mds.genSub}>Uses the full hidden lecture source</div>
+              </div>
+            </button>
+            <button style={mds.gen} disabled={busy || !ready} onClick={async () => { const ok = await generate('flashcards', { regenerate: true }); if (ok) onNav('flashcards'); }}>
+              <Icon.Cards size={13} style={{ color: 'var(--accent)' }}/>
+              <div style={{ flex: 1, textAlign: 'left' }}>
+                <div style={mds.genTitle}>{activeAction === 'flashcards' ? 'Generating flashcards...' : 'Flashcards'}</div>
+                <div style={mds.genSub}>Create recall cards from the full lecture</div>
+              </div>
+            </button>
+            <button style={mds.gen} disabled={busy || !ready} onClick={async () => { const ok = await generate('quiz'); if (ok) onNav('quiz'); }}>
+              <Icon.Target size={13} style={{ color: 'var(--accent)' }}/>
+              <div style={{ flex: 1, textAlign: 'left' }}>
+                <div style={mds.genTitle}>{activeAction === 'quiz' ? 'Generating quiz...' : 'Practice quiz'}</div>
+                <div style={mds.genSub}>Six grounded questions from the full lecture</div>
+              </div>
+            </button>
+            <button style={mds.gen} disabled={busy || !ready} onClick={generateVideo}>
+              <Icon.Play size={13} style={{ color: 'var(--accent)' }}/>
+              <div style={{ flex: 1, textAlign: 'left' }}>
+                <div style={mds.genTitle}>{activeAction === 'video' ? 'Creating storyboard...' : 'Tutor video storyboard'}</div>
+                <div style={mds.genSub}>Storyboard from the full lecture</div>
+              </div>
+            </button>
+            {genStatus && <div style={mds.genStatus}>{genStatus}</div>}
+            {video && video.status === 'ready' && (
+              <video src={video.file} controls crossOrigin="use-credentials" style={{ width: '100%', marginTop: 'calc(8px * var(--app-density-scale))', borderRadius: 'var(--r-sm)' }}>
+                {video.captions && <track kind="captions" src={video.captions} srcLang="en" label="English"/>}
+              </video>
+            )}
+          </section>
+
+          <section style={mds.conceptPanel}>
+            <div style={mds.railHead}>Indexed concepts</div>
             {material && material.concepts && material.concepts.length ? (
               material.concepts.map(c => (
                 <div key={c.id || c.name} style={mds.concept}>
@@ -396,64 +533,28 @@ const MaterialDetail = ({ onNav }) => {
                 </div>
               ))
             ) : (
-              <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)', padding: '4px 0' }}>
-                Concepts will appear after AI generation.
-              </div>
+              <div style={mds.emptySmall}>Concepts appear after the lecture has enough indexed signal.</div>
             )}
-          </div>
+          </section>
+        </main>
 
-          <div style={mds.railBlock}>
-            <div style={mds.railHead}>Generate (AI)</div>
-            <div style={mds.scopeBox}>
-              <label style={mds.scopeLabel}>Source</label>
-              <select value={sourceScope} onChange={(e) => setSourceScope(e.target.value)} style={mds.scopeSelect}>
-                <option value="material">Entire material</option>
-                <option value="chapter" disabled={!chapterIds[active]}>Current chapter</option>
-                <option value="chunk" disabled={!chunks[0]}>Current section</option>
-              </select>
+        <aside className="material-detail-map-rail" style={mds.rail}>
+          {window.MaterialMindMap && learningMap ? (
+            <window.MaterialMindMap
+              map={learningMap}
+              generationStatus={mapStatus}
+              busy={busy}
+              onRegenerate={regenerateMindMap}
+              onTutor={studyMapNodeWithTutor}
+              onQuiz={quizMapNode}
+              onFlashcards={flashcardMapNode}
+            />
+          ) : (
+            <div style={mds.mapLoading}>
+              <Icon.Tree size={22}/>
+              Building a dynamic map from this material...
             </div>
-            <button style={mds.gen} disabled={busy} onClick={() => generate('notes')}>
-              <Icon.PenNib size={13} style={{ color: 'var(--accent)' }}/>
-              <div style={{ flex: 1, textAlign: 'left' }}>
-                <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)' }}>{activeAction === 'notes' ? 'Generating notes...' : 'Summary notes'}</div>
-                <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>From {sourceScopeLabel.toLowerCase()}</div>
-              </div>
-            </button>
-            <button style={mds.gen} disabled={busy} onClick={async () => { const ok = await generate('flashcards', { regenerate: true }); if (ok) onNav('flashcards'); }}>
-              <Icon.Cards size={13} style={{ color: 'var(--accent)' }}/>
-              <div style={{ flex: 1, textAlign: 'left' }}>
-                <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)' }}>{activeAction === 'flashcards' ? 'Generating flashcards...' : 'Flashcards'}</div>
-                <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>Create 6-8 cards from {sourceScopeLabel.toLowerCase()}</div>
-              </div>
-            </button>
-            <button style={mds.gen} disabled={busy} onClick={async () => { const ok = await generate('quiz'); if (ok) onNav('quiz'); }}>
-              <Icon.Target size={13} style={{ color: 'var(--accent)' }}/>
-              <div style={{ flex: 1, textAlign: 'left' }}>
-                <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)' }}>{activeAction === 'quiz' ? 'Generating quiz...' : 'Practice quiz'}</div>
-                <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>6 questions from {sourceScopeLabel.toLowerCase()}</div>
-              </div>
-            </button>
-            <button style={mds.gen} disabled={busy} onClick={generateVideo}>
-              <Icon.Play size={13} style={{ color: 'var(--accent)' }}/>
-              <div style={{ flex: 1, textAlign: 'left' }}>
-                <div style={{ fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)' }}>{activeAction === 'video' ? 'Creating storyboard...' : 'Tutor video storyboard'}</div>
-                <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>Storyboard from {sourceScopeLabel.toLowerCase()}</div>
-              </div>
-            </button>
-            {genStatus && <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', padding: '4px 4px 0' }}>{genStatus}</div>}
-            {video && video.status === 'ready' && (
-              <video src={video.file} controls crossOrigin="use-credentials" style={{ width: '100%', marginTop: 'calc(8px * var(--app-density-scale))', borderRadius: 'var(--r-sm)' }}>
-                {video.captions && <track kind="captions" src={video.captions} srcLang="en" label="English"/>}
-              </video>
-            )}
-          </div>
-
-          <div style={mds.railBlock}>
-            <div style={mds.railHead}>Your highlights</div>
-            <div style={{ fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)', padding: '4px 0' }}>
-              No highlights yet.
-            </div>
-          </div>
+          )}
         </aside>
       </div>
     </div>
@@ -461,37 +562,32 @@ const MaterialDetail = ({ onNav }) => {
 };
 
 const mds = {
-  layout: { display: 'grid', gridTemplateColumns: '240px 1fr 300px', minHeight: 'calc(100vh - 57px)' },
-  chapters: { borderRight: '1px solid var(--line)', background: 'var(--bg-0)' },
-  reader: { padding: '40px 56px', maxWidth: 780, margin: '0 auto' },
-  readerHead: { marginBottom: 'calc(36px * var(--app-density-scale))' },
-  article: { fontSize: 'calc(14.5px * var(--app-font-scale))', lineHeight: 1.75, color: 'var(--fg-1)' },
-  p: { margin: '0 0 18px' },
-  h2: { fontFamily: 'var(--font-display)', fontSize: 'calc(26px * var(--app-font-scale))', fontWeight: 400, letterSpacing: '-0.01em', margin: '36px 0 14px', color: 'var(--fg-0)' },
-  mark: { background: 'var(--accent-glow)', color: 'var(--accent)', padding: '1px 4px', borderRadius: 3 },
-  code: { fontFamily: 'var(--font-mono)', fontSize: 'calc(12.5px * var(--app-font-scale))', background: 'var(--bg-2)', padding: '1px 5px', borderRadius: 3, color: 'var(--fg-0)' },
-  pre: { fontFamily: 'var(--font-mono)', fontSize: 'calc(12.5px * var(--app-font-scale))', background: 'var(--bg-1)', border: '1px solid var(--line)', padding: 'calc(18px * var(--app-density-scale))', borderRadius: 'var(--r-md)', overflow: 'auto', lineHeight: 1.6, color: 'var(--fg-0)', margin: '18px 0' },
-  callout: {
-    display: 'flex', gap: 'calc(12px * var(--app-density-scale))', padding: 'calc(16px * var(--app-density-scale))', borderRadius: 'var(--r-md)',
-    background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)',
-    margin: '20px 0',
-  },
-  rail: { borderLeft: '1px solid var(--line)', padding: 'calc(20px * var(--app-density-scale))', display: 'flex', flexDirection: 'column', gap: 'calc(20px * var(--app-density-scale))', background: 'var(--bg-0)' },
-  railBlock: { display: 'flex', flexDirection: 'column', gap: 'calc(4px * var(--app-density-scale))' },
+  layout: { display: 'grid', minHeight: 'calc(100vh - 57px)', alignItems: 'start' },
+  reader: { padding: '32px clamp(22px, 3.2vw, 52px)', boxSizing: 'border-box', width: '100%', display: 'flex', flexDirection: 'column', gap: 'calc(16px * var(--app-density-scale))' },
+  headlinePanel: { padding: 'calc(24px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', background: 'var(--bg-1)' },
+  eyebrow: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 'calc(10px * var(--app-density-scale))' },
+  title: { fontFamily: 'var(--font-display)', fontSize: 'calc(42px * var(--app-font-scale))', fontWeight: 300, letterSpacing: '-0.02em', lineHeight: 1.08, margin: 0, color: 'var(--fg-0)' },
+  statusRow: { display: 'flex', alignItems: 'center', gap: 8, color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))', marginTop: 'calc(14px * var(--app-density-scale))' },
+  statusDot: { width: 8, height: 8, borderRadius: 99, boxShadow: '0 0 12px currentColor' },
+  progressTrack: { height: 5, borderRadius: 99, background: 'var(--bg-2)', overflow: 'hidden', marginTop: 'calc(14px * var(--app-density-scale))' },
+  progressFill: { height: '100%', borderRadius: 99, background: 'linear-gradient(90deg, var(--accent), var(--ok))' },
+  hiddenSourceNote: { color: 'var(--fg-3)', fontSize: 'calc(12px * var(--app-font-scale))', lineHeight: 1.55, margin: 'calc(14px * var(--app-density-scale)) 0 0' },
+  rail: { borderLeft: '1px solid var(--line)', padding: 'calc(24px * var(--app-density-scale))', background: 'var(--bg-0)', boxSizing: 'border-box', minWidth: 0 },
+  mapLoading: { minHeight: 420, border: '1px solid var(--line)', borderRadius: 'var(--r-xl)', display: 'grid', placeItems: 'center', alignContent: 'center', gap: 10, color: 'var(--fg-3)', background: 'var(--bg-1)', fontSize: 'calc(12px * var(--app-font-scale))' },
   railHead: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(8px * var(--app-density-scale))' },
-  scopeBox: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', marginBottom: 'calc(6px * var(--app-density-scale))' },
-  scopeLabel: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' },
-  scopeSelect: {
-    flex: 1,
-    minWidth: 0,
-    height: 30,
-    borderRadius: 'var(--r-sm)',
-    border: '1px solid var(--line)',
-    background: 'var(--bg-1)',
-    color: 'var(--fg-1)',
-    fontSize: 'calc(12px * var(--app-font-scale))',
-    padding: '0 8px',
+  goalRec: {
+    display: 'flex',
+    flexDirection: 'column',
+    padding: 'calc(14px * var(--app-density-scale))',
+    borderRadius: 'var(--r-md)',
+    border: '1px solid var(--accent-soft)',
+    background: 'linear-gradient(135deg, var(--accent-glow), var(--bg-1) 70%)',
   },
+  goalRecEyebrow: { fontSize: 'calc(10px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 'calc(5px * var(--app-density-scale))' },
+  goalRecTitle: { fontSize: 'calc(13.5px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 600, lineHeight: 1.25 },
+  goalRecText: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-2)', lineHeight: 1.45, marginTop: 'calc(5px * var(--app-density-scale))' },
+  toolPanel: { display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))', padding: 'calc(16px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' },
+  conceptPanel: { display: 'flex', flexDirection: 'column', gap: 'calc(4px * var(--app-density-scale))', padding: 'calc(16px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-md)', background: 'var(--bg-1)' },
   concept: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '8px 10px', borderRadius: 'var(--r-sm)',
@@ -504,6 +600,10 @@ const mds = {
     border: '1px solid var(--line)', background: 'var(--bg-1)',
     transition: 'all 140ms var(--ease-out)',
   },
+  genTitle: { fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-0)' },
+  genSub: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  genStatus: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', padding: '4px 4px 0' },
+  emptySmall: { fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)', padding: '4px 0', lineHeight: 1.5 },
   highlight: { display: 'flex', gap: 'calc(8px * var(--app-density-scale))', padding: '6px 0' },
 };
 
