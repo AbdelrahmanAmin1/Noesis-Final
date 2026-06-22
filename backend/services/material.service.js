@@ -22,8 +22,9 @@ const sourceVisualCandidates = require('./source-visual-candidates.service');
 const materialTopicMap = require('./material-topic-map.service');
 const materialLearningMaps = require('./material-learning-map.service');
 const sourceTextQuality = require('./source-text-quality.service');
+const materialAnalysis = require('./material-analysis.service');
 
-const EXTRACTION_PIPELINE_VERSION = 2;
+const EXTRACTION_PIPELINE_VERSION = 3;
 
 function nowIso() { return new Date().toISOString(); }
 
@@ -164,11 +165,13 @@ function getChunks(userId, materialId, chapterId) {
   const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
   if (!m) throw new HttpError(404, 'material_not_found');
   if (chapterId) {
-    return db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
+    return db.prepare(`SELECT id, idx, text, raw_text, content_type, relevance_score, relevance_level, relevance_reasons_json, ocr_confidence,
+                       source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
                        FROM chunks WHERE material_id=? AND chapter_id=? ORDER BY idx`)
       .all(materialId, chapterId);
   }
-  return db.prepare(`SELECT id, idx, text, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
+  return db.prepare(`SELECT id, idx, text, raw_text, content_type, relevance_score, relevance_level, relevance_reasons_json, ocr_confidence,
+                     source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
                      FROM chunks WHERE material_id=? ORDER BY idx`).all(materialId);
 }
 
@@ -176,7 +179,12 @@ function deleteMaterial(userId, id) {
   const db = getDb();
   const m = db.prepare('SELECT id, file_path FROM materials WHERE id=? AND user_id=?').get(id, userId);
   if (!m) throw new HttpError(404, 'material_not_found');
-  db.prepare('DELETE FROM materials WHERE id=?').run(id);
+  db.transaction(() => {
+    // Legacy flashcards predate a material foreign key. Remove them explicitly so
+    // deleting a material cannot leave an unscoped deck in the global due queue.
+    db.prepare('DELETE FROM flashcards WHERE material_id=? AND user_id=?').run(id, userId);
+    db.prepare('DELETE FROM materials WHERE id=?').run(id);
+  })();
   try { if (m.file_path && fs.existsSync(m.file_path)) fs.unlinkSync(m.file_path); } catch (_) {}
   try { fs.rmSync(path.join(env.UPLOAD_DIR, 'source-visuals', String(id)), { recursive: true, force: true }); } catch (_) {}
   try { fs.rmSync(path.join(env.UPLOAD_DIR, 'ocr', String(id)), { recursive: true, force: true }); } catch (_) {}
@@ -259,6 +267,7 @@ async function processMaterial(materialId, jobId, opts = {}) {
   const setStatus = (s, p) => db.prepare('UPDATE materials SET status=?, progress=? WHERE id=?').run(s, p, materialId);
   const m = db.prepare('SELECT * FROM materials WHERE id=?').get(materialId);
   if (!m) return;
+  let analysisRunId = null;
   try {
     setStatus('processing', 10);
     if (jobId) jobs.update(jobId, { status: 'running', progress: 10 });
@@ -323,18 +332,30 @@ async function processMaterial(materialId, jobId, opts = {}) {
       if (jobId) jobs.update(jobId, { progress: 18, stage: ocrStatus });
     }
 
-    const text = mergedExtraction.text || structured.text || '';
+    const analysis = await materialAnalysis.analyzeAndPersist({
+      material: m,
+      structured: mergedExtraction,
+      pipelineVersion: EXTRACTION_PIPELINE_VERSION,
+    });
+    analysisRunId = analysis.analysisRunId;
+    const text = analysis.view.cleanedEducationalText || mergedExtraction.text || structured.text || '';
     if (!text || text.trim().length < 20) throw new Error('no_extractable_text');
     setStatus('processing', 30);
     if (jobId) jobs.update(jobId, { progress: 30 });
 
-    const visualCandidates = sourceVisualCandidates.persistForMaterial(materialId, mergedExtraction, {
-      max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
-    });
+    const visualCandidates = [...(analysis.assets || [])].sort((a, b) => Number(b.selectedForVideo) - Number(a.selectedForVideo));
 
     const chapters = detectChapters(text);
+    const chunks = chunkByChapter(text, chapters);
+    if (chunks.length === 0) throw new Error('no_chunks_created');
     const insChapter = db.prepare('INSERT INTO chapters (material_id, idx, title, char_start, char_end) VALUES (?,?,?,?,?)');
     const chapterIds = [];
+    const insChunk = db.prepare(`INSERT INTO chunks
+      (material_id, chapter_id, idx, text, token_count, source_page, chapter_title, heading, slide_number, slide_title,
+       section_title, has_code, keywords_json, source_kind, source_visual_id, analysis_run_id, raw_text, content_type,
+       relevance_score, relevance_level, relevance_reasons_json, ocr_confidence)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const inserted = [];
     db.transaction(() => {
       if (replaceExisting) {
         db.prepare('UPDATE flashcards SET source_chunk_id=NULL WHERE material_id=?').run(materialId);
@@ -345,46 +366,56 @@ async function processMaterial(materialId, jobId, opts = {}) {
         const r = insChapter.run(materialId, ch.idx, ch.title, ch.char_start, ch.char_end);
         chapterIds[ch.idx] = r.lastInsertRowid;
       }
-    })();
-
-    const chunks = chunkByChapter(text, chapters);
-    if (chunks.length === 0) throw new Error('no_chunks_created');
-    const insChunk = db.prepare(`INSERT INTO chunks
-      (material_id, chapter_id, idx, text, token_count, source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
-    const inserted = [];
-    db.transaction(() => {
       for (const c of chunks) {
-        const sourceKind = sourceKindForChunk(c, mergedExtraction.pages || []);
-        const sourceVisualId = visualIdForChunk(c, visualCandidates);
+        const unit = bestEducationalUnitForChunk(c, analysis.view.allScoredChunks || []);
+        const locatedChunk = {
+          ...c,
+          source_page: c.source_page || unit && unit.pageNumber || null,
+          slide_number: c.slide_number || unit && unit.slideNumber || null,
+        };
+        const sourceKind = sourceKindForChunk(locatedChunk, mergedExtraction.pages || []);
+        const sourceVisualId = visualIdForChunk(locatedChunk, visualCandidates);
         const r = insChunk.run(
           materialId,
           chapterIds[c.chapter_idx] || null,
           c.idx,
           c.text,
           c.token_count,
-          c.source_page || null,
+          locatedChunk.source_page,
           c.chapter_title || '',
-          c.heading || '',
-          c.slide_number || null,
+          c.heading || unit && unit.heading || '',
+          locatedChunk.slide_number,
           c.slide_title || '',
           c.section_title || c.heading || '',
           c.has_code ? 1 : 0,
           c.keywords_json || JSON.stringify(c.keywords || []),
           sourceKind,
-          sourceVisualId
+          sourceVisualId,
+          analysisRunId,
+          unit && unit.rawText || c.text,
+          unit && unit.contentType || (c.has_code ? 'code' : 'prose'),
+          unit && unit.relevanceScore != null ? unit.relevanceScore : 0.7,
+          unit && unit.relevanceLevel || 'high',
+          JSON.stringify(unit && unit.relevanceReasons || []),
+          unit && unit.ocrConfidence != null ? unit.ocrConfidence : null
         );
         inserted.push({
           id: r.lastInsertRowid,
           text: c.text,
           chapter_title: c.chapter_title || '',
-          heading: c.heading || '',
-          source_page: c.source_page || null,
-          slide_number: c.slide_number || null,
+          heading: c.heading || unit && unit.heading || '',
+          source_page: locatedChunk.source_page,
+          slide_number: locatedChunk.slide_number,
           source_kind: sourceKind,
           source_visual_id: sourceVisualId,
+          relevance_score: unit && unit.relevanceScore != null ? unit.relevanceScore : 0.7,
+          relevance_level: unit && unit.relevanceLevel || 'high',
+          content_type: unit && unit.contentType || (c.has_code ? 'code' : 'prose'),
         });
       }
+      db.prepare(`UPDATE material_analysis_runs SET status='completed', completed_at=? WHERE id=? AND material_id=?`)
+        .run(nowIso(), analysisRunId, materialId);
+      db.prepare('UPDATE materials SET active_analysis_run_id=? WHERE id=?').run(analysisRunId, materialId);
     })();
     saveExtractionDiagnostics(db, materialId, ocrStatus, (ocrResult && ocrResult.provider) || env.OCR_PROVIDER, {
       quality,
@@ -396,6 +427,14 @@ async function processMaterial(materialId, jobId, opts = {}) {
       },
       sourcePages: (mergedExtraction.pages || []).length,
       sourceVisualCandidates: visualCandidates.length,
+      analysisRunId,
+      cleanedEducationalChars: text.length,
+      rawExtractedChars: analysis.rawExtractedText.length,
+      lowValueTextCount: analysis.view.lowValueTextRemoved.length,
+      selectedVisualAssets: visualCandidates.filter(candidate => candidate.selectedForVideo).length,
+      codeBlocks: analysis.codeBlocks.length,
+      tables: analysis.tables.length,
+      warnings: analysis.warnings,
       extractionPipelineVersion: EXTRACTION_PIPELINE_VERSION,
     });
     let refreshedTopicMap = null;
@@ -439,6 +478,7 @@ async function processMaterial(materialId, jobId, opts = {}) {
     }
     if (jobId) jobs.update(jobId, { status: 'completed', progress: 100, result: { material_id: materialId } });
   } catch (e) {
+    materialAnalysis.failRun(materialId, analysisRunId, e);
     log.error('processMaterial', e.message || e);
     const existingChunks = db.prepare('SELECT COUNT(*) AS count FROM chunks WHERE material_id=?').get(materialId).count;
     setStatus(replaceExisting && existingChunks > 0 ? 'ready' : 'failed', replaceExisting && existingChunks > 0 ? 100 : 0);
@@ -446,13 +486,39 @@ async function processMaterial(materialId, jobId, opts = {}) {
   }
 }
 
+function bestEducationalUnitForChunk(chunk, units = []) {
+  const chunkWords = new Set(String(chunk && chunk.text || '').toLowerCase().match(/[a-z0-9+#-]{3,}/g) || []);
+  let best = null;
+  let bestScore = -1;
+  for (const unit of units || []) {
+    if (chunk.slide_number != null && unit.slideNumber != null && Number(chunk.slide_number) !== Number(unit.slideNumber)) continue;
+    if (chunk.source_page != null && unit.pageNumber != null && Number(chunk.source_page) !== Number(unit.pageNumber)) continue;
+    const unitWords = [...new Set(String(unit.text || '').toLowerCase().match(/[a-z0-9+#-]{3,}/g) || [])];
+    const overlap = unitWords.filter(word => chunkWords.has(word)).length;
+    const score = overlap + Number(unit.relevanceScore || 0);
+    if (score > bestScore) { best = unit; bestScore = score; }
+  }
+  return best;
+}
+
 function extractionNeedsReindex(userId, materialId) {
   const db = getDb();
-  const row = db.prepare('SELECT id, status, extraction_diagnostics_json FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
+  const row = db.prepare(`SELECT m.id, m.status, m.file_path, m.extraction_diagnostics_json, m.active_analysis_run_id,
+    ar.status AS analysis_status, ar.pipeline_version AS analysis_pipeline_version
+    FROM materials m LEFT JOIN material_analysis_runs ar ON ar.id=m.active_analysis_run_id
+    WHERE m.id=? AND m.user_id=?`).get(materialId, userId);
   if (!row) throw new HttpError(404, 'material_not_found');
   let diagnostics = {};
   try { diagnostics = JSON.parse(row.extraction_diagnostics_json || '{}'); } catch (_) {}
-  return row.status !== 'ready' || Number(diagnostics.extractionPipelineVersion || 0) < EXTRACTION_PIPELINE_VERSION;
+  const stale = row.status !== 'ready'
+    || Number(diagnostics.extractionPipelineVersion || 0) < EXTRACTION_PIPELINE_VERSION
+    || !row.active_analysis_run_id
+    || row.analysis_status !== 'completed'
+    || Number(row.analysis_pipeline_version || 0) < EXTRACTION_PIPELINE_VERSION;
+  if (!stale) return false;
+  const existingChunks = db.prepare('SELECT COUNT(*) AS count FROM chunks WHERE material_id=?').get(materialId).count || 0;
+  if (row.status === 'ready' && existingChunks > 0 && (!row.file_path || !fs.existsSync(row.file_path))) return false;
+  return true;
 }
 
 function queueReindex(userId, materialId) {

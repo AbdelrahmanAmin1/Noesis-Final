@@ -8,6 +8,7 @@ const matSvc = require('../services/material.service');
 const jobs = require('../services/jobs.service');
 const sourceVisualCandidates = require('../services/source-visual-candidates.service');
 const materialTopicMap = require('../services/material-topic-map.service');
+const materialAnalysis = require('../services/material-analysis.service');
 
 const router = express.Router();
 
@@ -23,6 +24,23 @@ router.post('/', requireAuth, uploadLimiter, upload.single('file'), async (req, 
     const job = jobs.create('material_ingest', { userId: req.user.id, materialId: m.id });
     setImmediate(() => matSvc.processMaterial(m.id, job.id));
     res.status(202).json({ material_id: m.id, title: m.title, job_id: job.id });
+  } catch (e) { next(e); }
+});
+
+router.get('/:id/analysis', requireAuth, (req, res, next) => {
+  try {
+    const materialId = parseInt(req.params.id, 10);
+    const material = matSvc.getOwned(req.user.id, materialId);
+    const analysis = materialAnalysis.getAnalysis(req.user.id, materialId);
+    if (!analysis || Number(analysis.pipelineVersion || 0) < matSvc.EXTRACTION_PIPELINE_VERSION) {
+      const reindex = matSvc.queueReindex(req.user.id, materialId);
+      return res.status(202).json({
+        status: material.status === 'ready' ? 'reindexing' : material.status,
+        material_id: materialId,
+        job_id: reindex.job && reindex.job.id || null,
+      });
+    }
+    res.json(analysis);
   } catch (e) { next(e); }
 });
 

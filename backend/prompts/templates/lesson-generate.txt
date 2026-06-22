@@ -36,6 +36,14 @@ Return ONLY valid JSON with this exact shape:
   },
   "learningObjectives": ["...", "...", "..."],
   "prerequisites": ["..."],
+  "studyGuide": {
+    "whatYouWillLearn": ["..."],
+    "keyConcepts": ["..."],
+    "suggestedOrder": ["..."],
+    "prerequisites": ["..."],
+    "commonMistakes": [{"mistake":"...","correction":"..."}],
+    "checkpoints": ["..."]
+  },
   "sections": [
     {
       "type": "hook|definition|deep_explanation|analogy|code_example|code_walkthrough|diagram|mindmap|common_mistakes|complexity|checkpoint|recap|next_steps",
@@ -63,6 +71,7 @@ Return ONLY valid JSON with this exact shape:
 
 Required content:
 - Include hook, definition, deep_explanation, common_mistakes, checkpoint, recap, and next_steps sections.
+- Fill every applicable Study Guide field with source-grounded learning goals, concepts, order, prerequisites, corrections, and checkpoints. Never create a visible section titled "Source Outline".
 - If the topic map contains multiple topics, preserve topic-map order and allocate sections across all major topics. Do not collapse the lesson to only the first or primary topic.
 - Do not open sections with "The uploaded material is about". Teach directly from the concept, operation, process, or example.
 - Include diagram/code sections only when they genuinely help the uploaded material.

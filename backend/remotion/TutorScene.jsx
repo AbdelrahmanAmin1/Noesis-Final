@@ -90,6 +90,8 @@ const getVisualData = (scene = {}, slide = {}) => {
     imagePath: data.imagePath || data.image_path || slide.image_path || '',
     imageUrl: data.imageUrl || data.image_url || slide.image_url || '',
     sourceVisualId: data.sourceVisualId || data.source_visual_id || slide.source_visual_id || null,
+    assetRole: data.assetRole || data.asset_role || slide.asset_role || '',
+    placement: data.placement || slide.placement || null,
     sourcePage: data.sourcePage || data.source_page || slide.source_page || null,
     slideNumber: data.slideNumber || data.slide_number || slide.slide_number || null,
   };
@@ -620,6 +622,12 @@ const SafeSourceImage = ({ src, fallback }) => {
 
 const SourceReferenceVisual = ({ frame, scene, slide }) => {
   const data = getVisualData(scene, slide);
+  if (data.assetRole === 'source_reference_image') return <NoVisual scene={scene} slide={slide} />;
+  if (data.assetRole === 'overlay_asset') {
+    const p = data.placement;
+    const valid = p && ['x', 'y', 'width', 'height'].every(key => Number.isFinite(Number(p[key])));
+    if (!valid) return <NoVisual scene={scene} slide={slide} />;
+  }
   const src = mediaSrc(data.imageUrl || data.imagePath);
   if (src) {
     return (

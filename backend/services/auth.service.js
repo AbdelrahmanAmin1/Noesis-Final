@@ -177,6 +177,7 @@ function exportData(userId) {
     materials: get('SELECT id, title, type, status, created_at FROM materials WHERE user_id=?'),
     notes: get('SELECT * FROM notes WHERE user_id=?'),
     flashcards: get('SELECT * FROM flashcards WHERE user_id=?'),
+    flashcard_generations: get('SELECT * FROM flashcard_generations WHERE user_id=?'),
     flashcard_reviews: get('SELECT * FROM flashcard_reviews WHERE user_id=?'),
     quizzes: get('SELECT * FROM quizzes WHERE user_id=?'),
     quiz_attempts: get('SELECT * FROM quiz_attempts WHERE user_id=?'),

@@ -12,5 +12,9 @@ describe('StoryboardReview UI safety', () => {
     expect(source).not.toMatch(/Chunk\s+\$\{/);
     expect(source).not.toMatch(/Chunk\s+\{?item\.chunkId/);
     expect(source).toMatch(/Evidence \$\{index \+ 1\}/);
+    expect(source).toContain('Extracted Visual References');
+    expect(source).toContain("assetRole === 'source_reference_image'");
+    expect(source).toMatch(/gridTemplateColumns: 'repeat\(auto-fit, minmax\(190px, 1fr\)\)'/);
+    expect(source).toMatch(/objectFit: 'contain'/);
   });
 });

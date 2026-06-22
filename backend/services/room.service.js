@@ -298,8 +298,8 @@ function startSharedQuiz(userId, roomId, shareId) {
     const q = db.prepare('INSERT INTO quizzes (user_id, material_id, title, difficulty, created_at) VALUES (?,?,?,?,?)')
       .run(userId, original.material_id || null, `${shared.title_snapshot} Challenge`, original.difficulty || 'medium', nowIso());
     quizId = q.lastInsertRowid;
-    const ins = db.prepare('INSERT INTO quiz_questions (quiz_id, idx, question, options_json, correct_idx, explanation, concept) VALUES (?,?,?,?,?,?,?)');
-    questions.forEach(row => ins.run(quizId, row.idx, row.question, row.options_json, row.correct_idx, row.explanation || '', row.concept || ''));
+    const ins = db.prepare('INSERT INTO quiz_questions (quiz_id, idx, question, options_json, correct_idx, explanation, concept, source_chunk_ids_json) VALUES (?,?,?,?,?,?,?,?)');
+    questions.forEach(row => ins.run(quizId, row.idx, row.question, row.options_json, row.correct_idx, row.explanation || '', row.concept || '', row.source_chunk_ids_json || '[]'));
   })();
   activity.addRoomActivity(roomId, userId, 'challenge_started', `Started quiz challenge: ${shared.title_snapshot}`, { relatedType: 'quiz', relatedId: quizId });
   return { quiz_id: quizId };

@@ -22,12 +22,13 @@ const log = require('../utils/logger');
 const gamification = require('../services/gamification.service');
 const materials = require('../services/material.service');
 const sourceTextQuality = require('../services/source-text-quality.service');
+const quizFallback = require('../services/quiz-fallback.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
 const PLACEHOLDER_RE = /\b(what is this topic|define the concept|true or false:?\s*this is important|example here|definition goes here|placeholder|todo|lorem ipsum)\b/i;
 const GENERIC_QUIZ_RE = /\b(?:according to|based on|from|in) (?:the )?(?:uploaded|provided|source|course|study) (?:material|document|text|content|notes?)\b|\bwhich statement (?:best )?(?:describes|summarizes)\b|\bwhat (?:is|does) (?:this|the) (?:document|material|handout|file|slide deck)\b/i;
-const DOCUMENT_REFERENCE_RE = /\b(?:uploaded|provided|source) (?:material|document|text|content|file|pdf|notes?)\b|\b(?:document|file) (?:name|title)\b|\b(?:handout|syllabus|slide deck|lecture notes|course notes|worksheet)\b/i;
+const DOCUMENT_REFERENCE_RE = /\b(?:uploaded|provided|source) (?:material|document|text|content|file|pdf|notes?)\b|\b(?:document|file) (?:name|title)\b|\b(?:handout|syllabus|slide deck|lecture notes|course notes|worksheet|college of|department of|school of|faculty of)\b/i;
 const COURSE_CODE_RE = /\b[A-Z]{2,6}\s*[-_]?\s*\d{2,4}[A-Z]?\b/i;
 const TERM_DATE_RE = /\b(?:fall|spring|summer|winter|semester|term)\s*[,:'-]?\s*(?:19|20)\d{2}(?:\s*[-/]\s*\d{2,4})?\b/i;
 const CREDIT_RE = /\b(?:thanks|credit|courtesy) to\b|\b(?:prepared|written|created|compiled|presented) by\b|\b(?:author|instructor|professor|copyright|all rights reserved)\b/i;
@@ -36,7 +37,8 @@ const NUMBERED_HEADING_RE = /^(?:chapter|lecture|lesson|module|unit|part|section
 const FILELIKE_TITLE_RE = /^\d{1,4}[-_ ]*[A-Za-z][A-Za-z0-9_-]{3,}$|[_]{1,}|\b(?:notes?|handout|slides?|lecture|chapter|module|worksheet|syllabus)\b/i;
 const QUESTION_TYPES = new Set(['concept', 'scenario', 'code_design', 'misconception', 'tradeoff']);
 const GENERIC_TOPIC_RE = /^(?:object|objects|class|classes|data|code|design|hash|general|miscellaneous|this concept)$/i;
-const GENERIC_STEM_RE = /^(?:how does [^?]{1,45} work|what is true about [^?]+|which (?:idea|detail) is correct)\?$/i;
+const GENERIC_STEM_RE = /^(?:how does [^?]{1,45} work|what is true about [^?]+|which (?:idea|detail) is correct|which description correctly matches [^?]+)\?$/i;
+const OPTION_SENTENCE_VERB_RE = /\b(?:is|are|means|uses|contains|includes|allows|requires|stores|supports|prevents|refers|occurs|happens|works|provides|represents|defines|consists|follows|adds|removes|reads|keeps|exposes|validates|protects|organizes|describes|controls|changes|connects|depends|compares|trades|causes|creates|returns|illustrates|shows)\b/i;
 
 function generationScope(body = {}) {
   const sourceScope = String(body.sourceScope || body.source_scope || 'material').toLowerCase();
@@ -81,7 +83,8 @@ const QuizBatchSchema = z.object({
   questions: z.array(z.record(z.unknown())).min(1),
 }).passthrough();
 
-const QUIZ_MIN_QUESTIONS = 2;
+const QUIZ_ABSOLUTE_MIN_QUESTIONS = 2;
+const QUIZ_DEFAULT_STUDY_MIN_QUESTIONS = 6;
 const QUIZ_ATTEMPT_TIMEOUT_MS = 45000;
 const NON_RETRYABLE_PROVIDER_ERRORS = new Set([
   'ai_auth_failed',
@@ -90,6 +93,42 @@ const NON_RETRYABLE_PROVIDER_ERRORS = new Set([
   'ai_unavailable',
   'ai_timeout',
 ]);
+
+function requestedQuizCounts(body = {}) {
+  const parsedTarget = parseInt(body.count == null ? 6 : body.count, 10);
+  const targetCount = Math.min(
+    20,
+    Math.max(QUIZ_ABSOLUTE_MIN_QUESTIONS, Number.isFinite(parsedTarget) ? parsedTarget : 6),
+  );
+  const rawMin = body.min_count == null ? body.minCount : body.min_count;
+  const parsedMin = parseInt(rawMin, 10);
+  const defaultMin = targetCount >= QUIZ_DEFAULT_STUDY_MIN_QUESTIONS
+    ? QUIZ_DEFAULT_STUDY_MIN_QUESTIONS
+    : targetCount;
+  const minCount = Math.min(
+    targetCount,
+    Math.max(
+      QUIZ_ABSOLUTE_MIN_QUESTIONS,
+      Number.isFinite(parsedMin) ? parsedMin : defaultMin,
+    ),
+  );
+  return { targetCount, minCount };
+}
+
+function insufficientQuizError({ targetCount, minCount, acceptedCount, failureReasons = [], modelResponseSeen = false }) {
+  const plural = acceptedCount === 1 ? '' : 's';
+  const message = acceptedCount > 0
+    ? `This material only produced ${acceptedCount} grounded quiz question${plural}. Noēsis needs at least ${minCount} source-backed questions for a useful quiz.`
+    : `Noēsis could not find enough grounded source facts to create at least ${minCount} quiz questions from this material.`;
+  return new HttpError(422, 'insufficient_quiz_content', message, {
+    accepted_count: acceptedCount,
+    requested_count: targetCount,
+    min_count: minCount,
+    reasons: failureReasons.slice(0, 12),
+    retryable: false,
+    provider_response_seen: !!modelResponseSeen,
+  });
+}
 
 function normalizeMetadata(value) {
   return stripInternalRefs(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
@@ -202,6 +241,15 @@ function significantWords(value) {
   return words;
 }
 
+function quizOptionShape(option) {
+  const text = stripInternalRefs(option);
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  if (wordCount <= 2 && text.length <= 18) return 'short_term';
+  if (text.length >= 42 || /[.!?]$/.test(text) || (wordCount >= 6 && OPTION_SENTENCE_VERB_RE.test(text))) return 'statement';
+  if (wordCount <= 5 && text.length <= 52) return 'term';
+  return 'phrase';
+}
+
 function validateGeneratedQuiz(data, chunks, count, difficulty, metadataPhrases = []) {
   const errors = [];
   const warnings = [];
@@ -230,6 +278,10 @@ function validateGeneratedQuiz(data, chunks, count, difficulty, metadataPhrases 
     // Concise domain terms (Pop, LIFO, O(1), x, pH) can be excellent options.
     // Basic sanitization already enforces four non-empty, unique choices.
     if (question.options.some(option => option.length > 220)) questionErrors.push(`question_${number}_option_length`);
+    const optionShapes = new Set(question.options.map(quizOptionShape));
+    if (optionShapes.has('statement') && optionShapes.has('short_term')) {
+      questionErrors.push(`question_${number}_mixed_option_shapes`);
+    }
     if (question.options.some(option => /\b(?:all|none) of the above\b|not (?:stated|mentioned|supported)\b/i.test(option))) {
       questionErrors.push(`question_${number}_implausible_option`);
     }
@@ -344,6 +396,8 @@ function readStoredQuizQuestions(db, quiz) {
     const sanitized = sanitizeQuestion({ ...row, options, topic: row.concept }, quiz.difficulty, metadataPhrases);
     if (!sanitized) return null;
     if (GENERIC_STEM_RE.test(sanitized.question) || GENERIC_TOPIC_RE.test(sanitized.topic) || sourceTextQuality.isIncompleteLabel(sanitized.topic)) return null;
+    const optionShapes = new Set(sanitized.options.map(quizOptionShape));
+    if (optionShapes.has('statement') && optionShapes.has('short_term')) return null;
     questions.push({ row, options });
   }
   return questions.length >= 2 ? questions : null;
@@ -376,10 +430,10 @@ function quizVerifierText(data) {
 
 router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
   try {
-    const { material_id, count, difficulty } = req.body || {};
+    const { material_id, difficulty } = req.body || {};
     if (!material_id) throw new HttpError(400, 'missing_material_id');
     const scope = generationScope(req.body || {});
-    const n = Math.min(20, Math.max(2, parseInt(count || 6, 10)));
+    const { targetCount: n, minCount } = requestedQuizCounts(req.body || {});
     const diff = ['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium';
     const db = getDb();
     const m = db.prepare('SELECT id, title FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
@@ -542,10 +596,6 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     const primaryProvider = String(env.QUIZ_PROVIDER || 'groq').toLowerCase();
     const providerNames = [...new Set([primaryProvider, env.QUIZ_FALLBACK_PROVIDER].map(value => String(value || '').toLowerCase()).filter(Boolean))]
       .filter(provider => provider !== 'groq' || !!env.GROQ_API_KEY);
-    if (!providerNames.length) {
-      throw new HttpError(503, 'quiz_generation_failed', 'No configured quiz provider is currently available.');
-    }
-
     const generationStartedAt = Date.now();
     const generationDeadline = generationStartedAt + env.QUIZ_GENERATION_TIMEOUT_MS;
     const acceptedQuestions = [];
@@ -555,11 +605,11 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     let modelResponseSeen = false;
     const failureReasons = [];
     const qualityWarnings = [];
-    const attemptPlan = [
+    const attemptPlan = providerNames.length ? [
       { provider: providerNames[0], phase: 'initial' },
       { provider: providerNames[0], phase: 'repair' },
       ...(providerNames[1] ? [{ provider: providerNames[1], phase: 'fallback' }] : []),
-    ];
+    ] : [];
     let lastRejected = [];
 
     for (const [attempt, plan] of attemptPlan.entries()) {
@@ -577,10 +627,18 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         rejected: lastRejected,
         requestedCount: n,
       });
+      const promptContext = plan.phase === 'initial'
+        ? educationalContextPrompt
+        : [
+          sourceGroundingJudge.topicLockPrompt(topicQuery, preVerifier, { strict: true }),
+          sourceTopicPlans.formatSourceTopicPlanForPrompt(sourceTopicPlan),
+          retryGuidance,
+          'STRICT SOURCE-ONLY RETRY: Use only facts stated in the uploaded source excerpts below. Do not use curated knowledge, general knowledge, or assumptions. Every correct answer and explanation must be answerable from its cited source_chunk_ids.',
+        ].filter(Boolean).join('\n\n');
       const attemptStartedAt = Date.now();
       try {
         const raw = await ai.generate(prompts.QUIZ_MCQ(uploadedChunks, requestedThisAttempt, diff, {
-          educationalContext: [educationalContextPrompt, retryGuidance].filter(Boolean).join('\n\n'),
+          educationalContext: promptContext,
           groundingTier: tier,
         }), {
           provider: plan.provider,
@@ -674,12 +732,59 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       }
     }
 
-    if (acceptedQuestions.length < QUIZ_MIN_QUESTIONS) {
+    let generationMode = 'ai';
+    let deterministicFallbackReason = null;
+    if (acceptedQuestions.length < n) {
+      const built = quizFallback.buildDeterministicQuiz(uploadedChunks, n, diff);
+      const quality = validateGeneratedQuiz(
+        { questions: built.questions },
+        uploadedChunks,
+        built.questions.length,
+        diff,
+        metadataPhrases,
+      );
+      let added = 0;
+      for (const question of quality.questions) {
+        const key = optionKey(question.question);
+        if (acceptedKeys.has(key)) continue;
+        acceptedKeys.add(key);
+        acceptedQuestions.push(question);
+        added += 1;
+        if (acceptedQuestions.length >= n) break;
+      }
+      if (added) {
+        generationMode = modelResponseSeen && acceptedQuestions.length > added ? 'ai_plus_fallback' : 'deterministic_fallback';
+        deterministicFallbackReason = modelResponseSeen ? 'ai_quality_top_up' : 'ai_unavailable';
+      }
+      failureReasons.push(...quality.errors.map(reason => `deterministic:${reason}`));
+      log.info('quiz_deterministic_fallback', {
+        materialId: material_id,
+        reason: deterministicFallbackReason || 'fallback_empty',
+        factCount: built.factCount,
+        generated: built.questions.length,
+        accepted: added,
+        accumulated: acceptedQuestions.length,
+        rejectedReasons: compactFailureReasons(quality.rejected),
+        sourceChunkIds: [...new Set(quality.questions.flatMap(question => question.source_chunk_ids || []))],
+      });
+    }
+
+    if (acceptedQuestions.length < minCount) {
       const code = modelResponseSeen ? 'quiz_quality_failed' : 'quiz_generation_failed';
-      throw new HttpError(503, code, modelResponseSeen
-        ? 'The configured models could not produce a high-quality grounded quiz. Please retry.'
-        : 'Quiz generation providers are currently unavailable. Please retry.', {
+      log.warn('quiz_generation_exhausted', {
+        materialId: material_id,
+        code,
+        accepted: acceptedQuestions.length,
+        requested: n,
+        minCount,
         reasons: failureReasons.slice(0, 12),
+      });
+      throw insufficientQuizError({
+        targetCount: n,
+        minCount,
+        acceptedCount: acceptedQuestions.length,
+        failureReasons,
+        modelResponseSeen,
       });
     }
     const data = { questions: acceptedQuestions.slice(0, n) };
@@ -699,12 +804,37 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       outputJson: data,
       attempt: 1,
     });
-    if (postVerifier.decision !== sourceGroundingJudge.DECISIONS.ACCEPT) {
+    if (postVerifier.decision !== sourceGroundingJudge.DECISIONS.ACCEPT && generationMode !== 'deterministic_fallback') {
       const reasons = postVerifier.reasonCodes || ['source_grounding_failed'];
       log.warn('quiz_grounding_rejected', { materialId: material_id, stage: 'accumulated', reasons });
-      throw new HttpError(503, 'quiz_quality_failed', 'The configured models could not produce a high-quality grounded quiz. Please retry.', {
-        reasons: [...failureReasons, ...reasons].slice(0, 12),
-      });
+      const built = quizFallback.buildDeterministicQuiz(uploadedChunks, n, diff);
+      const fallbackQuality = validateGeneratedQuiz(
+        { questions: built.questions },
+        uploadedChunks,
+        built.questions.length,
+        diff,
+        metadataPhrases,
+      );
+      if (fallbackQuality.questions.length >= minCount) {
+        data.questions = fallbackQuality.questions.slice(0, n);
+        generationMode = 'deterministic_fallback';
+        deterministicFallbackReason = 'post_grounding_rejected';
+        failureReasons.push(...reasons);
+        log.warn('quiz_grounding_replaced_with_fallback', {
+          materialId: material_id,
+          reasons,
+          accepted: data.questions.length,
+          sourceChunkIds: [...new Set(data.questions.flatMap(question => question.source_chunk_ids || []))],
+        });
+      } else {
+        throw insufficientQuizError({
+          targetCount: n,
+          minCount,
+          acceptedCount: fallbackQuality.questions.length,
+          failureReasons: [...failureReasons, ...reasons],
+          modelResponseSeen,
+        });
+      }
     }
     const fallbackProviderUsed = [...acceptedProviders].find(provider => provider !== primaryProvider);
     const providerUsed = fallbackProviderUsed || [...acceptedProviders][0] || providerNames[0];
@@ -713,7 +843,7 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     const fallbackReason = providerFallbackUsed ? 'provider_fallback' : null;
 
     const qIns = db.prepare(`INSERT INTO quizzes (user_id, material_id, title, difficulty, created_at) VALUES (?,?,?,?,?)`);
-    const qqIns = db.prepare(`INSERT INTO quiz_questions (quiz_id, idx, question, options_json, correct_idx, explanation, concept) VALUES (?,?,?,?,?,?,?)`);
+    const qqIns = db.prepare(`INSERT INTO quiz_questions (quiz_id, idx, question, options_json, correct_idx, explanation, concept, source_chunk_ids_json) VALUES (?,?,?,?,?,?,?,?)`);
     const questions = data.questions.slice(0, n);
     const quizTitle = quizTitleFromQuestions(questions);
     let quizId;
@@ -721,13 +851,15 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       const qr = qIns.run(req.user.id, material_id, quizTitle, diff, nowIso());
       quizId = qr.lastInsertRowid;
       questions.forEach((q, i) => {
-        qqIns.run(quizId, i, q.question, JSON.stringify(q.options), q.correct_idx, q.explanation || '', q.topic || q.concept || '');
+        qqIns.run(quizId, i, q.question, JSON.stringify(q.options), q.correct_idx, q.explanation || '', q.topic || q.concept || '', JSON.stringify(q.source_chunk_ids || []));
       });
     })();
+    const deterministicFallbackUsed = generationMode !== 'ai';
     res.json({
       quiz_id: quizId,
       count: questions.length,
       requested_count: n,
+      min_count: minCount,
       partial: questions.length < n,
       quality_warnings: [...new Set([
         ...qualityWarnings,
@@ -739,8 +871,9 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       chunk_id: scope.chunkId,
       domain: domainInfo,
       provider: providerUsed,
-      fallback,
-      fallback_reason: fallbackReason,
+      fallback: fallback || deterministicFallbackUsed,
+      fallback_reason: deterministicFallbackReason || fallbackReason,
+      generation_mode: generationMode,
       provider_fallback: providerFallbackUsed,
       configured_provider: env.QUIZ_PROVIDER,
       configured_fallback_provider: env.QUIZ_FALLBACK_PROVIDER,

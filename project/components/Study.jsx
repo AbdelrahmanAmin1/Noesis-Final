@@ -406,22 +406,65 @@ const Flashcards = ({ onNav }) => {
   const [i, setI] = React.useState(0);
   const [flipped, setFlipped] = React.useState(false);
   const [cards, setCards] = React.useState([]);
+  const [decks, setDecks] = React.useState([]);
+  const [materials, setMaterials] = React.useState([]);
+  const [selectedDeck, setSelectedDeck] = React.useState(null);
   const [error, setError] = React.useState('');
   const [reviewing, setReviewing] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [generatingId, setGeneratingId] = React.useState(null);
   const [mode, setMode] = React.useState('due');
   const [counts, setCounts] = React.useState({ easy: 0, hard: 0, skipped: 0 });
 
+  const refreshDecks = React.useCallback(async () => {
+    setLoading(true); setError('');
+    try {
+      const [deckRes, materialRes] = await Promise.all([
+        window.NoesisAPI.flashcards.decks(),
+        window.NoesisAPI.materials.list(),
+      ]);
+      setDecks((deckRes && deckRes.decks) || []);
+      setMaterials(((materialRes && materialRes.materials) || []).filter(material => material.status === 'ready'));
+    } catch (e) {
+      setError(e.message || 'Failed to load flashcard decks');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => { refreshDecks(); }, [refreshDecks]);
+
   const refresh = React.useCallback(() => {
-    const materialId = parseInt(sessionStorage.getItem('noesis.materialId') || '0', 10) || null;
+    if (!selectedDeck || !selectedDeck.material_id) return Promise.resolve();
     const request = mode === 'all'
-      ? window.NoesisAPI.flashcards.list(materialId)
-      : window.NoesisAPI.flashcards.due();
+      ? window.NoesisAPI.flashcards.list(selectedDeck.material_id)
+      : window.NoesisAPI.flashcards.due(selectedDeck.material_id);
     return request
       .then(d => { setCards(d.cards || []); setI(0); setFlipped(false); setError(''); })
       .catch(e => setError(e.message || 'Failed to load cards'));
-  }, [mode]);
+  }, [mode, selectedDeck && selectedDeck.material_id]);
 
-  React.useEffect(() => { refresh(); }, [refresh]);
+  React.useEffect(() => { if (selectedDeck) refresh(); }, [refresh, selectedDeck]);
+
+  const openDeck = (deck) => {
+    setSelectedDeck(deck);
+    setMode('due');
+    setCounts({ easy: 0, hard: 0, skipped: 0 });
+    setCards([]); setI(0); setFlipped(false); setError('');
+  };
+
+  const generateDeck = async (materialId) => {
+    if (generatingId) return;
+    setGeneratingId(materialId); setError('');
+    try {
+      await window.NoesisAPI.flashcards.generate({ material_id: materialId, count: 8, regenerate: true });
+      await refreshDecks();
+    } catch (e) {
+      setError(e.message || 'Could not generate flashcards');
+    } finally {
+      setGeneratingId(null);
+    }
+  };
 
   const hasCards = cards.length > 0;
   const c = cards[i] || { question: 'No cards due.', answer: 'Generate flashcards from a ready material.', deck: 'Review', topic: '', difficulty: '' };
@@ -441,12 +484,71 @@ const Flashcards = ({ onNav }) => {
     setReviewing(false);
   };
 
+  if (!selectedDeck) return (
+    <div style={fc.page}>
+      <window.Topbar title="Flashcards" crumbs={['Choose material / deck']}
+        right={<button className="btn btn-accent" onClick={() => onNav('materials')}><Icon.Folder size={12}/> Open materials</button>}
+      />
+      <main style={fc.deckPage}>
+        <div style={fc.deckHero}>
+          <div>
+            <div style={fc.eyebrow}>Flashcard decks</div>
+            <h1 style={fc.deckTitle}>Choose what you want to study</h1>
+            <p style={fc.deckSub}>Each deck is isolated to one uploaded material. Cards from different materials are never combined.</p>
+          </div>
+          <span className="chip">{decks.length} deck{decks.length === 1 ? '' : 's'}</span>
+        </div>
+        {error && <div style={fc.error}>{error}</div>}
+        {loading ? <div style={fc.empty}>Loading flashcard decks...</div> : decks.length > 0 ? (
+          <div style={fc.deckGrid}>
+            {decks.map(deck => (
+              <article key={deck.generation_id} style={fc.deckCard}>
+                <div style={fc.deckIcon}><Icon.Cards size={18}/></div>
+                <h2 style={fc.deckCardTitle}>{deck.material_title}</h2>
+                <div style={fc.deckMeta}>{deck.card_count} flashcard{deck.card_count === 1 ? '' : 's'} · {deck.due_count} due</div>
+                <div style={fc.deckDate}>Last generated {deck.last_generated_at ? new Date(deck.last_generated_at).toLocaleString() : 'recently'}</div>
+                <div style={fc.deckActions}>
+                  <button className="btn btn-accent" onClick={() => openDeck(deck)}>Study Flashcards</button>
+                  <button className="btn btn-ghost" disabled={!!generatingId} onClick={() => generateDeck(deck.material_id)}>
+                    {generatingId === deck.material_id ? 'Regenerating...' : 'Regenerate'}
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div style={fc.empty}>
+            <Icon.Cards size={26}/>
+            <h2 style={fc.emptyTitle}>No flashcard decks yet</h2>
+            <p style={fc.emptyText}>Choose a ready material below to generate a source-grounded deck.</p>
+          </div>
+        )}
+        {materials.length > 0 && (
+          <section style={fc.generatePanel}>
+            <div style={fc.eyebrow}>Generate from a material</div>
+            <div style={fc.materialList}>
+              {materials.filter(material => !decks.some(deck => Number(deck.material_id) === Number(material.id))).map(material => (
+                <div key={material.id} style={fc.materialRow}>
+                  <span style={{ flex: 1 }}>{material.display_title || material.title}</span>
+                  <button className="btn btn-ghost" disabled={!!generatingId} onClick={() => generateDeck(material.id)}>
+                    {generatingId === material.id ? 'Generating...' : 'Generate Flashcards'}
+                  </button>
+                </div>
+              ))}
+              {materials.every(material => decks.some(deck => Number(deck.material_id) === Number(material.id))) && <div style={fc.deckDate}>All ready materials already have an active deck.</div>}
+            </div>
+          </section>
+        )}
+      </main>
+    </div>
+  );
+
   return (
     <div style={{ background: 'var(--bg-0)', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <window.Topbar title={hasCards ? `Flashcards - ${c.deck || 'Review'}` : 'Flashcards'} crumbs={['Review']}
+      <window.Topbar title={`Flashcards - ${selectedDeck.material_title}`} crumbs={['Flashcards', selectedDeck.material_title]}
         right={<>
+          <button className="btn btn-ghost" disabled={reviewing} onClick={() => { setSelectedDeck(null); setCards([]); refreshDecks(); }}>Choose another deck</button>
           <button className="btn btn-ghost" disabled={reviewing} onClick={() => setMode(mode === 'due' ? 'all' : 'due')}>{mode === 'due' ? 'Review existing' : 'Due cards'}</button>
-          <button className="btn btn-accent" disabled={reviewing} onClick={() => onNav('materials')}><Icon.Folder size={12}/> Create new set</button>
           <span style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }} className="mono">{hasCards ? `${i + 1} / ${cards.length}` : '0 / 0'}</span>
         </>}
       />
@@ -497,7 +599,7 @@ const Flashcards = ({ onNav }) => {
             </div>
             {!hasCards && <div style={{ display: 'flex', gap: 'calc(8px * var(--app-density-scale))', justifyContent: 'center', marginTop: 'calc(24px * var(--app-density-scale))' }}>
               {mode === 'due' && <button className="btn btn-ghost" onClick={() => setMode('all')}><Icon.Cards size={12}/> Review existing</button>}
-              <button className="btn btn-accent" onClick={() => onNav('materials')}><Icon.Folder size={12}/> Create new set</button>
+              <button className="btn btn-accent" onClick={() => { setSelectedDeck(null); setCards([]); }}><Icon.Folder size={12}/> Choose another deck</button>
             </div>}
           </div>
         </div>
@@ -507,6 +609,26 @@ const Flashcards = ({ onNav }) => {
 };
 
 const fc = {
+  page: { background: 'var(--bg-0)', minHeight: '100vh' },
+  deckPage: { padding: 'calc(28px * var(--app-density-scale))', maxWidth: 1180, margin: '0 auto' },
+  deckHero: { display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 'calc(18px * var(--app-density-scale))', marginBottom: 'calc(22px * var(--app-density-scale))' },
+  eyebrow: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 'calc(7px * var(--app-density-scale))' },
+  deckTitle: { margin: 0, fontFamily: 'var(--font-display)', fontWeight: 300, fontSize: 'calc(36px * var(--app-font-scale))' },
+  deckSub: { color: 'var(--fg-2)', fontSize: 'calc(13px * var(--app-font-scale))', lineHeight: 1.55, margin: '8px 0 0', maxWidth: 680 },
+  deckGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 'calc(14px * var(--app-density-scale))' },
+  deckCard: { minWidth: 0, padding: 'calc(18px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', background: 'var(--bg-1)' },
+  deckIcon: { width: 38, height: 38, borderRadius: 10, display: 'grid', placeItems: 'center', color: 'var(--accent)', background: 'var(--accent-glow)', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  deckCardTitle: { margin: 0, color: 'var(--fg-0)', fontSize: 'calc(18px * var(--app-font-scale))', overflowWrap: 'anywhere' },
+  deckMeta: { marginTop: 'calc(8px * var(--app-density-scale))', color: 'var(--fg-1)', fontSize: 'calc(12.5px * var(--app-font-scale))' },
+  deckDate: { marginTop: 'calc(5px * var(--app-density-scale))', color: 'var(--fg-3)', fontSize: 'calc(11.5px * var(--app-font-scale))', lineHeight: 1.45 },
+  deckActions: { display: 'flex', flexWrap: 'wrap', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(18px * var(--app-density-scale))' },
+  empty: { padding: 'calc(34px * var(--app-density-scale))', border: '1px dashed var(--line-strong)', borderRadius: 'var(--r-lg)', color: 'var(--fg-3)', textAlign: 'center', display: 'grid', placeItems: 'center' },
+  emptyTitle: { color: 'var(--fg-0)', margin: '12px 0 5px', fontSize: 'calc(20px * var(--app-font-scale))' },
+  emptyText: { margin: 0, maxWidth: 480, lineHeight: 1.5 },
+  error: { padding: '10px 12px', color: 'var(--err)', border: '1px solid var(--err)', borderRadius: 8, marginBottom: 'calc(14px * var(--app-density-scale))' },
+  generatePanel: { marginTop: 'calc(22px * var(--app-density-scale))', padding: 'calc(16px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 'var(--r-lg)', background: 'var(--bg-1)' },
+  materialList: { display: 'grid', gap: 'calc(7px * var(--app-density-scale))' },
+  materialRow: { display: 'flex', alignItems: 'center', gap: 'calc(12px * var(--app-density-scale))', padding: '9px 10px', border: '1px solid var(--line)', borderRadius: 8, color: 'var(--fg-1)' },
   card: { position: 'relative', minHeight: 340, transition: 'transform 600ms var(--ease-in-out)', transformStyle: 'preserve-3d' },
   face: {
     position: 'absolute', inset: 0, padding: 'calc(40px * var(--app-density-scale))', borderRadius: 'var(--r-xl)',

@@ -548,8 +548,9 @@ const StoryboardReview = ({ onNav }) => {
         </section>
 
         {status && <div style={sr.notice}>{status}</div>}
-        {qualityResult && <ApprovalPanel quality={qualityResult} busy={busy} onFix={doFixScene} onGlobalFix={doFixIssue} onRecheck={recheck} onApproveAnyway={() => approve(true)}/>}
+        {activeQuality && <ApprovalPanel quality={activeQuality} busy={busy} onFix={doFixScene} onGlobalFix={doFixIssue} onRecheck={recheck} onApproveAnyway={() => approve(true)}/>}
         <GenerationSummary record={storyboard} board={board} scenes={scenes} warnings={warnings}/>
+        <OcrReferenceGallery materialId={storyboard.material_id} images={storyboard.ocr_reference_images}/>
 
         {topicGroups.length > 0 ? (
           <div style={sr.topicSceneStack}>
@@ -609,6 +610,56 @@ const StoryboardReview = ({ onNav }) => {
         )}
       </main>
     </div>
+  );
+};
+
+const OcrReferenceGallery = ({ materialId, images }) => {
+  const list = safeArray(images).filter(item => item && item.id && item.imagePath && item.assetRole === 'source_reference_image');
+  if (!list.length || !materialId) return null;
+  return (
+    <section style={sr.referenceSection}>
+      <div style={sr.referenceHead}>
+        <div>
+          <div style={sr.summaryLabel}>Visual references</div>
+          <h2 style={sr.referenceTitle}>Extracted Visual References</h2>
+          <p style={sr.referenceSub}>OCR and source images remain available here, separate from the rendered video and storyboard frame area.</p>
+        </div>
+        <span className="chip">{list.length} image{list.length === 1 ? '' : 's'}</span>
+      </div>
+      <div style={sr.referenceGrid}>
+        {list.map(candidate => <OcrReferenceImage key={candidate.id} materialId={materialId} candidate={candidate}/>) }
+      </div>
+    </section>
+  );
+};
+
+const OcrReferenceImage = ({ materialId, candidate }) => {
+  const [url, setUrl] = React.useState('');
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    let active = true;
+    let objectUrl = '';
+    (async () => {
+      try {
+        objectUrl = await window.NoesisAPI.materials.sourceVisualImageBlobUrl(materialId, candidate.id);
+        if (active) setUrl(objectUrl); else URL.revokeObjectURL(objectUrl);
+      } catch (_) { if (active) setFailed(true); }
+    })();
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [materialId, candidate.id]);
+  if (failed) return null;
+  const location = candidate.slideNumber != null ? `Slide ${candidate.slideNumber}`
+    : candidate.pageNumber != null ? `Page ${candidate.pageNumber}` : 'Extracted image';
+  return (
+    <figure style={sr.referenceCard}>
+      <div style={sr.referenceImageBox}>
+        {url ? <img src={url} alt={candidate.caption || candidate.heading || 'Extracted visual reference'} style={sr.referenceImage}/> : <div style={sr.referenceLoading}>Loading visual...</div>}
+      </div>
+      <figcaption style={sr.referenceCaption}>
+        <div style={sr.referenceCaptionTitle}>{candidate.caption || candidate.heading || 'Source visual'}</div>
+        <div style={sr.referenceMeta}>{location} · {candidate.usedInStoryboard ? 'Used in storyboard' : 'Reference only'}</div>
+      </figcaption>
+    </figure>
   );
 };
 
@@ -811,6 +862,18 @@ const sr = {
   muted: { fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
   enrichmentNote: { display: 'flex', alignItems: 'center', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))', fontSize: 'calc(12.5px * var(--app-font-scale))', color: 'var(--fg-2)', lineHeight: 1.5 },
   visualSummary: { marginTop: 'calc(12px * var(--app-density-scale))', padding: 'calc(10px * var(--app-density-scale))', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-2)' },
+  referenceSection: { marginBottom: 'calc(18px * var(--app-density-scale))', padding: 'calc(16px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
+  referenceHead: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'calc(14px * var(--app-density-scale))', marginBottom: 'calc(12px * var(--app-density-scale))' },
+  referenceTitle: { margin: 0, color: 'var(--fg-0)', fontSize: 'calc(20px * var(--app-font-scale))', fontWeight: 600 },
+  referenceSub: { margin: '5px 0 0', color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.5, maxWidth: 680 },
+  referenceGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 'calc(10px * var(--app-density-scale))' },
+  referenceCard: { minWidth: 0, margin: 0, border: '1px solid var(--line)', borderRadius: 8, overflow: 'hidden', background: 'var(--bg-0)' },
+  referenceImageBox: { width: '100%', minHeight: 150, height: 190, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-2)', overflow: 'hidden' },
+  referenceImage: { display: 'block', width: '100%', height: '100%', maxHeight: 190, objectFit: 'contain' },
+  referenceLoading: { color: 'var(--fg-3)', fontSize: 'calc(11.5px * var(--app-font-scale))' },
+  referenceCaption: { padding: '9px 10px' },
+  referenceCaptionTitle: { color: 'var(--fg-1)', fontSize: 'calc(12px * var(--app-font-scale))', fontWeight: 600, lineHeight: 1.4, overflowWrap: 'anywhere' },
+  referenceMeta: { marginTop: 4, color: 'var(--fg-3)', fontSize: 'calc(10.5px * var(--app-font-scale))' },
   visualCoverageRows: { display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 'calc(10px * var(--app-density-scale))', color: 'var(--fg-2)', fontSize: 'calc(12px * var(--app-font-scale))', lineHeight: 1.45 },
   topicCoverage: { marginTop: 'calc(12px * var(--app-density-scale))', padding: 'calc(10px * var(--app-density-scale))', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-2)' },
   topicCoverageGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 'calc(8px * var(--app-density-scale))' },

@@ -345,6 +345,7 @@ function removeImageFields(value = {}) {
     'imagePath', 'image_path', 'imageUrl', 'image_url',
     'sourceImagePath', 'source_image_path', 'sourceImageUrl', 'source_image_url',
     'sourceVisualId', 'source_visual_id',
+    'assetRole', 'asset_role', 'placement',
   ]) delete next[key];
   return next;
 }
@@ -358,7 +359,18 @@ function sourceInputFor(slide = {}, scene = {}) {
     imageUrl: slide.image_url || slide.imageUrl || data.imageUrl || data.image_url || data.sourceImageUrl || data.source_image_url || plan.imageUrl || '',
     sourceVisualId: slide.source_visual_id || slide.sourceVisualId || data.sourceVisualId || data.source_visual_id || scene.sourceVisualId || plan.sourceVisualId || sourceVisualIds[0] || null,
     materialId: data.materialId || data.material_id || scene.materialId || scene.material_id || null,
+    assetRole: data.assetRole || data.asset_role || scene.assetRole || scene.asset_role || slide.asset_role || slide.assetRole || '',
+    placement: data.placement || scene.placement || slide.placement || null,
   };
+}
+
+function validOverlayPlacement(value) {
+  if (!value || typeof value !== 'object') return false;
+  return ['x', 'y', 'width', 'height'].every(key => Number.isFinite(Number(value[key]))) &&
+    Number(value.width) > 0 && Number(value.height) > 0 &&
+    Number(value.x) >= 0 && Number(value.y) >= 0 &&
+    Number(value.x) + Number(value.width) <= 1 &&
+    Number(value.y) + Number(value.height) <= 1;
 }
 
 function isSourceReference(slide = {}, scene = {}) {
@@ -382,6 +394,8 @@ function sceneWithResolvedImage(scene = {}, resolved) {
     imagePath: resolved.absolutePath,
     imageUrl: resolved.browserSrc,
     sourceVisualId: resolved.sourceVisualId || data.sourceVisualId || null,
+    assetRole: 'storyboard_frame_image',
+    placement: { mode: 'frame', layoutTemplate: 'source_main' },
   };
   const composition = visualComposition.normalizeCompositionPlan(scene.visualPlan, { hasSourceImage: true });
   return {
@@ -453,6 +467,26 @@ async function preflightScriptAssets(script = {}, opts = {}) {
   for (let index = 0; index < slides.length; index += 1) {
     const slide = slides[index];
     const scene = scenes[index] || {};
+    const roleInput = sourceInputFor(slide, scene);
+    if (roleInput.assetRole === 'source_reference_image') {
+      slides[index] = removeImageFields(slide);
+      if (scenes[index]) {
+        const data = removeImageFields(scene.visualElements || scene.visualData || {});
+        scenes[index] = { ...scene, visualData: data, visualElements: { ...data } };
+      }
+      log.warn('render_visual_asset_role_rejected', { sceneIndex: index, sceneId: scene.id || null, assetRole: roleInput.assetRole });
+      continue;
+    }
+    if (roleInput.assetRole === 'overlay_asset' && !validOverlayPlacement(roleInput.placement)) {
+      slides[index] = removeImageFields(slide);
+      if (scenes[index]) {
+        const data = removeImageFields(scene.visualElements || scene.visualData || {});
+        scenes[index] = { ...scene, visualData: data, visualElements: { ...data } };
+      }
+      warnings.push({ sceneIndex: index, sceneId: scene.id || null, assetRole: roleInput.assetRole, reason: 'overlay_placement_required', fallback: true });
+      log.warn('render_visual_asset_role_rejected', { sceneIndex: index, sceneId: scene.id || null, assetRole: roleInput.assetRole, reason: 'overlay_placement_required' });
+      continue;
+    }
     if (!isSourceReference(slide, scene)) continue;
     const sourceInput = sourceInputFor(slide, scene);
     const resolved = await resolveRenderVisualAsset(sourceInput, {
@@ -467,6 +501,8 @@ async function preflightScriptAssets(script = {}, opts = {}) {
         image_path: resolved.absolutePath,
         image_url: resolved.browserSrc,
         source_visual_id: resolved.sourceVisualId || slide.source_visual_id || null,
+        asset_role: 'storyboard_frame_image',
+        placement: { mode: 'frame', layoutTemplate: 'source_main' },
         composition_mode: composition.compositionMode,
         layout_template: composition.layoutTemplate,
         composition_regions: composition.regions,

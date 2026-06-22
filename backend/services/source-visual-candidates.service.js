@@ -209,13 +209,27 @@ function asCandidateRow(row) {
     ocrText: row.ocr_text || '',
     visualTypeGuess: row.visual_type_guess || '',
     classification: metadata.classification || row.visual_type_guess || '',
-    importanceScore: Number(row.importance_score || 0),
+    importanceScore: Number(row.importance_score || row.visual_usefulness_score || 0),
+    analysisRunId: row.analysis_run_id || null,
+    boundingBox: parseJson(row.bounding_box_json, {}),
+    topicRelevanceScore: Number(row.topic_relevance_score || 0),
+    visualUsefulnessScore: Number(row.visual_usefulness_score || row.importance_score || 0),
+    visualQualityScore: Number(row.visual_quality_score || 0),
+    recommendedSceneUsage: row.recommended_scene_usage || '',
+    recommendation: row.recommendation || 'ignore',
+    selectedForVideo: !!row.selected_for_video,
+    ocrConfidence: row.ocr_confidence == null ? null : Number(row.ocr_confidence),
+    warnings: parseJson(row.warnings_json, []),
+    semanticData: parseJson(row.semantic_data_json, {}),
+    mandatoryForVideo: !!metadata.mandatoryForVideo,
     associationMethod: metadata.associationMethod || '',
     associationConfidence: metadata.associationConfidence == null
       ? (/^embedded-\d+\.(?:jpe?g|png|webp|gif)$/i.test(metadata.name || '') ? 0.25 : 1)
       : Number(metadata.associationConfidence),
     metadata,
     type: row.slide_number != null ? 'source_slide_reference' : 'source_page_reference',
+    assetRole: 'source_reference_image',
+    placement: null,
     caption: captionFor(row),
     evidence: clean(row.nearby_text || row.ocr_text || '', 260),
   };
@@ -338,9 +352,13 @@ function forPrompt(materialId, opts = {}) {
   const max = opts.max || env.SOURCE_VISUALS_MAX_PER_MATERIAL || 8;
   const minScore = opts.minScore == null ? 0.4 : opts.minScore;
   const db = getDb();
-  const rows = db.prepare(`SELECT * FROM source_visual_candidates
-                           WHERE material_id=? AND importance_score>=?
-                           ORDER BY importance_score DESC, id ASC
+  const rows = db.prepare(`SELECT svc.* FROM source_visual_candidates svc
+                           JOIN materials m ON m.id=svc.material_id
+                           WHERE svc.material_id=?
+                             AND ((m.active_analysis_run_id IS NULL AND svc.analysis_run_id IS NULL) OR svc.analysis_run_id=m.active_analysis_run_id)
+                             AND (svc.analysis_run_id IS NULL OR svc.selected_for_video=1)
+                             AND MAX(svc.importance_score, svc.visual_usefulness_score)>=?
+                           ORDER BY svc.topic_relevance_score DESC, svc.visual_usefulness_score DESC, svc.importance_score DESC, svc.id ASC
                            LIMIT ?`).all(materialId, minScore, max);
   return rows.map(asCandidateRow).filter(Boolean);
 }
@@ -350,10 +368,14 @@ function listForMaterial(userId, materialId, opts = {}) {
   const owner = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(materialId, userId);
   if (!owner) return null;
   const max = opts.max || 50;
-  const rows = db.prepare(`SELECT * FROM source_visual_candidates
-                           WHERE material_id=?
-                           ORDER BY importance_score DESC, id ASC
-                           LIMIT ?`).all(materialId, max);
+  const includeIgnored = !!opts.includeIgnored;
+  const rows = db.prepare(`SELECT svc.* FROM source_visual_candidates svc
+                           JOIN materials m ON m.id=svc.material_id
+                           WHERE svc.material_id=?
+                             AND ((m.active_analysis_run_id IS NULL AND svc.analysis_run_id IS NULL) OR svc.analysis_run_id=m.active_analysis_run_id)
+                             AND (?=1 OR svc.analysis_run_id IS NULL OR svc.selected_for_video=1)
+                           ORDER BY svc.selected_for_video DESC, svc.topic_relevance_score DESC, svc.visual_usefulness_score DESC, svc.importance_score DESC, svc.id ASC
+                           LIMIT ?`).all(materialId, includeIgnored ? 1 : 0, max);
   return rows.map(asCandidateRow).filter(Boolean);
 }
 

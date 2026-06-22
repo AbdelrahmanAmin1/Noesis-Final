@@ -223,6 +223,7 @@ const MaterialDetail = ({ onNav }) => {
   const [busy, setBusy] = React.useState(false);
   const [genStatus, setGenStatus] = React.useState('');
   const [activeAction, setActiveAction] = React.useState('');
+  const [quizRetry, setQuizRetry] = React.useState(null);
   const [video, setVideo] = React.useState(null);
   const [learningMap, setLearningMap] = React.useState(null);
   const [mapStatus, setMapStatus] = React.useState('ready');
@@ -296,6 +297,7 @@ const MaterialDetail = ({ onNav }) => {
     if (!id || busy) return false;
     const labels = { notes: 'notes', flashcards: 'flashcards', quiz: 'quiz' };
     setActiveAction(kind);
+    if (kind === 'quiz') setQuizRetry(null);
     setBusy(true); setGenStatus(`Generating ${labels[kind] || kind} from ${sourceScopeLabel.toLowerCase()}...`);
     try {
       const scopePayload = currentScopePayload();
@@ -305,7 +307,7 @@ const MaterialDetail = ({ onNav }) => {
       let quizResult = null;
       if (kind === 'flashcards') flashcardResult = await window.NoesisAPI.flashcards.generate({ material_id: id, count: 8, regenerate: !!options.regenerate, ...scopePayload, ...topicPayload });
       if (kind === 'quiz') {
-        const quizPayload = { material_id: id, count: 6, difficulty: 'medium', ...scopePayload, ...topicPayload };
+        const quizPayload = { material_id: id, count: 8, min_count: 6, difficulty: 'medium', ...scopePayload, ...topicPayload };
         let r = await window.NoesisAPI.quizzes.generate(quizPayload);
         if (r && r.status === 'reindexing' && r.job_id) {
           setGenStatus('Repairing extracted text and rebuilding the study index...');
@@ -318,10 +320,11 @@ const MaterialDetail = ({ onNav }) => {
         }
         if (!r || !r.quiz_id) throw new Error('Quiz generation did not complete after reindexing.');
         quizResult = r;
+        setQuizRetry(null);
         sessionStorage.setItem('noesis.quizId', String(r.quiz_id));
       }
       if (kind === 'quiz' && quizResult && quizResult.partial) {
-        setGenStatus(`Quiz created with ${quizResult.count || 0} of ${quizResult.requested_count || 6} grounded questions.`);
+        setGenStatus(`Quiz created with ${quizResult.count || 0} of ${quizResult.requested_count || 8} grounded questions.`);
       } else if (kind === 'flashcards' && flashcardResult) {
         if (flashcardResult.reused) setGenStatus('Using existing flashcards for this material.');
         else if (flashcardResult.fallback) setGenStatus(flashcardResult.message || 'Created fallback flashcards from source material.');
@@ -331,10 +334,12 @@ const MaterialDetail = ({ onNav }) => {
       }
       return true;
     } catch (e) {
-      const qualityMessage = e && e.code === 'quiz_quality_failed'
-        ? 'The models could not produce a high-quality grounded quiz. Please retry.'
+      const retryable = kind === 'quiz' && !!(e && e.data && e.data.details && e.data.details.retryable);
+      if (retryable) setQuizRetry({ options: { ...options }, message: e.message || 'No grounded quiz could be created.' });
+      const qualityMessage = retryable
+        ? `${e.message || 'No grounded quiz could be created from this material.'}`
         : e && e.code === 'insufficient_quiz_content'
-          ? 'There is not enough clean concept content for a useful quiz.'
+          ? (e.message || 'There is not enough clean concept content for a 6-question quiz.')
           : null;
       setGenStatus(qualityMessage || ('Failed: ' + (e.message || 'error')));
       return false;
@@ -505,7 +510,7 @@ const MaterialDetail = ({ onNav }) => {
               <Icon.Target size={13} style={{ color: 'var(--accent)' }}/>
               <div style={{ flex: 1, textAlign: 'left' }}>
                 <div style={mds.genTitle}>{activeAction === 'quiz' ? 'Generating quiz...' : 'Practice quiz'}</div>
-                <div style={mds.genSub}>Six grounded questions from the full lecture</div>
+                <div style={mds.genSub}>Six to eight grounded questions from the full lecture</div>
               </div>
             </button>
             <button style={mds.gen} disabled={busy || !ready} onClick={generateVideo}>
@@ -516,6 +521,14 @@ const MaterialDetail = ({ onNav }) => {
               </div>
             </button>
             {genStatus && <div style={mds.genStatus}>{genStatus}</div>}
+            {quizRetry && (
+              <button className="btn btn-ghost" disabled={busy || !ready} onClick={async () => {
+                const ok = await generate('quiz', quizRetry.options || {});
+                if (ok) onNav('quiz');
+              }} style={{ width: '100%', justifyContent: 'center' }}>
+                <Icon.RotateCcw size={12}/> Retry quiz generation
+              </button>
+            )}
             {video && video.status === 'ready' && (
               <video src={video.file} controls crossOrigin="use-credentials" style={{ width: '100%', marginTop: 'calc(8px * var(--app-density-scale))', borderRadius: 'var(--r-sm)' }}>
                 {video.captions && <track kind="captions" src={video.captions} srcLang="en" label="English"/>}

@@ -85,6 +85,9 @@ describe('LESSON_GENERATE prompt', () => {
     );
     expect(result).toContain('EducationalLesson');
     expect(result).toContain('"sections"');
+    expect(result).toContain('"studyGuide"');
+    expect(result).toContain('"whatYouWillLearn"');
+    expect(result).toContain('Never create a visible section titled "Source Outline"');
     expect(result).toContain('Shape');
     expect(result).toContain('Code sketch');
   });

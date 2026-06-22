@@ -55,12 +55,20 @@ function migrate() {
   ensureColumn(db, 'chunks', 'keywords_json', "TEXT DEFAULT '[]'");
   ensureColumn(db, 'chunks', 'source_kind', "TEXT DEFAULT 'text'");
   ensureColumn(db, 'chunks', 'source_visual_id', 'INTEGER');
+  ensureColumn(db, 'chunks', 'analysis_run_id', 'INTEGER');
+  ensureColumn(db, 'chunks', 'raw_text', "TEXT DEFAULT ''");
+  ensureColumn(db, 'chunks', 'content_type', "TEXT DEFAULT 'prose'");
+  ensureColumn(db, 'chunks', 'relevance_score', 'REAL NOT NULL DEFAULT 1');
+  ensureColumn(db, 'chunks', 'relevance_level', "TEXT NOT NULL DEFAULT 'high'");
+  ensureColumn(db, 'chunks', 'relevance_reasons_json', "TEXT DEFAULT '[]'");
+  ensureColumn(db, 'chunks', 'ocr_confidence', 'REAL');
   ensureColumn(db, 'materials', 'extraction_diagnostics_json', "TEXT DEFAULT '{}'");
   ensureColumn(db, 'materials', 'ocr_status', "TEXT DEFAULT 'not_evaluated'");
   ensureColumn(db, 'materials', 'ocr_provider', 'TEXT');
   ensureColumn(db, 'materials', 'topic_map_json', "TEXT DEFAULT '{}'");
   ensureColumn(db, 'materials', 'topic_map_version', 'INTEGER DEFAULT 1');
   ensureColumn(db, 'materials', 'topic_map_updated_at', 'TEXT');
+  ensureColumn(db, 'materials', 'active_analysis_run_id', 'INTEGER');
   ensureColumn(db, 'notes', 'lesson_json', 'TEXT');
   ensureColumn(db, 'notes', 'source_map_json', 'TEXT');
   ensureColumn(db, 'videos', 'lesson_json', 'TEXT');
@@ -186,7 +194,80 @@ function migrate() {
   db.exec(gamificationSocialSql);
   const ocrSourceVisualsSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '005_ocr_source_visuals.sql'), 'utf8');
   db.exec(ocrSourceVisualsSql);
+  ensureColumn(db, 'material_source_pages', 'analysis_run_id', 'INTEGER');
+  ensureColumn(db, 'material_source_pages', 'raw_normal_text', "TEXT DEFAULT ''");
+  ensureColumn(db, 'material_source_pages', 'raw_ocr_text', "TEXT DEFAULT ''");
+  ensureColumn(db, 'material_source_pages', 'cleaned_educational_text', "TEXT DEFAULT ''");
+  ensureColumn(db, 'material_source_pages', 'low_value_text_json', "TEXT DEFAULT '[]'");
+  ensureColumn(db, 'material_source_pages', 'ocr_confidence_json', "TEXT DEFAULT '{}'");
+  ensureColumn(db, 'material_source_pages', 'warnings_json', "TEXT DEFAULT '[]'");
+  ensureColumn(db, 'material_source_pages', 'page_image_path', 'TEXT');
+  ensureColumn(db, 'source_visual_candidates', 'analysis_run_id', 'INTEGER');
+  ensureColumn(db, 'source_visual_candidates', 'bounding_box_json', "TEXT DEFAULT '{}'");
+  ensureColumn(db, 'source_visual_candidates', 'topic_relevance_score', 'REAL NOT NULL DEFAULT 0');
+  ensureColumn(db, 'source_visual_candidates', 'visual_usefulness_score', 'REAL NOT NULL DEFAULT 0');
+  ensureColumn(db, 'source_visual_candidates', 'visual_quality_score', 'REAL NOT NULL DEFAULT 0');
+  ensureColumn(db, 'source_visual_candidates', 'recommended_scene_usage', "TEXT DEFAULT ''");
+  ensureColumn(db, 'source_visual_candidates', 'recommendation', "TEXT NOT NULL DEFAULT 'ignore'");
+  ensureColumn(db, 'source_visual_candidates', 'selected_for_video', 'INTEGER NOT NULL DEFAULT 0');
+  ensureColumn(db, 'source_visual_candidates', 'ocr_confidence', 'REAL');
+  ensureColumn(db, 'source_visual_candidates', 'warnings_json', "TEXT DEFAULT '[]'");
+  ensureColumn(db, 'source_visual_candidates', 'semantic_data_json', "TEXT DEFAULT '{}'");
+  ensureColumn(db, 'source_visual_candidates', 'fingerprint', "TEXT DEFAULT ''");
+  const materialAnalysisSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '007_material_analysis.sql'), 'utf8');
+  db.exec(materialAnalysisSql);
+  const learningArtifactSql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '008_learning_artifact_provenance.sql'), 'utf8');
+  db.exec(learningArtifactSql);
+  ensureColumn(db, 'flashcards', 'generation_id', 'INTEGER REFERENCES flashcard_generations(id) ON DELETE SET NULL');
+  ensureColumn(db, 'quiz_questions', 'source_chunk_ids_json', "TEXT NOT NULL DEFAULT '[]'");
+  db.exec('CREATE INDEX IF NOT EXISTS idx_flashcards_generation ON flashcards(generation_id)');
+  backfillFlashcardGenerations(db);
   return db;
+}
+
+function backfillFlashcardGenerations(db) {
+  const groups = db.prepare(`
+    SELECT f.user_id, f.material_id, COALESCE(m.title, MAX(f.deck), 'Flashcards') AS title,
+           MIN(f.created_at) AS first_created_at
+    FROM flashcards f
+    JOIN materials m ON m.id=f.material_id AND m.user_id=f.user_id
+    JOIN users u ON u.id=f.user_id
+    WHERE f.material_id IS NOT NULL AND f.generation_id IS NULL
+    GROUP BY f.user_id, f.material_id
+  `).all();
+  if (!groups.length) return;
+  const findActive = db.prepare(`
+    SELECT id FROM flashcard_generations
+    WHERE user_id=? AND material_id=? AND is_active=1
+    ORDER BY id DESC LIMIT 1
+  `);
+  const insert = db.prepare(`
+    INSERT INTO flashcard_generations
+      (user_id, material_id, title, source_scope, topic, is_active, created_at)
+    VALUES (?,?,?,?,?,?,?)
+  `);
+  const assign = db.prepare(`
+    UPDATE flashcards SET generation_id=?
+    WHERE user_id=? AND material_id=? AND generation_id IS NULL
+  `);
+  db.transaction(() => {
+    for (const group of groups) {
+      let generation = findActive.get(group.user_id, group.material_id);
+      if (!generation) {
+        const created = insert.run(
+          group.user_id,
+          group.material_id,
+          group.title || 'Flashcards',
+          'material',
+          null,
+          1,
+          group.first_created_at || new Date().toISOString(),
+        );
+        generation = { id: created.lastInsertRowid };
+      }
+      assign.run(generation.id, group.user_id, group.material_id);
+    }
+  })();
 }
 
 function closeDbForTests() {

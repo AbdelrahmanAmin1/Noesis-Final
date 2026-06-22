@@ -99,6 +99,7 @@
       topicMap: (id) => req('GET', '/materials/' + id + '/topic-map'),
       refreshTopicMap: (id, b) => req('POST', '/materials/' + id + '/topic-map/refresh', b || {}),
       sourceVisuals: (id) => req('GET', '/materials/' + id + '/source-visuals'),
+      analysis: (id) => req('GET', '/materials/' + id + '/analysis'),
       sourceVisualImageUrl: (id, cid) => BASE + '/materials/' + id + '/source-visuals/' + cid + '/image',
       sourceVisualImageBlobUrl: async (id, cid) => {
         const res = await req('GET', '/materials/' + id + '/source-visuals/' + cid + '/image', null, { raw: true });
@@ -122,7 +123,8 @@
 
     flashcards: {
       list: (materialId) => req('GET', '/flashcards' + (materialId ? '?material_id=' + encodeURIComponent(materialId) : '')),
-      due: () => req('GET', '/flashcards/due'),
+      decks: () => req('GET', '/flashcards/decks'),
+      due: (materialId) => req('GET', '/flashcards/due' + (materialId ? '?material_id=' + encodeURIComponent(materialId) : '')),
       generate: (b) => req('POST', '/flashcards/generate', b),
       review: (id, rating) => req('POST', '/flashcards/' + id + '/review', { rating }),
     },

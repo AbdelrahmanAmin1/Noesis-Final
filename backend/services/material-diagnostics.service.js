@@ -155,7 +155,14 @@ async function buildMaterialDiagnostics(materialId, opts = {}) {
       source_page, chapter_title, heading, slide_number, slide_title, section_title, has_code, keywords_json, source_kind, source_visual_id
     FROM chunks WHERE material_id=? ORDER BY idx`).all(materialId);
   const extractionDiagnostics = parseJson(material.extraction_diagnostics_json, {});
-  const sourceVisualCount = db.prepare('SELECT COUNT(*) AS count FROM source_visual_candidates WHERE material_id=?').get(materialId).count || 0;
+  const visualCounts = db.prepare(`SELECT
+      SUM(CASE WHEN svc.selected_for_video=1 OR svc.analysis_run_id IS NULL THEN 1 ELSE 0 END) AS selected_count,
+      COUNT(*) AS extracted_count
+    FROM source_visual_candidates svc
+    JOIN materials m ON m.id=svc.material_id
+    WHERE svc.material_id=?
+      AND ((m.active_analysis_run_id IS NULL AND svc.analysis_run_id IS NULL) OR svc.analysis_run_id=m.active_analysis_run_id)`).get(materialId) || {};
+  const sourceVisualCount = Number(visualCounts.selected_count || 0);
 
   const recheck = opts.skipExtractRecheck ? { fileExists: !!material.file_path, charCount: null, error: null } : await recheckExtractedCharCount(material);
   const chunkTextCharCount = chunks.reduce((sum, chunk) => sum + String(chunk.text || '').length, 0);
@@ -195,6 +202,7 @@ async function buildMaterialDiagnostics(materialId, opts = {}) {
     ocrStatus: material.ocr_status || 'not_evaluated',
     ocrProvider: material.ocr_provider || null,
     sourceVisualCount,
+    extractedVisualCount: Number(visualCounts.extracted_count || 0),
     chapterCount: chapters.length,
     chunkCount: chunks.length,
     evidenceCount: chunks.length,

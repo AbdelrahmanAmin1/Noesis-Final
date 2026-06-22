@@ -11,7 +11,7 @@ const DS_TERMS = ['node', 'pointer', 'stack', 'queue', 'priority queue', 'deque'
 const DS_TOPIC_TERMS = ['linked list', 'node.next', 'stack', 'queue', 'priority queue', 'deque', 'double ended queue', 'tree', 'binary search tree', 'bst', 'heap', 'graph', 'hash table', 'hash map', 'hashmap', 'bucket', 'collision', 'load factor', 'resize', 'rehash', 'probe', 'chaining', 'push', 'pop', 'enqueue', 'dequeue'];
 const DS_OPERATION_VISUAL_TYPES = new Set(['linkedlist', 'linked_list_operation', 'hash_table', 'hash_table_operation', 'stack_queue', 'stack_operation', 'queue_operation', 'tree', 'tree_visual', 'bigo_chart', 'big_o_growth', 'flow', 'process_flow']);
 const DS_TOPIC_VISUAL_TYPES = new Set(['linkedlist', 'linked_list_operation', 'hash_table', 'hash_table_operation', 'stack_queue', 'stack_operation', 'queue_operation', 'tree', 'tree_visual']);
-const OOP_VISUAL_TYPES = new Set(['class_diagram', 'class_object', 'encapsulation_boundary', 'inheritance_uml', 'polymorphism_dispatch']);
+const OOP_VISUAL_TYPES = new Set(['class_diagram', 'class_object', 'state_behavior', 'encapsulation_boundary', 'inheritance_uml', 'polymorphism_dispatch']);
 const GENERAL_VISUAL_TYPES = new Set(['cards', 'concept_cards', 'table', 'classification_table', 'comparison_table', 'source_reference', 'source_page_reference', 'source_slide_reference', 'flow', 'process_flow', 'comparison', 'comparison_contrast', 'summary', 'summary_path', 'none', 'no_visual']);
 const HANGING_WORD_RE = /\b(?:a|an|and|as|at|because|before|but|by|for|from|if|in|into|is|of|on|or|that|the|then|through|to|with|while)$/i;
 

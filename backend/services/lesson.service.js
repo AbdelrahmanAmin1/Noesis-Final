@@ -104,6 +104,18 @@ const SectionSchema = z.object({
   sourceVisuals: z.array(SourceVisualSchema).optional().default([]),
 });
 
+const StudyGuideSchema = z.object({
+  whatYouWillLearn: z.array(z.string()).optional().default([]),
+  keyConcepts: z.array(z.string()).optional().default([]),
+  suggestedOrder: z.array(z.string()).optional().default([]),
+  prerequisites: z.array(z.string()).optional().default([]),
+  commonMistakes: z.array(z.object({
+    mistake: z.string().min(1),
+    correction: z.string().optional().default(''),
+  })).optional().default([]),
+  checkpoints: z.array(z.string()).optional().default([]),
+}).optional().default({});
+
 const EducationalLessonSchema = z.object({
   topic: z.string().min(2),
   audienceLevel: z.string().optional().default('beginner'),
@@ -115,6 +127,7 @@ const EducationalLessonSchema = z.object({
   }).optional().default({}),
   learningObjectives: z.array(z.string()).optional().default([]),
   prerequisites: z.array(z.string()).optional().default([]),
+  studyGuide: StudyGuideSchema,
   sections: z.array(SectionSchema).min(6),
   relatedTopics: z.array(z.string()).optional().default([]),
   sourceVisuals: z.array(SourceVisualSchema).optional().default([]),
@@ -953,12 +966,20 @@ function generalMaterialLesson(topic, materialTitle, grounding, selectedChunkIds
     'Answer review questions using source details, not generic labels.',
   ];
   lesson.prerequisites = [];
+  lesson.studyGuide = {
+    whatYouWillLearn: lesson.learningObjectives.slice(0, 4),
+    keyConcepts: concepts.slice(0, 6),
+    suggestedOrder: sourcePath.length ? sourcePath.slice(0, 6) : concepts.slice(0, 6),
+    prerequisites: [],
+    commonMistakes: [
+      { mistake: 'Memorizing labels without their meaning', correction: detailFacts[0] || firstFact },
+      { mistake: 'Mixing details from separate concepts', correction: sourcePath.length >= 2 ? `Keep ${sourcePath[0]} distinct from ${sourcePath[1]} before connecting them.` : `Tie every detail back to ${lessonTopic}.` },
+    ],
+    checkpoints: reviewQuizItems.slice(0, 3),
+  };
   lesson.sections = [
     section('hook', `Overview Of ${lessonTopic}`, overviewFacts.join(' ') || firstFact),
     section('definition', 'Main Idea From The Source', firstFact),
-    section('deep_explanation', 'Source Outline', `The uploaded material is organized around ${sourcePath.join(', ') || concepts.slice(0, 6).join(', ')}. ${overviewFacts.slice(0, 2).join(' ') || firstFact}`, {
-      cards,
-    }),
     section('deep_explanation', 'Key Concepts Explained', cards.map(card => `${card.title}: ${card.text}`).join(' ') || detailFacts.join(' ')),
     section('deep_explanation', 'Important Details From The Source', detailFacts.join(' ') || examples.slice(0, 4).join(' ') || firstFact),
   ];
@@ -1168,6 +1189,35 @@ function normalizeSection(raw, index) {
   };
 }
 
+function normalizeStudyGuide(rawGuide, opts = {}) {
+  const guide = rawGuide && typeof rawGuide === 'object' ? rawGuide : {};
+  const sections = opts.sections || [];
+  const pick = (primary, fallback) => Array.isArray(primary) && primary.length ? primary : fallback;
+  const oldOutline = sections.find(section => /^source outline$/i.test(String(section.title || '').trim()));
+  const outlineCards = oldOutline && Array.isArray(oldOutline.cards) ? oldOutline.cards : [];
+  const mistakesSection = sections.find(section => section.type === 'common_mistakes');
+  const checkpointSection = sections.find(section => section.type === 'checkpoint');
+  const rawMistakes = pick(guide.commonMistakes, mistakesSection && mistakesSection.cards || []);
+  const commonMistakes = rawMistakes.map(item => ({
+    mistake: inlineText(item && (item.mistake || item.title || item.text), 160),
+    correction: cleanText(item && (item.correction || item.text || ''), 260),
+  })).filter(item => item.mistake).slice(0, 5);
+  const checkpointQuestions = checkpointSection && Array.isArray(checkpointSection.quiz)
+    ? checkpointSection.quiz.map(item => item && item.question)
+    : [];
+  const sectionOrder = sections
+    .filter(section => !/^source outline$/i.test(String(section.title || '').trim()))
+    .map(section => section.title);
+  return {
+    whatYouWillLearn: uniqueList(pick(guide.whatYouWillLearn, opts.learningObjectives || []), 6),
+    keyConcepts: uniqueList(pick(guide.keyConcepts, [opts.topic, ...outlineCards.map(card => card && card.title)]), 8),
+    suggestedOrder: uniqueList(pick(guide.suggestedOrder, outlineCards.length ? outlineCards.map(card => card && card.title) : sectionOrder), 8),
+    prerequisites: uniqueList(pick(guide.prerequisites, opts.prerequisites || []), 6),
+    commonMistakes,
+    checkpoints: uniqueList(pick(guide.checkpoints, checkpointQuestions), 6),
+  };
+}
+
 function normalizeSourceVisual(raw) {
   if (!raw || typeof raw !== 'object') return null;
   const sourcePage = raw.sourcePage ?? raw.pageNumber ?? raw.page_number ?? null;
@@ -1299,6 +1349,9 @@ function ensureRequiredSections(lesson, opts = {}) {
 function normalizeLesson(raw, opts = {}) {
   const src = raw && typeof raw === 'object' ? raw : {};
   const topic = inlineText(src.topic || opts.topic || opts.title || 'Object-Oriented Programming', 90);
+  const learningObjectives = uniqueList(src.learningObjectives || [], 6);
+  const prerequisites = uniqueList(src.prerequisites || [], 6);
+  const normalizedSections = (Array.isArray(src.sections) ? src.sections : []).map(normalizeSection).filter(s => s.title);
   const lesson = {
     topic,
     audienceLevel: inlineText(src.audienceLevel || 'beginner', 40) || 'beginner',
@@ -1310,11 +1363,14 @@ function normalizeLesson(raw, opts = {}) {
         ? src.sourceMaterial.selectedChunkIds.slice(0, 12)
         : (opts.chunks || []).slice(0, 8).map(c => c.id).filter(Boolean),
     },
-    learningObjectives: uniqueList(src.learningObjectives || [], 6),
-    prerequisites: uniqueList(src.prerequisites || [], 6),
-    sections: (Array.isArray(src.sections) ? src.sections : []).map(normalizeSection).filter(s => s.title),
+    learningObjectives,
+    prerequisites,
+    studyGuide: normalizeStudyGuide(src.studyGuide || src.learningPath, { topic, sections: normalizedSections, learningObjectives, prerequisites }),
+    sections: normalizedSections.filter(section => !/^source outline$/i.test(String(section.title || '').trim())),
     relatedTopics: uniqueList(src.relatedTopics || [], 8),
     sourceVisuals: normalizeSourceVisuals([...(src.sourceVisuals || []), ...(opts.sourceVisualCandidates || opts.sourceVisuals || [])], env.SOURCE_VISUALS_MAX_PER_MATERIAL || 8),
+    topicMode: src.topicMode || opts.topicMode || undefined,
+    sourceRepair: !!(src.sourceRepair || opts.sourceRepair),
   };
   if (lesson.learningObjectives.length < 2 && !opts.skipEnsureFallback) {
     lesson.learningObjectives = fallbackLesson(topic, opts).learningObjectives.slice(0, 4);
@@ -1324,6 +1380,12 @@ function normalizeLesson(raw, opts = {}) {
     lesson.sections = lesson.sections.concat(fb.sections).slice(0, 12);
   }
   if (!opts.skipEnsureFallback) ensureRequiredSections(lesson, opts);
+  lesson.studyGuide = normalizeStudyGuide(lesson.studyGuide, {
+    topic,
+    sections: lesson.sections,
+    learningObjectives: lesson.learningObjectives,
+    prerequisites: lesson.prerequisites,
+  });
   lesson.sections = lesson.sections.slice(0, 14);
   return attachSourceVisualsToSections(lesson, lesson.sourceVisuals);
 }
@@ -1462,6 +1524,11 @@ function scoreLesson(lesson, opts = {}) {
   const weakSourceSectionCoverage = !requiresCode && sectionCoverage.available > 1 && sectionCoverage.covered < minSectionCoverage;
   const repeatedGeneralHeadingLoop = !requiresCode && hasRepeatedGeneralHeadingLoop(visible, lesson, opts.sourceOutline);
   const repeatedGeneralHeadingFailure = repeatedGeneralHeadingLoop && !sourceRepairMode;
+  const hasStudyGuide = !!(
+    lesson && lesson.studyGuide &&
+    Array.isArray(lesson.studyGuide.whatYouWillLearn) && lesson.studyGuide.whatYouWillLearn.length &&
+    Array.isArray(lesson.studyGuide.keyConcepts) && lesson.studyGuide.keyConcepts.length
+  );
   const genericFailure = sourceFreeGeneral ||
     (genericTopic && !hasGroundedGeneralContent) ||
     hasGenericChapterText ||
@@ -1479,6 +1546,7 @@ function scoreLesson(lesson, opts = {}) {
     hasQuiz,
     !genericFailure,
     (lesson.learningObjectives || []).length >= 2,
+    hasStudyGuide,
   ];
   const score = criteria.filter(Boolean).length / criteria.length;
   return {
@@ -1496,6 +1564,7 @@ function scoreLesson(lesson, opts = {}) {
     weakSourceSectionCoverage,
     repeatedGeneralHeadingLoop,
     repeatedGeneralHeadingFailure,
+    hasStudyGuide,
     genericFailure,
   };
 }
@@ -1638,6 +1707,32 @@ function lessonToMarkdown(lessonInput) {
     lines.push('## Learning Objectives');
     for (const obj of lesson.learningObjectives) lines.push(`- ${obj}`);
     lines.push('');
+  }
+  const guide = lesson.studyGuide || {};
+  if ((guide.whatYouWillLearn || []).length || (guide.keyConcepts || []).length) {
+    lines.push('## Study Guide', '');
+    if ((guide.whatYouWillLearn || []).length) {
+      lines.push('### What you will learn');
+      for (const item of guide.whatYouWillLearn) lines.push(`- ${item}`);
+      lines.push('');
+    }
+    if ((guide.keyConcepts || []).length) lines.push(`**Key concepts:** ${guide.keyConcepts.join(', ')}`, '');
+    if ((guide.suggestedOrder || []).length) {
+      lines.push('### Suggested learning order');
+      guide.suggestedOrder.forEach((item, index) => lines.push(`${index + 1}. ${item}`));
+      lines.push('');
+    }
+    if ((guide.prerequisites || []).length) lines.push(`**Prerequisites:** ${guide.prerequisites.join(', ')}`, '');
+    if ((guide.commonMistakes || []).length) {
+      lines.push('### Common mistakes');
+      for (const item of guide.commonMistakes) lines.push(`- **${item.mistake}:** ${item.correction || 'Review the related source concept.'}`);
+      lines.push('');
+    }
+    if ((guide.checkpoints || []).length) {
+      lines.push('### Quick checkpoints');
+      for (const item of guide.checkpoints) lines.push(`- ${item}`);
+      lines.push('');
+    }
   }
   const inlineVisualKeys = new Set();
   for (const s of lesson.sections) {
@@ -2487,6 +2582,16 @@ function prepareStoredNote(row) {
   if (!row) return row;
   let lessonJson = row.lesson_json || null;
   let body = row.body_md || '';
+  if (lessonJson) {
+    try {
+      const parsedStored = typeof lessonJson === 'string' ? JSON.parse(lessonJson) : lessonJson;
+      const lesson = normalizeLesson(parsedStored && parsedStored.lesson || parsedStored, { title: row.title });
+      lessonJson = JSON.stringify(lesson);
+      body = lessonToMarkdown(lesson);
+    } catch (_) {
+      // Keep malformed legacy JSON and its markdown available rather than hiding the note.
+    }
+  }
   if (!lessonJson && body) {
     const candidate = extractJson(body);
     let parsed = null;

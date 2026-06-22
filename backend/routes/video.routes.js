@@ -11,6 +11,7 @@ const storyboardSvc = require('../services/storyboard.service');
 const storyboardRepairSvc = require('../services/storyboard-repair.service');
 const { getDb } = require('../config/db');
 const env = require('../config/env');
+const materialSvc = require('../services/material.service');
 
 const router = express.Router();
 
@@ -58,6 +59,8 @@ router.post('/', requireAuth, videoLimiter, async (req, res, next) => {
     const db = getDb();
     const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
+    const reindex = materialSvc.queueReindex(req.user.id, Number(material_id));
+    if (reindex.needed) return res.status(202).json({ status: 'reindexing', material_id: Number(material_id), job_id: reindex.job.id });
     validateScope(db, req.user.id, material_id, scope);
     const { videoId, jobId } = await videoSvc.generateVideo({ userId: req.user.id, materialId: material_id, concept, ...scope });
     res.status(202).json({ video_id: videoId, job_id: jobId, status: 'queued' });
@@ -72,6 +75,8 @@ router.post('/storyboard', requireAuth, videoLimiter, async (req, res, next) => 
     const db = getDb();
     const m = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
+    const reindex = materialSvc.queueReindex(req.user.id, Number(material_id));
+    if (reindex.needed) return res.status(202).json({ status: 'reindexing', material_id: Number(material_id), job_id: reindex.job.id });
     validateScope(db, req.user.id, material_id, scope);
     const out = await storyboardSvc.generateStoryboard({ userId: req.user.id, materialId: material_id, concept, ...scope });
     res.status(201).json({ storyboard: out });

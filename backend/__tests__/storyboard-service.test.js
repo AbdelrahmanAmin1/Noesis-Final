@@ -197,7 +197,7 @@ describe('storyboard.service', () => {
     expect(stackScene.sourceVisualIds).toContain(10);
   });
 
-  it('attaches estimated PDF images to storyboard scenes with an honest extracted-material caption', () => {
+  it('keeps required generated visuals primary while retaining extracted-image provenance', () => {
     const imagePath = path.join(env.UPLOAD_DIR, 'storyboard-estimated-source-test.jpg');
     fs.mkdirSync(path.dirname(imagePath), { recursive: true });
     fs.writeFileSync(imagePath, Buffer.from('storyboard source image fixture'));
@@ -223,17 +223,53 @@ describe('storyboard.service', () => {
         associationConfidence: 0.25,
       }]);
 
-      expect(scenes[0].visualType).toBe('source_page_reference');
-      expect(scenes[0].sourceVisualId).toBe(77);
-      expect(scenes[0].visualData.imagePath).toBe(imagePath);
-      expect(scenes[0].visualData.sourcePage).toBeNull();
-      expect(scenes[0].visualData.caption).toBe('Extracted material visual: Insertion operation');
+      expect(scenes[0].visualType).toBe('tree_visual');
+      expect(scenes[0].sourceVisualId).toBeNull();
+      expect(scenes[0].sourceVisualIds).toContain(77);
+      expect(scenes[0].visualData.imagePath).toBeUndefined();
       expect(scenes[0].visualPlan).toMatchObject({
-        compositionMode: 'source_only',
-        primaryVisual: 'source_image',
-        secondaryVisual: null,
-        layoutTemplate: 'source_main',
+        sourceVisualUsed: 77,
+        fallbackGeneratedVisual: true,
       });
+    } finally {
+      try { fs.unlinkSync(imagePath); } catch (_) {}
+    }
+  });
+
+  it('does not replace a code walkthrough with a matching source image', () => {
+    const imagePath = path.join(env.UPLOAD_DIR, 'storyboard-code-source-test.jpg');
+    fs.mkdirSync(path.dirname(imagePath), { recursive: true });
+    fs.writeFileSync(imagePath, Buffer.from('storyboard code source fixture'));
+    try {
+      const scenes = _internals.attachSourceVisualsToScenes([{
+        id: 'scene-code',
+        type: 'code_walkthrough',
+        title: 'Trace tree insertion',
+        narration: 'Trace the insertion operation line by line from the root to a child.',
+        visualType: 'code_walkthrough',
+        visualTemplate: 'code_walkthrough',
+        code: { language: 'java', content: 'Node insert(Node root, int value) {\n  return root;\n}' },
+      }], [
+        {
+          id: 78,
+          heading: 'Tree insertion code',
+          nearbyText: 'trace insertion root child code',
+          imagePath,
+          importanceScore: 0.9,
+        },
+        {
+          id: 79,
+          heading: 'Additional tree source',
+          nearbyText: 'tree root child leaf',
+          imagePath,
+          importanceScore: 0.8,
+        },
+      ]);
+
+      expect(scenes[0].visualType).toBe('code_walkthrough');
+      expect(scenes[0].code.content).toContain('Node insert');
+      expect(scenes[0].sourceVisualIds).toContain(78);
+      expect(scenes[0].visualData.imagePath).toBeUndefined();
     } finally {
       try { fs.unlinkSync(imagePath); } catch (_) {}
     }

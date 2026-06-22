@@ -105,6 +105,7 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
       topicMap: (id) => req('GET', '/materials/' + id + '/topic-map'),
       refreshTopicMap: (id, b) => req('POST', '/materials/' + id + '/topic-map/refresh', b || {}),
       sourceVisuals: (id) => req('GET', '/materials/' + id + '/source-visuals'),
+      analysis: (id) => req('GET', '/materials/' + id + '/analysis'),
       sourceVisualImageUrl: (id, cid) => BASE + '/materials/' + id + '/source-visuals/' + cid + '/image',
       sourceVisualImageBlobUrl: async (id, cid) => {
         const res = await req('GET', '/materials/' + id + '/source-visuals/' + cid + '/image', null, { raw: true });
@@ -128,7 +129,8 @@ window.__NOESIS_BOOT = { startedAt: Date.now(), files: [] };
 
     flashcards: {
       list: (materialId) => req('GET', '/flashcards' + (materialId ? '?material_id=' + encodeURIComponent(materialId) : '')),
-      due: () => req('GET', '/flashcards/due'),
+      decks: () => req('GET', '/flashcards/decks'),
+      due: (materialId) => req('GET', '/flashcards/due' + (materialId ? '?material_id=' + encodeURIComponent(materialId) : '')),
       generate: (b) => req('POST', '/flashcards/generate', b),
       review: (id, rating) => req('POST', '/flashcards/' + id + '/review', { rating }),
     },
@@ -4902,6 +4904,7 @@ const MaterialDetail = ({
   const [busy, setBusy] = React.useState(false);
   const [genStatus, setGenStatus] = React.useState('');
   const [activeAction, setActiveAction] = React.useState('');
+  const [quizRetry, setQuizRetry] = React.useState(null);
   const [video, setVideo] = React.useState(null);
   const [learningMap, setLearningMap] = React.useState(null);
   const [mapStatus, setMapStatus] = React.useState('ready');
@@ -4979,6 +4982,7 @@ const MaterialDetail = ({
       quiz: 'quiz'
     };
     setActiveAction(kind);
+    if (kind === 'quiz') setQuizRetry(null);
     setBusy(true);
     setGenStatus(`Generating ${labels[kind] || kind} from ${sourceScopeLabel.toLowerCase()}...`);
     try {
@@ -5003,7 +5007,8 @@ const MaterialDetail = ({
       if (kind === 'quiz') {
         const quizPayload = {
           material_id: id,
-          count: 6,
+          count: 8,
+          min_count: 6,
           difficulty: 'medium',
           ...scopePayload,
           ...topicPayload
@@ -5020,10 +5025,11 @@ const MaterialDetail = ({
         }
         if (!r || !r.quiz_id) throw new Error('Quiz generation did not complete after reindexing.');
         quizResult = r;
+        setQuizRetry(null);
         sessionStorage.setItem('noesis.quizId', String(r.quiz_id));
       }
       if (kind === 'quiz' && quizResult && quizResult.partial) {
-        setGenStatus(`Quiz created with ${quizResult.count || 0} of ${quizResult.requested_count || 6} grounded questions.`);
+        setGenStatus(`Quiz created with ${quizResult.count || 0} of ${quizResult.requested_count || 8} grounded questions.`);
       } else if (kind === 'flashcards' && flashcardResult) {
         if (flashcardResult.reused) setGenStatus('Using existing flashcards for this material.');else if (flashcardResult.fallback) setGenStatus(flashcardResult.message || 'Created fallback flashcards from source material.');else setGenStatus(`${flashcardResult.created || 0} flashcards generated successfully.`);
       } else {
@@ -5031,7 +5037,14 @@ const MaterialDetail = ({
       }
       return true;
     } catch (e) {
-      const qualityMessage = e && e.code === 'quiz_quality_failed' ? 'The models could not produce a high-quality grounded quiz. Please retry.' : e && e.code === 'insufficient_quiz_content' ? 'There is not enough clean concept content for a useful quiz.' : null;
+      const retryable = kind === 'quiz' && !!(e && e.data && e.data.details && e.data.details.retryable);
+      if (retryable) setQuizRetry({
+        options: {
+          ...options
+        },
+        message: e.message || 'No grounded quiz could be created.'
+      });
+      const qualityMessage = retryable ? `${e.message || 'No grounded quiz could be created from this material.'}` : e && e.code === 'insufficient_quiz_content' ? e.message || 'There is not enough clean concept content for a 6-question quiz.' : null;
       setGenStatus(qualityMessage || 'Failed: ' + (e.message || 'error'));
       return false;
     } finally {
@@ -5305,7 +5318,7 @@ const MaterialDetail = ({
     style: mds.genTitle
   }, activeAction === 'quiz' ? 'Generating quiz...' : 'Practice quiz'), React.createElement("div", {
     style: mds.genSub
-  }, "Six grounded questions from the full lecture"))), React.createElement("button", {
+  }, "Six to eight grounded questions from the full lecture"))), React.createElement("button", {
     style: mds.gen,
     disabled: busy || !ready,
     onClick: generateVideo
@@ -5325,7 +5338,20 @@ const MaterialDetail = ({
     style: mds.genSub
   }, "Storyboard from the full lecture"))), genStatus && React.createElement("div", {
     style: mds.genStatus
-  }, genStatus), video && video.status === 'ready' && React.createElement("video", {
+  }, genStatus), quizRetry && React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: busy || !ready,
+    onClick: async () => {
+      const ok = await generate('quiz', quizRetry.options || {});
+      if (ok) onNav('quiz');
+    },
+    style: {
+      width: '100%',
+      justifyContent: 'center'
+    }
+  }, React.createElement(Icon.RotateCcw, {
+    size: 12
+  }), " Retry quiz generation"), video && video.status === 'ready' && React.createElement("video", {
     src: video.file,
     controls: true,
     crossOrigin: "use-credentials",
@@ -10026,6 +10052,10 @@ const TopicVisual = ({
     nodes: nodes,
     compact: compact
   });
+  if (resolved === 'state_behavior') return React.createElement(StateBehaviorVisual, {
+    nodes: nodes,
+    compact: compact
+  });
   if (resolved === 'linked_list_operation') return React.createElement(LinkedListVisual, {
     compact: compact
   });
@@ -10150,6 +10180,7 @@ function visualKey(value) {
 const TOPIC_VISUALS = {
   encapsulation_boundary: ['encapsulation', 'data_hiding', 'private_fields', 'getter_setter'],
   class_object: ['class_object_visual', 'classes_objects', 'classes_and_objects', 'oop_class_diagram', 'class_diagram', 'uml_class', 'abstraction_contract', 'interface_contract'],
+  state_behavior: ['state_behavior_visual', 'state_and_behavior', 'object_state_behavior', 'state_transition_class'],
   inheritance_uml: ['inheritance', 'inheritance_visual', 'inheritance_tree', 'extends_uml'],
   polymorphism_dispatch: ['polymorphism', 'polymorphism_visual', 'runtime_dispatch', 'dynamic_dispatch'],
   linked_list_operation: ['linked_list', 'linkedlist', 'linked_list_visual', 'linked_list_operation_visual'],
@@ -11135,6 +11166,68 @@ const UmlVisual = ({
     x2: 360,
     y2: 115,
     label: "extends"
+  })));
+};
+const StateBehaviorVisual = ({
+  nodes = [],
+  compact
+}) => {
+  const state = nodes.find(n => /state|field|value/i.test(n)) || 'current state';
+  const behavior = nodes.find(n => /method|behavior|action/i.test(n)) || 'method call';
+  const result = nodes.find(n => /result|next|updated|transition/i.test(n)) || 'updated state';
+  return React.createElement("div", {
+    style: {
+      ...tv.box,
+      minHeight: compact ? 180 : 250
+    }
+  }, React.createElement("svg", {
+    viewBox: "0 0 700 250",
+    style: tv.svg
+  }, React.createElement(TextBox, {
+    x: 35,
+    y: 88,
+    w: 170,
+    h: 62,
+    text: state,
+    fill: "#dbeafe",
+    stroke: "#2563eb"
+  }), React.createElement(TextBox, {
+    x: 265,
+    y: 88,
+    w: 170,
+    h: 62,
+    text: behavior,
+    fill: "#fef3c7",
+    stroke: "#d97706"
+  }), React.createElement(TextBox, {
+    x: 495,
+    y: 88,
+    w: 170,
+    h: 62,
+    text: result,
+    fill: "#dcfce7",
+    stroke: "#16a34a"
+  }), React.createElement(Arrow, {
+    x1: 205,
+    y1: 119,
+    x2: 265,
+    y2: 119,
+    label: "invokes"
+  }), React.createElement(Arrow, {
+    x1: 435,
+    y1: 119,
+    x2: 495,
+    y2: 119,
+    label: "changes"
+  }), React.createElement(SvgTextLines, {
+    x: 350,
+    y: 210,
+    width: 360,
+    text: "Behavior transforms object state",
+    fontSize: 15,
+    lineHeight: 17,
+    fill: "#475569",
+    maxLines: 2
   })));
 };
 const LinkedListVisual = ({
@@ -13473,8 +13566,8 @@ const StoryboardReview = ({
     className: "chip chip-accent"
   }, summarizeStatus(storyboard, storyboardQuality)), React.createElement("span", null, scenes.length, " scenes"), React.createElement("span", null, warnings.length, " issue", warnings.length === 1 ? '' : 's'))), status && React.createElement("div", {
     style: sr.notice
-  }, status), qualityResult && React.createElement(ApprovalPanel, {
-    quality: qualityResult,
+  }, status), activeQuality && React.createElement(ApprovalPanel, {
+    quality: activeQuality,
     busy: busy,
     onFix: doFixScene,
     onGlobalFix: doFixIssue,
@@ -13485,6 +13578,9 @@ const StoryboardReview = ({
     board: board,
     scenes: scenes,
     warnings: warnings
+  }), React.createElement(OcrReferenceGallery, {
+    materialId: storyboard.material_id,
+    images: storyboard.ocr_reference_images
   }), topicGroups.length > 0 ? React.createElement("div", {
     style: sr.topicSceneStack
   }, topicGroups.map(group => React.createElement("section", {
@@ -13570,6 +13666,74 @@ const StoryboardReview = ({
     srcLang: "en",
     label: "English"
   })))));
+};
+const OcrReferenceGallery = ({
+  materialId,
+  images
+}) => {
+  const list = safeArray(images).filter(item => item && item.id && item.imagePath && item.assetRole === 'source_reference_image');
+  if (!list.length || !materialId) return null;
+  return React.createElement("section", {
+    style: sr.referenceSection
+  }, React.createElement("div", {
+    style: sr.referenceHead
+  }, React.createElement("div", null, React.createElement("div", {
+    style: sr.summaryLabel
+  }, "Visual references"), React.createElement("h2", {
+    style: sr.referenceTitle
+  }, "Extracted Visual References"), React.createElement("p", {
+    style: sr.referenceSub
+  }, "OCR and source images remain available here, separate from the rendered video and storyboard frame area.")), React.createElement("span", {
+    className: "chip"
+  }, list.length, " image", list.length === 1 ? '' : 's')), React.createElement("div", {
+    style: sr.referenceGrid
+  }, list.map(candidate => React.createElement(OcrReferenceImage, {
+    key: candidate.id,
+    materialId: materialId,
+    candidate: candidate
+  }))));
+};
+const OcrReferenceImage = ({
+  materialId,
+  candidate
+}) => {
+  const [url, setUrl] = React.useState('');
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => {
+    let active = true;
+    let objectUrl = '';
+    (async () => {
+      try {
+        objectUrl = await window.NoesisAPI.materials.sourceVisualImageBlobUrl(materialId, candidate.id);
+        if (active) setUrl(objectUrl);else URL.revokeObjectURL(objectUrl);
+      } catch (_) {
+        if (active) setFailed(true);
+      }
+    })();
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [materialId, candidate.id]);
+  if (failed) return null;
+  const location = candidate.slideNumber != null ? `Slide ${candidate.slideNumber}` : candidate.pageNumber != null ? `Page ${candidate.pageNumber}` : 'Extracted image';
+  return React.createElement("figure", {
+    style: sr.referenceCard
+  }, React.createElement("div", {
+    style: sr.referenceImageBox
+  }, url ? React.createElement("img", {
+    src: url,
+    alt: candidate.caption || candidate.heading || 'Extracted visual reference',
+    style: sr.referenceImage
+  }) : React.createElement("div", {
+    style: sr.referenceLoading
+  }, "Loading visual...")), React.createElement("figcaption", {
+    style: sr.referenceCaption
+  }, React.createElement("div", {
+    style: sr.referenceCaptionTitle
+  }, candidate.caption || candidate.heading || 'Source visual'), React.createElement("div", {
+    style: sr.referenceMeta
+  }, location, " \xB7 ", candidate.usedInStoryboard ? 'Used in storyboard' : 'Reference only')));
 };
 const SceneCard = ({
   scene,
@@ -14018,6 +14182,82 @@ const sr = {
     borderRadius: 8,
     border: '1px solid var(--line)',
     background: 'var(--bg-2)'
+  },
+  referenceSection: {
+    marginBottom: 'calc(18px * var(--app-density-scale))',
+    padding: 'calc(16px * var(--app-density-scale))',
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
+  referenceHead: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 'calc(14px * var(--app-density-scale))',
+    marginBottom: 'calc(12px * var(--app-density-scale))'
+  },
+  referenceTitle: {
+    margin: 0,
+    color: 'var(--fg-0)',
+    fontSize: 'calc(20px * var(--app-font-scale))',
+    fontWeight: 600
+  },
+  referenceSub: {
+    margin: '5px 0 0',
+    color: 'var(--fg-2)',
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    lineHeight: 1.5,
+    maxWidth: 680
+  },
+  referenceGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+    gap: 'calc(10px * var(--app-density-scale))'
+  },
+  referenceCard: {
+    minWidth: 0,
+    margin: 0,
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    overflow: 'hidden',
+    background: 'var(--bg-0)'
+  },
+  referenceImageBox: {
+    width: '100%',
+    minHeight: 150,
+    height: 190,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'var(--bg-2)',
+    overflow: 'hidden'
+  },
+  referenceImage: {
+    display: 'block',
+    width: '100%',
+    height: '100%',
+    maxHeight: 190,
+    objectFit: 'contain'
+  },
+  referenceLoading: {
+    color: 'var(--fg-3)',
+    fontSize: 'calc(11.5px * var(--app-font-scale))'
+  },
+  referenceCaption: {
+    padding: '9px 10px'
+  },
+  referenceCaptionTitle: {
+    color: 'var(--fg-1)',
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    fontWeight: 600,
+    lineHeight: 1.4,
+    overflowWrap: 'anywhere'
+  },
+  referenceMeta: {
+    marginTop: 4,
+    color: 'var(--fg-3)',
+    fontSize: 'calc(10.5px * var(--app-font-scale))'
   },
   visualCoverageRows: {
     display: 'grid',
@@ -15104,7 +15344,8 @@ const LessonRenderer = ({
     markdown: markdown
   });
   const objectives = parsed.learningObjectives || [];
-  const sections = parsed.sections || [];
+  const studyGuide = studyGuideFor(parsed);
+  const sections = (parsed.sections || []).filter(section => !/^source outline$/i.test(String(section && section.title || '').trim()));
   const startHere = parsed.startHere || parsed.learningPath && parsed.learningPath.startHere || parsed.prerequisites && parsed.prerequisites.length && `Review ${parsed.prerequisites[0]} first`;
   const byType = type => sections.filter(s => s.type === type);
   const usedSourceVisuals = new Set(sections.flatMap(section => section.sourceVisuals || []).map(v => String(v && (v.id || `${v.pageNumber || v.sourcePage || ''}:${v.slideNumber || ''}:${v.heading || ''}`))));
@@ -15128,7 +15369,9 @@ const LessonRenderer = ({
     style: lr.cardNumber
   }, String(i + 1).padStart(2, '0')), React.createElement("div", {
     style: lr.cardText
-  }, item)))), startHere && React.createElement("section", {
+  }, item)))), React.createElement(StudyGuide, {
+    guide: studyGuide
+  }), startHere && React.createElement("section", {
     style: lr.startHere
   }, React.createElement("div", {
     style: lr.sectionLabel
@@ -15159,6 +15402,68 @@ const LessonRenderer = ({
     style: lr.chip
   }, t)))));
 };
+const StudyGuide = ({
+  guide
+}) => {
+  if (!guide) return null;
+  const groups = [['What you will learn', guide.whatYouWillLearn], ['Key concepts', guide.keyConcepts], ['Suggested learning order', guide.suggestedOrder], ['Prerequisites', guide.prerequisites], ['Quick checkpoints', guide.checkpoints]].filter(([, items]) => Array.isArray(items) && items.length);
+  const mistakes = Array.isArray(guide.commonMistakes) ? guide.commonMistakes : [];
+  if (!groups.length && !mistakes.length) return null;
+  return React.createElement("section", {
+    style: lr.studyGuide
+  }, React.createElement("div", {
+    style: lr.studyGuideHead
+  }, React.createElement("div", {
+    style: lr.sectionLabel
+  }, "Study Guide"), React.createElement("h2", {
+    style: lr.studyGuideTitle
+  }, "How to learn this material")), React.createElement("div", {
+    style: lr.studyGuideGrid
+  }, groups.map(([label, items]) => React.createElement("div", {
+    key: label,
+    style: lr.studyGuideGroup
+  }, React.createElement("div", {
+    style: lr.studyGuideLabel
+  }, label), label === 'Suggested learning order' ? React.createElement("ol", {
+    style: lr.studyGuideList
+  }, items.slice(0, 8).map(item => React.createElement("li", {
+    key: item
+  }, item))) : React.createElement("ul", {
+    style: lr.studyGuideList
+  }, items.slice(0, 8).map(item => React.createElement("li", {
+    key: item
+  }, item))))), mistakes.length > 0 && React.createElement("div", {
+    style: lr.studyGuideGroup
+  }, React.createElement("div", {
+    style: lr.studyGuideLabel
+  }, "Common mistakes"), React.createElement("div", {
+    style: lr.studyGuideMistakes
+  }, mistakes.slice(0, 5).map((item, index) => React.createElement("div", {
+    key: (item.mistake || 'mistake') + index,
+    style: lr.studyGuideMistake
+  }, React.createElement("b", null, item.mistake), item.correction ? React.createElement("span", null, item.correction) : null))))));
+};
+function studyGuideFor(lesson) {
+  const direct = lesson && (lesson.studyGuide || lesson.learningPath);
+  const sections = lesson && lesson.sections || [];
+  const oldOutline = sections.find(section => /^source outline$/i.test(String(section && section.title || '').trim()));
+  const mistakes = sections.find(section => section && section.type === 'common_mistakes');
+  const checkpoint = sections.find(section => section && section.type === 'checkpoint');
+  const guide = direct || {};
+  const pick = (primary, fallback) => Array.isArray(primary) && primary.length ? primary : fallback;
+  const outlineCards = oldOutline && Array.isArray(oldOutline.cards) ? oldOutline.cards : [];
+  return {
+    whatYouWillLearn: pick(guide.whatYouWillLearn, lesson.learningObjectives || []),
+    keyConcepts: pick(guide.keyConcepts, outlineCards.map(card => card && card.title).filter(Boolean)),
+    suggestedOrder: pick(guide.suggestedOrder, outlineCards.map(card => card && card.title).filter(Boolean)),
+    prerequisites: pick(guide.prerequisites, lesson.prerequisites || []),
+    commonMistakes: pick(guide.commonMistakes, (mistakes && mistakes.cards || []).map(card => ({
+      mistake: card.title || card.text,
+      correction: card.text || ''
+    }))),
+    checkpoints: pick(guide.checkpoints, (checkpoint && checkpoint.quiz || []).map(item => item.question).filter(Boolean))
+  };
+}
 const SourceVisuals = ({
   visuals,
   inline = false
@@ -15935,6 +16240,60 @@ const lr = {
     color: 'var(--fg-0)',
     overflowWrap: 'anywhere',
     wordBreak: 'break-word'
+  },
+  studyGuide: {
+    padding: 'calc(18px * var(--app-density-scale))',
+    borderRadius: 10,
+    border: '1px solid var(--accent-soft)',
+    background: 'linear-gradient(145deg, var(--accent-glow), var(--bg-1) 72%)',
+    marginBottom: 'calc(22px * var(--app-density-scale))'
+  },
+  studyGuideHead: {
+    marginBottom: 'calc(12px * var(--app-density-scale))'
+  },
+  studyGuideTitle: {
+    margin: 0,
+    color: 'var(--fg-0)',
+    fontSize: 'calc(24px * var(--app-font-scale))',
+    fontWeight: 500
+  },
+  studyGuideGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+    gap: 'calc(10px * var(--app-density-scale))'
+  },
+  studyGuideGroup: {
+    minWidth: 0,
+    padding: 'calc(12px * var(--app-density-scale))',
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
+  studyGuideLabel: {
+    color: 'var(--accent)',
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.09em',
+    marginBottom: 'calc(7px * var(--app-density-scale))'
+  },
+  studyGuideList: {
+    margin: 0,
+    paddingLeft: 20,
+    color: 'var(--fg-1)',
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    lineHeight: 1.55
+  },
+  studyGuideMistakes: {
+    display: 'grid',
+    gap: 'calc(7px * var(--app-density-scale))'
+  },
+  studyGuideMistake: {
+    display: 'grid',
+    gap: 3,
+    color: 'var(--fg-2)',
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    lineHeight: 1.45
   },
   startHere: {
     padding: 'calc(16px * var(--app-density-scale))',
@@ -17080,27 +17439,78 @@ const Flashcards = ({
   const [i, setI] = React.useState(0);
   const [flipped, setFlipped] = React.useState(false);
   const [cards, setCards] = React.useState([]);
+  const [decks, setDecks] = React.useState([]);
+  const [materials, setMaterials] = React.useState([]);
+  const [selectedDeck, setSelectedDeck] = React.useState(null);
   const [error, setError] = React.useState('');
   const [reviewing, setReviewing] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
+  const [generatingId, setGeneratingId] = React.useState(null);
   const [mode, setMode] = React.useState('due');
   const [counts, setCounts] = React.useState({
     easy: 0,
     hard: 0,
     skipped: 0
   });
+  const refreshDecks = React.useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [deckRes, materialRes] = await Promise.all([window.NoesisAPI.flashcards.decks(), window.NoesisAPI.materials.list()]);
+      setDecks(deckRes && deckRes.decks || []);
+      setMaterials((materialRes && materialRes.materials || []).filter(material => material.status === 'ready'));
+    } catch (e) {
+      setError(e.message || 'Failed to load flashcard decks');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  React.useEffect(() => {
+    refreshDecks();
+  }, [refreshDecks]);
   const refresh = React.useCallback(() => {
-    const materialId = parseInt(sessionStorage.getItem('noesis.materialId') || '0', 10) || null;
-    const request = mode === 'all' ? window.NoesisAPI.flashcards.list(materialId) : window.NoesisAPI.flashcards.due();
+    if (!selectedDeck || !selectedDeck.material_id) return Promise.resolve();
+    const request = mode === 'all' ? window.NoesisAPI.flashcards.list(selectedDeck.material_id) : window.NoesisAPI.flashcards.due(selectedDeck.material_id);
     return request.then(d => {
       setCards(d.cards || []);
       setI(0);
       setFlipped(false);
       setError('');
     }).catch(e => setError(e.message || 'Failed to load cards'));
-  }, [mode]);
+  }, [mode, selectedDeck && selectedDeck.material_id]);
   React.useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (selectedDeck) refresh();
+  }, [refresh, selectedDeck]);
+  const openDeck = deck => {
+    setSelectedDeck(deck);
+    setMode('due');
+    setCounts({
+      easy: 0,
+      hard: 0,
+      skipped: 0
+    });
+    setCards([]);
+    setI(0);
+    setFlipped(false);
+    setError('');
+  };
+  const generateDeck = async materialId => {
+    if (generatingId) return;
+    setGeneratingId(materialId);
+    setError('');
+    try {
+      await window.NoesisAPI.flashcards.generate({
+        material_id: materialId,
+        count: 8,
+        regenerate: true
+      });
+      await refreshDecks();
+    } catch (e) {
+      setError(e.message || 'Could not generate flashcards');
+    } finally {
+      setGeneratingId(null);
+    }
+  };
   const hasCards = cards.length > 0;
   const c = cards[i] || {
     question: 'No cards due.',
@@ -17129,6 +17539,85 @@ const Flashcards = ({
     if (i + 1 >= cards.length) refresh().then(() => setI(0));else setI(i + 1);
     setReviewing(false);
   };
+  if (!selectedDeck) return React.createElement("div", {
+    style: fc.page
+  }, React.createElement(window.Topbar, {
+    title: "Flashcards",
+    crumbs: ['Choose material / deck'],
+    right: React.createElement("button", {
+      className: "btn btn-accent",
+      onClick: () => onNav('materials')
+    }, React.createElement(Icon.Folder, {
+      size: 12
+    }), " Open materials")
+  }), React.createElement("main", {
+    style: fc.deckPage
+  }, React.createElement("div", {
+    style: fc.deckHero
+  }, React.createElement("div", null, React.createElement("div", {
+    style: fc.eyebrow
+  }, "Flashcard decks"), React.createElement("h1", {
+    style: fc.deckTitle
+  }, "Choose what you want to study"), React.createElement("p", {
+    style: fc.deckSub
+  }, "Each deck is isolated to one uploaded material. Cards from different materials are never combined.")), React.createElement("span", {
+    className: "chip"
+  }, decks.length, " deck", decks.length === 1 ? '' : 's')), error && React.createElement("div", {
+    style: fc.error
+  }, error), loading ? React.createElement("div", {
+    style: fc.empty
+  }, "Loading flashcard decks...") : decks.length > 0 ? React.createElement("div", {
+    style: fc.deckGrid
+  }, decks.map(deck => React.createElement("article", {
+    key: deck.generation_id,
+    style: fc.deckCard
+  }, React.createElement("div", {
+    style: fc.deckIcon
+  }, React.createElement(Icon.Cards, {
+    size: 18
+  })), React.createElement("h2", {
+    style: fc.deckCardTitle
+  }, deck.material_title), React.createElement("div", {
+    style: fc.deckMeta
+  }, deck.card_count, " flashcard", deck.card_count === 1 ? '' : 's', " \xB7 ", deck.due_count, " due"), React.createElement("div", {
+    style: fc.deckDate
+  }, "Last generated ", deck.last_generated_at ? new Date(deck.last_generated_at).toLocaleString() : 'recently'), React.createElement("div", {
+    style: fc.deckActions
+  }, React.createElement("button", {
+    className: "btn btn-accent",
+    onClick: () => openDeck(deck)
+  }, "Study Flashcards"), React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: !!generatingId,
+    onClick: () => generateDeck(deck.material_id)
+  }, generatingId === deck.material_id ? 'Regenerating...' : 'Regenerate'))))) : React.createElement("div", {
+    style: fc.empty
+  }, React.createElement(Icon.Cards, {
+    size: 26
+  }), React.createElement("h2", {
+    style: fc.emptyTitle
+  }, "No flashcard decks yet"), React.createElement("p", {
+    style: fc.emptyText
+  }, "Choose a ready material below to generate a source-grounded deck.")), materials.length > 0 && React.createElement("section", {
+    style: fc.generatePanel
+  }, React.createElement("div", {
+    style: fc.eyebrow
+  }, "Generate from a material"), React.createElement("div", {
+    style: fc.materialList
+  }, materials.filter(material => !decks.some(deck => Number(deck.material_id) === Number(material.id))).map(material => React.createElement("div", {
+    key: material.id,
+    style: fc.materialRow
+  }, React.createElement("span", {
+    style: {
+      flex: 1
+    }
+  }, material.display_title || material.title), React.createElement("button", {
+    className: "btn btn-ghost",
+    disabled: !!generatingId,
+    onClick: () => generateDeck(material.id)
+  }, generatingId === material.id ? 'Generating...' : 'Generate Flashcards'))), materials.every(material => decks.some(deck => Number(deck.material_id) === Number(material.id))) && React.createElement("div", {
+    style: fc.deckDate
+  }, "All ready materials already have an active deck.")))));
   return React.createElement("div", {
     style: {
       background: 'var(--bg-0)',
@@ -17137,19 +17626,21 @@ const Flashcards = ({
       flexDirection: 'column'
     }
   }, React.createElement(window.Topbar, {
-    title: hasCards ? `Flashcards - ${c.deck || 'Review'}` : 'Flashcards',
-    crumbs: ['Review'],
+    title: `Flashcards - ${selectedDeck.material_title}`,
+    crumbs: ['Flashcards', selectedDeck.material_title],
     right: React.createElement(React.Fragment, null, React.createElement("button", {
       className: "btn btn-ghost",
       disabled: reviewing,
-      onClick: () => setMode(mode === 'due' ? 'all' : 'due')
-    }, mode === 'due' ? 'Review existing' : 'Due cards'), React.createElement("button", {
-      className: "btn btn-accent",
+      onClick: () => {
+        setSelectedDeck(null);
+        setCards([]);
+        refreshDecks();
+      }
+    }, "Choose another deck"), React.createElement("button", {
+      className: "btn btn-ghost",
       disabled: reviewing,
-      onClick: () => onNav('materials')
-    }, React.createElement(Icon.Folder, {
-      size: 12
-    }), " Create new set"), React.createElement("span", {
+      onClick: () => setMode(mode === 'due' ? 'all' : 'due')
+    }, mode === 'due' ? 'Review existing' : 'Due cards'), React.createElement("span", {
       style: {
         fontSize: 'calc(11px * var(--app-font-scale))',
         color: 'var(--fg-3)'
@@ -17327,12 +17818,142 @@ const Flashcards = ({
     size: 12
   }), " Review existing"), React.createElement("button", {
     className: "btn btn-accent",
-    onClick: () => onNav('materials')
+    onClick: () => {
+      setSelectedDeck(null);
+      setCards([]);
+    }
   }, React.createElement(Icon.Folder, {
     size: 12
-  }), " Create new set"))))));
+  }), " Choose another deck"))))));
 };
 const fc = {
+  page: {
+    background: 'var(--bg-0)',
+    minHeight: '100vh'
+  },
+  deckPage: {
+    padding: 'calc(28px * var(--app-density-scale))',
+    maxWidth: 1180,
+    margin: '0 auto'
+  },
+  deckHero: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    gap: 'calc(18px * var(--app-density-scale))',
+    marginBottom: 'calc(22px * var(--app-density-scale))'
+  },
+  eyebrow: {
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
+    color: 'var(--accent)',
+    letterSpacing: '0.12em',
+    textTransform: 'uppercase',
+    marginBottom: 'calc(7px * var(--app-density-scale))'
+  },
+  deckTitle: {
+    margin: 0,
+    fontFamily: 'var(--font-display)',
+    fontWeight: 300,
+    fontSize: 'calc(36px * var(--app-font-scale))'
+  },
+  deckSub: {
+    color: 'var(--fg-2)',
+    fontSize: 'calc(13px * var(--app-font-scale))',
+    lineHeight: 1.55,
+    margin: '8px 0 0',
+    maxWidth: 680
+  },
+  deckGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+    gap: 'calc(14px * var(--app-density-scale))'
+  },
+  deckCard: {
+    minWidth: 0,
+    padding: 'calc(18px * var(--app-density-scale))',
+    border: '1px solid var(--line)',
+    borderRadius: 'var(--r-lg)',
+    background: 'var(--bg-1)'
+  },
+  deckIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    display: 'grid',
+    placeItems: 'center',
+    color: 'var(--accent)',
+    background: 'var(--accent-glow)',
+    marginBottom: 'calc(14px * var(--app-density-scale))'
+  },
+  deckCardTitle: {
+    margin: 0,
+    color: 'var(--fg-0)',
+    fontSize: 'calc(18px * var(--app-font-scale))',
+    overflowWrap: 'anywhere'
+  },
+  deckMeta: {
+    marginTop: 'calc(8px * var(--app-density-scale))',
+    color: 'var(--fg-1)',
+    fontSize: 'calc(12.5px * var(--app-font-scale))'
+  },
+  deckDate: {
+    marginTop: 'calc(5px * var(--app-density-scale))',
+    color: 'var(--fg-3)',
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
+    lineHeight: 1.45
+  },
+  deckActions: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 'calc(8px * var(--app-density-scale))',
+    marginTop: 'calc(18px * var(--app-density-scale))'
+  },
+  empty: {
+    padding: 'calc(34px * var(--app-density-scale))',
+    border: '1px dashed var(--line-strong)',
+    borderRadius: 'var(--r-lg)',
+    color: 'var(--fg-3)',
+    textAlign: 'center',
+    display: 'grid',
+    placeItems: 'center'
+  },
+  emptyTitle: {
+    color: 'var(--fg-0)',
+    margin: '12px 0 5px',
+    fontSize: 'calc(20px * var(--app-font-scale))'
+  },
+  emptyText: {
+    margin: 0,
+    maxWidth: 480,
+    lineHeight: 1.5
+  },
+  error: {
+    padding: '10px 12px',
+    color: 'var(--err)',
+    border: '1px solid var(--err)',
+    borderRadius: 8,
+    marginBottom: 'calc(14px * var(--app-density-scale))'
+  },
+  generatePanel: {
+    marginTop: 'calc(22px * var(--app-density-scale))',
+    padding: 'calc(16px * var(--app-density-scale))',
+    border: '1px solid var(--line)',
+    borderRadius: 'var(--r-lg)',
+    background: 'var(--bg-1)'
+  },
+  materialList: {
+    display: 'grid',
+    gap: 'calc(7px * var(--app-density-scale))'
+  },
+  materialRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'calc(12px * var(--app-density-scale))',
+    padding: '9px 10px',
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    color: 'var(--fg-1)'
+  },
   card: {
     position: 'relative',
     minHeight: 340,

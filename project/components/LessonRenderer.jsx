@@ -2,7 +2,8 @@ const LessonRenderer = ({ lesson, markdown }) => {
   const parsed = parseLesson(lesson);
   if (!parsed) return <MarkdownFallback markdown={markdown} />;
   const objectives = parsed.learningObjectives || [];
-  const sections = parsed.sections || [];
+  const studyGuide = studyGuideFor(parsed);
+  const sections = (parsed.sections || []).filter(section => !/^source outline$/i.test(String(section && section.title || '').trim()));
   const startHere = parsed.startHere || parsed.learningPath && parsed.learningPath.startHere || parsed.prerequisites && parsed.prerequisites.length && `Review ${parsed.prerequisites[0]} first`;
   const byType = (type) => sections.filter(s => s.type === type);
   const usedSourceVisuals = new Set(sections.flatMap(section => section.sourceVisuals || [])
@@ -29,6 +30,8 @@ const LessonRenderer = ({ lesson, markdown }) => {
           ))}
         </section>
       )}
+
+      <StudyGuide guide={studyGuide} />
 
       {startHere && (
         <section style={lr.startHere}>
@@ -60,6 +63,70 @@ const LessonRenderer = ({ lesson, markdown }) => {
     </article>
   );
 };
+
+const StudyGuide = ({ guide }) => {
+  if (!guide) return null;
+  const groups = [
+    ['What you will learn', guide.whatYouWillLearn],
+    ['Key concepts', guide.keyConcepts],
+    ['Suggested learning order', guide.suggestedOrder],
+    ['Prerequisites', guide.prerequisites],
+    ['Quick checkpoints', guide.checkpoints],
+  ].filter(([, items]) => Array.isArray(items) && items.length);
+  const mistakes = Array.isArray(guide.commonMistakes) ? guide.commonMistakes : [];
+  if (!groups.length && !mistakes.length) return null;
+  return (
+    <section style={lr.studyGuide}>
+      <div style={lr.studyGuideHead}>
+        <div style={lr.sectionLabel}>Study Guide</div>
+        <h2 style={lr.studyGuideTitle}>How to learn this material</h2>
+      </div>
+      <div style={lr.studyGuideGrid}>
+        {groups.map(([label, items]) => (
+          <div key={label} style={lr.studyGuideGroup}>
+            <div style={lr.studyGuideLabel}>{label}</div>
+            {label === 'Suggested learning order' ? (
+              <ol style={lr.studyGuideList}>{items.slice(0, 8).map(item => <li key={item}>{item}</li>)}</ol>
+            ) : (
+              <ul style={lr.studyGuideList}>{items.slice(0, 8).map(item => <li key={item}>{item}</li>)}</ul>
+            )}
+          </div>
+        ))}
+        {mistakes.length > 0 && (
+          <div style={lr.studyGuideGroup}>
+            <div style={lr.studyGuideLabel}>Common mistakes</div>
+            <div style={lr.studyGuideMistakes}>
+              {mistakes.slice(0, 5).map((item, index) => (
+                <div key={(item.mistake || 'mistake') + index} style={lr.studyGuideMistake}>
+                  <b>{item.mistake}</b>{item.correction ? <span>{item.correction}</span> : null}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+};
+
+function studyGuideFor(lesson) {
+  const direct = lesson && (lesson.studyGuide || lesson.learningPath);
+  const sections = lesson && lesson.sections || [];
+  const oldOutline = sections.find(section => /^source outline$/i.test(String(section && section.title || '').trim()));
+  const mistakes = sections.find(section => section && section.type === 'common_mistakes');
+  const checkpoint = sections.find(section => section && section.type === 'checkpoint');
+  const guide = direct || {};
+  const pick = (primary, fallback) => Array.isArray(primary) && primary.length ? primary : fallback;
+  const outlineCards = oldOutline && Array.isArray(oldOutline.cards) ? oldOutline.cards : [];
+  return {
+    whatYouWillLearn: pick(guide.whatYouWillLearn, lesson.learningObjectives || []),
+    keyConcepts: pick(guide.keyConcepts, outlineCards.map(card => card && card.title).filter(Boolean)),
+    suggestedOrder: pick(guide.suggestedOrder, outlineCards.map(card => card && card.title).filter(Boolean)),
+    prerequisites: pick(guide.prerequisites, lesson.prerequisites || []),
+    commonMistakes: pick(guide.commonMistakes, (mistakes && mistakes.cards || []).map(card => ({ mistake: card.title || card.text, correction: card.text || '' }))),
+    checkpoints: pick(guide.checkpoints, (checkpoint && checkpoint.quiz || []).map(item => item.question).filter(Boolean)),
+  };
+}
 
 // Real diagrams/figures detected in the uploaded material. Only candidates that actually
 // have an image are shown; text-only references are skipped here so notes never display an
@@ -530,6 +597,15 @@ const lr = {
   objectiveCard: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(14px * var(--app-density-scale))' },
   cardNumber: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', fontFamily: 'var(--font-mono)', marginBottom: 'calc(8px * var(--app-density-scale))' },
   cardText: { fontSize: 'calc(13px * var(--app-font-scale))', lineHeight: 1.45, color: 'var(--fg-0)', overflowWrap: 'anywhere', wordBreak: 'break-word' },
+  studyGuide: { padding: 'calc(18px * var(--app-density-scale))', borderRadius: 10, border: '1px solid var(--accent-soft)', background: 'linear-gradient(145deg, var(--accent-glow), var(--bg-1) 72%)', marginBottom: 'calc(22px * var(--app-density-scale))' },
+  studyGuideHead: { marginBottom: 'calc(12px * var(--app-density-scale))' },
+  studyGuideTitle: { margin: 0, color: 'var(--fg-0)', fontSize: 'calc(24px * var(--app-font-scale))', fontWeight: 500 },
+  studyGuideGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 'calc(10px * var(--app-density-scale))' },
+  studyGuideGroup: { minWidth: 0, padding: 'calc(12px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
+  studyGuideLabel: { color: 'var(--accent)', fontSize: 'calc(10.5px * var(--app-font-scale))', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.09em', marginBottom: 'calc(7px * var(--app-density-scale))' },
+  studyGuideList: { margin: 0, paddingLeft: 20, color: 'var(--fg-1)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.55 },
+  studyGuideMistakes: { display: 'grid', gap: 'calc(7px * var(--app-density-scale))' },
+  studyGuideMistake: { display: 'grid', gap: 3, color: 'var(--fg-2)', fontSize: 'calc(12px * var(--app-font-scale))', lineHeight: 1.45 },
   startHere: { padding: 'calc(16px * var(--app-density-scale))', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', marginBottom: 'calc(18px * var(--app-density-scale))' },
   startTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(24px * var(--app-font-scale))', color: 'var(--fg-0)', marginBottom: 'calc(10px * var(--app-density-scale))', lineHeight: 1.2 },
   hook: { padding: 'calc(20px * var(--app-density-scale))', borderRadius: 8, background: 'linear-gradient(135deg, color-mix(in oklab, var(--accent) 12%, transparent), var(--bg-1))', border: '1px solid var(--line)', marginBottom: 'calc(18px * var(--app-density-scale))' },

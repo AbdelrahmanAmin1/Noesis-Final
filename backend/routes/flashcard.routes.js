@@ -261,21 +261,54 @@ function fallbackFlashcardsFromChunks(chunks, count, deckTitle) {
 
 function existingFlashcards(db, userId, materialId, topic, count) {
   const topicRows = db.prepare(`
-    SELECT id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at
-    FROM flashcards
-    WHERE user_id=? AND material_id=?
-      AND (? IS NULL OR LOWER(COALESCE(topic, deck, '')) = LOWER(?) OR LOWER(COALESCE(deck, '')) = LOWER(?))
-    ORDER BY created_at DESC
+    SELECT f.id, f.material_id, f.generation_id, f.deck, f.question, f.answer, f.difficulty, f.topic, f.source_chunk_id, f.created_at
+    FROM flashcards f
+    LEFT JOIN flashcard_generations g ON g.id=f.generation_id
+    WHERE f.user_id=? AND f.material_id=? AND (g.is_active=1 OR f.generation_id IS NULL)
+      AND (? IS NULL OR LOWER(COALESCE(f.topic, f.deck, '')) = LOWER(?) OR LOWER(COALESCE(f.deck, '')) = LOWER(?))
+    ORDER BY f.created_at DESC
     LIMIT ?
   `).all(userId, materialId, topic || null, topic || '', topic || '', count);
   if (topicRows.length >= count) return topicRows;
   return db.prepare(`
-    SELECT id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at
-    FROM flashcards
-    WHERE user_id=? AND material_id=?
-    ORDER BY created_at DESC
+    SELECT f.id, f.material_id, f.generation_id, f.deck, f.question, f.answer, f.difficulty, f.topic, f.source_chunk_id, f.created_at
+    FROM flashcards f
+    LEFT JOIN flashcard_generations g ON g.id=f.generation_id
+    WHERE f.user_id=? AND f.material_id=? AND (g.is_active=1 OR f.generation_id IS NULL)
+    ORDER BY f.created_at DESC
     LIMIT ?
   `).all(userId, materialId, count);
+}
+
+function activeGeneration(db, userId, materialId) {
+  return db.prepare(`
+    SELECT * FROM flashcard_generations
+    WHERE user_id=? AND material_id=? AND is_active=1
+    ORDER BY id DESC LIMIT 1
+  `).get(userId, materialId);
+}
+
+function adoptUnassignedCards(db, userId, materialId, title) {
+  const count = db.prepare(`SELECT COUNT(*) AS count FROM flashcards
+                            WHERE user_id=? AND material_id=? AND generation_id IS NULL`)
+    .get(userId, materialId).count;
+  let generation = activeGeneration(db, userId, materialId);
+  if (!count) return generation;
+  db.transaction(() => {
+    if (!generation) {
+      const first = db.prepare(`SELECT MIN(created_at) AS created_at FROM flashcards
+                                WHERE user_id=? AND material_id=? AND generation_id IS NULL`)
+        .get(userId, materialId);
+      const created = db.prepare(`INSERT INTO flashcard_generations
+        (user_id, material_id, title, source_scope, topic, is_active, created_at)
+        VALUES (?,?,?,?,?,?,?)`).run(userId, materialId, title || 'Flashcards', 'material', null, 1, first.created_at || nowIso());
+      generation = { id: created.lastInsertRowid };
+    }
+    db.prepare(`UPDATE flashcards SET generation_id=?
+                WHERE user_id=? AND material_id=? AND generation_id IS NULL`)
+      .run(generation.id, userId, materialId);
+  })();
+  return activeGeneration(db, userId, materialId) || generation;
 }
 
 function usableProvider(provider) {
@@ -392,11 +425,44 @@ router.get('/', requireAuth, (req, res, next) => {
       if (!m) throw new HttpError(404, 'material_not_found');
     }
     const rows = materialId
-      ? db.prepare(`SELECT id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at
-                    FROM flashcards WHERE user_id=? AND material_id=? ORDER BY created_at DESC`).all(req.user.id, materialId)
-      : db.prepare(`SELECT id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at
-                    FROM flashcards WHERE user_id=? ORDER BY created_at DESC LIMIT 200`).all(req.user.id);
+      ? db.prepare(`SELECT f.id, f.material_id, f.generation_id, f.deck, f.question, f.answer, f.difficulty, f.topic, f.source_chunk_id, f.created_at
+                    FROM flashcards f LEFT JOIN flashcard_generations g ON g.id=f.generation_id
+                    WHERE f.user_id=? AND f.material_id=? AND (g.is_active=1 OR f.generation_id IS NULL)
+                    ORDER BY f.created_at DESC`).all(req.user.id, materialId)
+      : db.prepare(`SELECT f.id, f.material_id, f.generation_id, f.deck, f.question, f.answer, f.difficulty, f.topic, f.source_chunk_id, f.created_at
+                    FROM flashcards f LEFT JOIN flashcard_generations g ON g.id=f.generation_id
+                    WHERE f.user_id=? AND (g.is_active=1 OR f.generation_id IS NULL)
+                    ORDER BY f.created_at DESC LIMIT 200`).all(req.user.id);
     res.json({ cards: rows });
+  } catch (e) { next(e); }
+});
+
+router.get('/decks', requireAuth, (req, res, next) => {
+  try {
+    const db = getDb();
+    const now = nowIso();
+    const rows = db.prepare(`
+      SELECT g.id AS generation_id, g.material_id, m.title AS material_title,
+             COUNT(f.id) AS card_count,
+             SUM(CASE WHEN f.id IS NOT NULL AND (
+               SELECT r.due_at FROM flashcard_reviews r
+               WHERE r.card_id=f.id AND r.user_id=f.user_id
+               ORDER BY r.reviewed_at DESC LIMIT 1
+             ) IS NULL THEN 1 WHEN (
+               SELECT r.due_at FROM flashcard_reviews r
+               WHERE r.card_id=f.id AND r.user_id=f.user_id
+               ORDER BY r.reviewed_at DESC LIMIT 1
+             )<=? THEN 1 ELSE 0 END) AS due_count,
+             g.created_at AS last_generated_at
+      FROM flashcard_generations g
+      JOIN materials m ON m.id=g.material_id AND m.user_id=g.user_id
+      LEFT JOIN flashcards f ON f.generation_id=g.id AND f.user_id=g.user_id
+      WHERE g.user_id=? AND g.is_active=1
+      GROUP BY g.id, g.material_id, m.title, g.created_at
+      HAVING COUNT(f.id)>0
+      ORDER BY g.created_at DESC, g.id DESC
+    `).all(now, req.user.id);
+    res.json({ decks: rows.map(row => ({ ...row, due_count: Number(row.due_count || 0), card_count: Number(row.card_count || 0) })) });
   } catch (e) { next(e); }
 });
 
@@ -404,16 +470,23 @@ router.get('/due', requireAuth, (req, res, next) => {
   try {
     const db = getDb();
     const now = nowIso();
+    const materialId = req.query.material_id ? parseInt(req.query.material_id, 10) : null;
+    if (materialId) {
+      const material = db.prepare('SELECT id FROM materials WHERE id=? AND user_id=?').get(materialId, req.user.id);
+      if (!material) throw new HttpError(404, 'material_not_found');
+    }
     // Cards with no review yet are immediately "due"
     const rows = db.prepare(`
-      SELECT f.id, f.deck, f.question, f.answer, f.material_id, f.difficulty, f.topic,
+      SELECT f.id, f.deck, f.question, f.answer, f.material_id, f.generation_id, f.difficulty, f.topic,
              (SELECT due_at FROM flashcard_reviews r WHERE r.card_id=f.id ORDER BY reviewed_at DESC LIMIT 1) AS due_at,
              (SELECT ease FROM flashcard_reviews r WHERE r.card_id=f.id ORDER BY reviewed_at DESC LIMIT 1) AS ease
       FROM flashcards f
-      WHERE f.user_id=?
+      LEFT JOIN flashcard_generations g ON g.id=f.generation_id
+      WHERE f.user_id=? AND (g.is_active=1 OR f.generation_id IS NULL)
+        AND (? IS NULL OR f.material_id=?)
       ORDER BY due_at IS NULL DESC, due_at ASC
       LIMIT 50
-    `).all(req.user.id);
+    `).all(req.user.id, materialId, materialId);
     const due = rows.filter(r => !r.due_at || r.due_at <= now);
     res.json({ cards: due, total_due: due.length });
   } catch (e) { next(e); }
@@ -428,6 +501,7 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     const db = getDb();
     const m = db.prepare('SELECT id, title FROM materials WHERE id=? AND user_id=?').get(material_id, req.user.id);
     if (!m) throw new HttpError(404, 'material_not_found');
+    adoptUnassignedCards(db, req.user.id, material_id, m.title);
     const scopeInfo = validateScope(db, req.user.id, material_id, scope);
 
     const requestedTopic = stripInternalRefs((req.body && req.body.topic) || scopeInfo.title || m.title);
@@ -537,10 +611,12 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     if (!regenerate && scope.sourceScope === 'material') {
       const existing = existingFlashcards(db, req.user.id, material_id, topicQuery, n);
       if (existing.length >= n) {
+        const generation = activeGeneration(db, req.user.id, material_id);
         return res.json({
           created: 0,
           ids: existing.map(card => card.id),
           cards: existing,
+          generation_id: generation && generation.id || existing[0] && existing[0].generation_id || null,
           reused: true,
           fallback: false,
           message: `Using ${existing.length} existing flashcard${existing.length === 1 ? '' : 's'} for this material.`,
@@ -709,18 +785,37 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       cards = topUpFlashcards([], context, uploadedChunks, n, m.title);
     }
     if (!cards.length) throw new HttpError(502, 'flashcard_generation_empty', 'Could not create flashcards from the available source text.');
-    const ins = db.prepare(`INSERT INTO flashcards (user_id, material_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at)
-                            VALUES (?,?,?,?,?,?,?,?,?)`);
+    const ins = db.prepare(`INSERT INTO flashcards (user_id, material_id, generation_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at)
+                            VALUES (?,?,?,?,?,?,?,?,?,?)`);
     const ids = [];
+    let generationId;
     db.transaction(() => {
+      const createdAt = nowIso();
+      db.prepare(`UPDATE flashcard_generations SET is_active=0, archived_at=?
+                  WHERE user_id=? AND material_id=? AND is_active=1`)
+        .run(createdAt, req.user.id, material_id);
+      generationId = db.prepare(`INSERT INTO flashcard_generations
+        (user_id, material_id, title, source_scope, chapter_id, chunk_id, topic, is_active, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?)`).run(
+        req.user.id,
+        material_id,
+        m.title,
+        scope.sourceScope,
+        scope.chapterId,
+        scope.chunkId,
+        topicQuery || null,
+        1,
+        createdAt,
+      ).lastInsertRowid;
       for (const c of cards) {
-        const r = ins.run(req.user.id, material_id, m.title, c.question, c.answer, c.difficulty || 'medium', c.topic || m.title, c.source_chunk_id, nowIso());
+        const r = ins.run(req.user.id, material_id, generationId, m.title, c.question, c.answer, c.difficulty || 'medium', c.topic || m.title, c.source_chunk_id, createdAt);
         ids.push(r.lastInsertRowid);
       }
     })();
     res.json({
       created: ids.length,
       ids,
+      generation_id: generationId,
       reused: false,
       fallback,
       fallback_reason: fallbackReason,

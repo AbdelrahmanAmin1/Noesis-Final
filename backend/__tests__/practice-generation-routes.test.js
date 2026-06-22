@@ -597,7 +597,7 @@ describe('quiz and flashcard generation routes with educational context', () => 
       .send({ material_id: stackId, count: 2, difficulty: 'medium' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ count: 2, requested_count: 2, partial: false });
+    expect(res.body).toMatchObject({ count: 2, requested_count: 2, min_count: 2, partial: false });
     const stored = db.prepare('SELECT options_json FROM quiz_questions WHERE quiz_id=? ORDER BY idx').all(res.body.quiz_id);
     expect(JSON.parse(stored[0].options_json)).toContain('Pop');
     expect(JSON.parse(stored[1].options_json)).toContain('O(1)');
@@ -653,7 +653,7 @@ describe('quiz and flashcard generation routes with educational context', () => 
     expect(stored[0].concept).toBe('Encapsulation');
   });
 
-  it('persists a grounded partial quiz when retries cannot fill the requested count', async () => {
+  it('tops up a study quiz to at least six questions when retries cannot fill the requested count', async () => {
     const validQuestions = [
       {
         question: 'Why does a BankAccount keep its balance private?',
@@ -698,14 +698,18 @@ describe('quiz and flashcard generation routes with educational context', () => 
     const res = await request(app)
       .post('/api/quizzes/generate')
       .set('Authorization', `Bearer ${token}`)
-      .send({ material_id: materialId, count: 6, difficulty: 'medium' });
+      .send({ material_id: materialId, count: 8, min_count: 6, difficulty: 'medium' });
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ count: 4, requested_count: 6, partial: true });
-    expect(res.body.quality_warnings).toContain('requested_6_generated_4');
+    expect(res.body.requested_count).toBe(8);
+    expect(res.body.min_count).toBe(6);
+    expect(res.body.count).toBeGreaterThanOrEqual(6);
+    expect(res.body.count).toBeLessThanOrEqual(8);
+    expect(res.body.generation_mode).toBe('ai_plus_fallback');
+    if (res.body.count < 8) expect(res.body.quality_warnings).toContain(`requested_8_generated_${res.body.count}`);
     expect(ai.generate).toHaveBeenCalledTimes(2);
     expect(ai.generate.mock.calls[0][1].timeoutMs).toBeLessThanOrEqual(45000);
-    expect(db.prepare('SELECT COUNT(*) AS count FROM quiz_questions WHERE quiz_id=?').get(res.body.quiz_id).count).toBe(4);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM quiz_questions WHERE quiz_id=?').get(res.body.quiz_id).count).toBe(res.body.count);
   });
 
   it('falls back to deterministic flashcards when Ollama times out', async () => {
@@ -802,7 +806,7 @@ describe('quiz and flashcard generation routes with educational context', () => 
     expect(text).not.toMatch(/head pointer|node\.next|null-terminated|Linked List/i);
   });
 
-  it('rejects the quiz without saving when both quality attempts stay on the wrong topic', async () => {
+  it('replaces wrong-topic quiz attempts with a deterministic source-grounded fallback', async () => {
     const treesId = seedTreesMaterial(db, user.id);
     ai.generate.mockReset();
     ai.generate
@@ -814,13 +818,18 @@ describe('quiz and flashcard generation routes with educational context', () => 
       .set('Authorization', `Bearer ${token}`)
       .send({ material_id: treesId, count: 2, difficulty: 'medium' });
 
-    expect(res.status).toBe(503);
-    expect(res.body.error).toBe('quiz_quality_failed');
+    expect(res.status).toBe(200);
+    expect(res.body.generation_mode).toBe('deterministic_fallback');
+    expect(res.body.count).toBeGreaterThanOrEqual(2);
     expect(ai.generate).toHaveBeenCalledTimes(2);
-    expect(db.prepare('SELECT COUNT(*) AS count FROM quizzes WHERE material_id=?').get(treesId).count).toBe(0);
+    const stored = db.prepare('SELECT question, explanation, source_chunk_ids_json FROM quiz_questions WHERE quiz_id=? ORDER BY idx').all(res.body.quiz_id);
+    expect(stored).toHaveLength(res.body.count);
+    expect(stored.map(row => `${row.question} ${row.explanation}`).join(' ')).toMatch(/tree|root|traversal|child/i);
+    expect(stored.map(row => `${row.question} ${row.explanation}`).join(' ')).not.toMatch(/head pointer|node\.next|linked list/i);
+    expect(stored.every(row => JSON.parse(row.source_chunk_ids_json).length > 0)).toBe(true);
   });
 
-  it('does not save a deterministic metadata quiz when model generation fails', async () => {
+  it('ignores source metadata and saves a deterministic concept quiz when model generation fails', async () => {
     const badHandoutId = seedPracticeMaterial(db, user.id, {
       title: '09OOPEncapsulation',
       filePath: '09OOPEncapsulation.pdf',
@@ -849,9 +858,133 @@ describe('quiz and flashcard generation routes with educational context', () => 
       .set('Authorization', `Bearer ${token}`)
       .send({ material_id: badHandoutId, count: 2, difficulty: 'medium' });
 
-    expect(res.status).toBe(503);
-    expect(res.body.error).toBe('quiz_generation_failed');
-    expect(db.prepare('SELECT COUNT(*) AS count FROM quizzes WHERE material_id=?').get(badHandoutId).count).toBe(0);
+    expect(res.status).toBe(200);
+    expect(res.body.generation_mode).toBe('deterministic_fallback');
+    const stored = db.prepare('SELECT question, options_json, explanation, concept, source_chunk_ids_json FROM quiz_questions WHERE quiz_id=?').all(res.body.quiz_id);
+    expect(stored.length).toBeGreaterThanOrEqual(2);
+    const visible = JSON.stringify(stored);
+    expect(visible).toMatch(/encapsulation|object|private state|methods/i);
+    expect(visible).not.toMatch(/CS108|Stanford|Handout|Osvaldo|Fall,?\s*2008/i);
+    expect(stored.every(row => JSON.parse(row.source_chunk_ids_json).length > 0)).toBe(true);
+  });
+
+  it('creates a six-to-eight question deterministic quiz when providers are unavailable but source facts are rich', async () => {
+    const richId = seedPracticeMaterial(db, user.id, {
+      title: 'Stack and Queue Review',
+      filePath: 'stack-queue-review.pdf',
+      chapterTitle: 'Linear Data Structures',
+      chunks: [
+        {
+          heading: 'Stack Operations',
+          text: 'A stack follows LIFO order. Push adds an item to the top of the stack. Pop removes the most recently pushed item from the stack.',
+          keywords: ['stack', 'LIFO', 'push', 'pop'],
+        },
+        {
+          heading: 'Queue Operations',
+          text: 'A queue follows FIFO order. Enqueue adds an item at the back of the queue. Dequeue removes the item that has waited the longest.',
+          keywords: ['queue', 'FIFO', 'enqueue', 'dequeue'],
+        },
+        {
+          heading: 'Operation Costs',
+          text: 'Array-backed stacks and queues can provide O(1) push, pop, enqueue, and dequeue operations when storage is managed correctly.',
+          keywords: ['O(1)', 'array-backed', 'operation cost'],
+        },
+      ],
+    });
+    ai.generate.mockReset();
+    ai.generate.mockRejectedValue(Object.assign(new Error('provider unavailable'), { code: 'ai_unavailable', status: 503 }));
+
+    const res = await request(app)
+      .post('/api/quizzes/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ material_id: richId, count: 8, min_count: 6, difficulty: 'medium' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.generation_mode).toBe('deterministic_fallback');
+    expect(res.body.fallback).toBe(true);
+    expect(res.body.fallback_reason).toBe('ai_unavailable');
+    expect(res.body.requested_count).toBe(8);
+    expect(res.body.min_count).toBe(6);
+    expect(res.body.count).toBeGreaterThanOrEqual(6);
+    expect(res.body.count).toBeLessThanOrEqual(8);
+    const stored = db.prepare('SELECT question, explanation, source_chunk_ids_json FROM quiz_questions WHERE quiz_id=? ORDER BY idx').all(res.body.quiz_id);
+    expect(stored).toHaveLength(res.body.count);
+    expect(stored.every(row => JSON.parse(row.source_chunk_ids_json).length > 0)).toBe(true);
+    expect(stored.map(row => `${row.question} ${row.explanation}`).join(' ')).toMatch(/stack|queue|LIFO|FIFO|enqueue|dequeue|O\(1\)/i);
+  });
+
+  it('keeps deterministic tree quizzes material-related and avoids mixed sentence/keyword answer choices', async () => {
+    const treesId = seedPracticeMaterial(db, user.id, {
+      title: 'Trees Introduction',
+      filePath: 'trees-introduction.pdf',
+      chapterTitle: 'Trees',
+      chunks: [
+        {
+          heading: 'COLLEGE OF ENGINEERING Trees - Introduction',
+          text: 'COLLEGE OF ENGINEERING Trees - Introduction A tree is a nonlinear hierarchical data structure that consists of nodes connected by edges. Different tree data structures allow access to data through parent and child relationships.',
+          keywords: ['tree', 'nodes', 'edges', 'hierarchy'],
+        },
+        {
+          heading: 'Root and Leaf Nodes',
+          text: 'The root node is the top node in a tree. Leaf nodes have no children. Height and depth describe positions of nodes in the tree.',
+          keywords: ['root', 'leaf', 'height', 'depth'],
+        },
+        {
+          heading: 'Tree Traversal',
+          text: 'Preorder traversal visits the root before its subtrees. Inorder traversal visits the left subtree, root, and right subtree in a binary tree. Postorder traversal visits children before the root.',
+          keywords: ['preorder', 'inorder', 'postorder', 'binary tree'],
+        },
+      ],
+    });
+    ai.generate.mockReset();
+    ai.generate.mockRejectedValue(Object.assign(new Error('provider unavailable'), { code: 'ai_unavailable', status: 503 }));
+
+    const res = await request(app)
+      .post('/api/quizzes/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ material_id: treesId, count: 8, min_count: 6, difficulty: 'medium' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBeGreaterThanOrEqual(6);
+    const stored = db.prepare('SELECT question, options_json, explanation, concept FROM quiz_questions WHERE quiz_id=? ORDER BY idx').all(res.body.quiz_id);
+    const visible = JSON.stringify(stored);
+    expect(visible).toMatch(/tree|root|leaf|traversal|subtree|nodes|edges/i);
+    expect(visible).not.toMatch(/COLLEGE OF ENGINEERING|which description correctly matches/i);
+    for (const row of stored) {
+      const options = JSON.parse(row.options_json);
+      expect(options).not.toEqual(expect.arrayContaining(['tree', 'data']));
+      const statementLike = options.map(option => option.length >= 32 || /[.!?]$/.test(option));
+      if (statementLike.some(Boolean)) expect(statementLike.every(Boolean)).toBe(true);
+    }
+  });
+
+  it('does not save a tiny study quiz when source content cannot support six grounded questions', async () => {
+    const thinId = seedPracticeMaterial(db, user.id, {
+      title: 'Thin Topic',
+      filePath: 'thin-topic.pdf',
+      chapterTitle: 'Thin Topic',
+      chunks: [
+        {
+          heading: 'One useful fact',
+          text: 'Encapsulation keeps object fields private and exposes validated methods.',
+          keywords: ['encapsulation', 'private fields', 'validated methods'],
+        },
+      ],
+    });
+    ai.generate.mockReset();
+    ai.generate.mockRejectedValue(Object.assign(new Error('provider unavailable'), { code: 'ai_unavailable', status: 503 }));
+    const before = db.prepare('SELECT COUNT(*) AS count FROM quizzes WHERE material_id=?').get(thinId).count;
+
+    const res = await request(app)
+      .post('/api/quizzes/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ material_id: thinId, count: 8, min_count: 6, difficulty: 'medium' });
+
+    expect(res.status).toBe(422);
+    expect(res.body.error).toBe('insufficient_quiz_content');
+    expect(res.body.message).toMatch(/at least 6|only produced/i);
+    expect(res.body.details).toMatchObject({ requested_count: 8, min_count: 6, retryable: false });
+    expect(db.prepare('SELECT COUNT(*) AS count FROM quizzes WHERE material_id=?').get(thinId).count).toBe(before);
   });
 
   it('returns a reusable reindex job before generating from stale extraction', async () => {
@@ -907,6 +1040,60 @@ describe('quiz and flashcard generation routes with educational context', () => 
     expect(attempt.body.error).toBe('quiz_requires_regeneration');
   });
 
+  it('hides old quizzes with mixed source-sentence and keyword answer choices', async () => {
+    const now = new Date().toISOString();
+    const quizId = db.prepare(`
+      INSERT INTO quizzes (user_id, material_id, title, difficulty, created_at)
+      VALUES (?,?,?,?,?)
+    `).run(user.id, materialId, 'Bad Tree Quiz', 'medium', now).lastInsertRowid;
+    const insert = db.prepare(`
+      INSERT INTO quiz_questions (quiz_id, idx, question, options_json, correct_idx, explanation, concept, source_chunk_ids_json)
+      VALUES (?,?,?,?,?,?,?,?)
+    `);
+    insert.run(
+      quizId,
+      0,
+      'Which description correctly matches tree?',
+      JSON.stringify([
+        'A tree is a nonlinear hierarchical data structure that consists of nodes connected by edges.',
+        'Different tree data structures allow access through parent and child relationships.',
+        'tree',
+        'data',
+      ]),
+      0,
+      'A tree is a nonlinear hierarchical data structure that consists of nodes connected by edges.',
+      'Tree',
+      '[]',
+    );
+    insert.run(
+      quizId,
+      1,
+      'Which source statement best describes encapsulation?',
+      JSON.stringify([
+        'Encapsulation keeps fields private and exposes validated public methods.',
+        'The instructor uses a BankAccount example with private balance and deposit or withdraw methods.',
+        'A common mistake is making balance public or using setters without validation.',
+        'Validated methods protect private account state before applying invalid changes.',
+      ]),
+      0,
+      'Encapsulation keeps fields private and exposes validated public methods.',
+      'Encapsulation',
+      '[]',
+    );
+
+    const list = await request(app)
+      .get('/api/quizzes')
+      .set('Authorization', `Bearer ${token}`);
+    expect(list.status).toBe(200);
+    expect(list.body.quizzes.some(quiz => quiz.id === quizId)).toBe(false);
+
+    const get = await request(app)
+      .get(`/api/quizzes/${quizId}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(get.status).toBe(409);
+    expect(get.body.error).toBe('quiz_requires_regeneration');
+  });
+
   it('retries wrong-topic Trees flashcards before saving', async () => {
     const treesId = seedTreesMaterial(db, user.id);
     ai.generate.mockReset();
@@ -950,5 +1137,41 @@ describe('quiz and flashcard generation routes with educational context', () => 
     const text = stored.map(row => `${row.question} ${row.answer} ${row.topic}`).join('\n');
     expect(text).toMatch(/tree|root|children|traversal/i);
     expect(text).not.toMatch(/head pointer|node\.next|Linked List/i);
+  });
+
+  it('groups active flashcard decks by material and never returns archived or cross-material cards', async () => {
+    const treesId = seedTreesMaterial(db, user.id);
+    const now = new Date().toISOString();
+    const oldGeneration = db.prepare(`INSERT INTO flashcard_generations
+      (user_id, material_id, title, source_scope, topic, is_active, created_at, archived_at)
+      VALUES (?,?,?,?,?,?,?,?)`).run(user.id, materialId, 'Encapsulation Notes', 'material', 'Encapsulation', 0, now, now).lastInsertRowid;
+    const activeOne = db.prepare(`INSERT INTO flashcard_generations
+      (user_id, material_id, title, source_scope, topic, is_active, created_at)
+      VALUES (?,?,?,?,?,?,?)`).run(user.id, materialId, 'Encapsulation Notes', 'material', 'Encapsulation', 1, now).lastInsertRowid;
+    const activeTwo = db.prepare(`INSERT INTO flashcard_generations
+      (user_id, material_id, title, source_scope, topic, is_active, created_at)
+      VALUES (?,?,?,?,?,?,?)`).run(user.id, treesId, 'Trees', 'material', 'Trees', 1, now).lastInsertRowid;
+    const insert = db.prepare(`INSERT INTO flashcards
+      (user_id, material_id, generation_id, deck, question, answer, difficulty, topic, source_chunk_id, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`);
+    const oldCard = insert.run(user.id, materialId, oldGeneration, 'Encapsulation Notes', 'Archived question?', 'Archived answer remains stored.', 'medium', 'Encapsulation', 1, now).lastInsertRowid;
+    insert.run(user.id, materialId, activeOne, 'Encapsulation Notes', 'Why keep fields private?', 'Private fields protect state changes.', 'medium', 'Encapsulation', 1, now);
+    insert.run(user.id, treesId, activeTwo, 'Trees', 'What does a root represent?', 'The root is the top node in a tree.', 'medium', 'Trees', 2, now);
+    db.prepare(`INSERT INTO flashcard_reviews (card_id, user_id, rating, ease, interval_days, reps, due_at, reviewed_at)
+                VALUES (?,?,?,?,?,?,?,?)`).run(oldCard, user.id, 3, 2.5, 3, 1, now, now);
+
+    const decks = await request(app).get('/api/flashcards/decks').set('Authorization', `Bearer ${token}`);
+    expect(decks.status).toBe(200);
+    expect(decks.body.decks).toHaveLength(2);
+    expect(decks.body.decks.map(deck => deck.material_id)).toEqual(expect.arrayContaining([Number(materialId), Number(treesId)]));
+
+    const oneMaterial = await request(app).get(`/api/flashcards?material_id=${materialId}`).set('Authorization', `Bearer ${token}`);
+    expect(oneMaterial.body.cards).toHaveLength(1);
+    expect(oneMaterial.body.cards[0].material_id).toBe(Number(materialId));
+    expect(oneMaterial.body.cards[0].question).not.toMatch(/Archived/);
+
+    const due = await request(app).get(`/api/flashcards/due?material_id=${treesId}`).set('Authorization', `Bearer ${token}`);
+    expect(due.body.cards.every(card => card.material_id === Number(treesId))).toBe(true);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM flashcard_reviews WHERE card_id=?').get(oldCard).count).toBe(1);
   });
 });

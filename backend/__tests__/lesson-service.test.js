@@ -181,8 +181,34 @@ describe('lesson.service', () => {
     expect(lesson.topic).toMatch(/skeletal system/i);
     expect(text).toMatch(/support|mineral|red blood|protects organs|movement/);
     expect(text).toMatch(/axial skeleton|appendicular skeleton|shapes of bones/);
-    expect(text).toMatch(/source outline|key concepts explained|important details|review questions|exam-ready summary/);
+    expect(text).toMatch(/studyguide|key concepts explained|important details|review questions|exam-ready summary/);
+    expect(text).not.toMatch(/"title":"source outline"/);
     expect(text).not.toMatch(/bones matters because|name one key idea from 411skeletal|choose one concrete detail|read the material as|treat the material like|source-backed ideas|concrete example required|search algorithm|java/);
+  });
+
+  it('adapts legacy Source Outline sections into a Study Guide without rendering the old heading', () => {
+    const lesson = lessons.normalizeLesson({
+      topic: 'Trees',
+      learningObjectives: ['Explain roots and leaves.', 'Trace a traversal.'],
+      prerequisites: ['Nodes'],
+      sections: [
+        { type: 'hook', title: 'Trees', content: 'Trees organize nodes hierarchically.' },
+        { type: 'definition', title: 'Definition', content: 'A tree contains a root and child nodes.' },
+        { type: 'deep_explanation', title: 'Source Outline', content: 'Root then children.', cards: [{ title: 'Root', text: 'The root has no parent.' }, { title: 'Leaves', text: 'Leaves have no children.' }] },
+        { type: 'deep_explanation', title: 'Traversal', content: 'Traversal visits nodes in an order.' },
+        { type: 'common_mistakes', title: 'Mistakes', cards: [{ title: 'Mixing root and leaf', text: 'A root has no parent; a leaf has no children.' }] },
+        { type: 'checkpoint', title: 'Check', quiz: [{ question: 'Which node has no parent?', answer: 'The root.' }] },
+        { type: 'recap', title: 'Recap', content: 'Trees are hierarchical.' },
+        { type: 'next_steps', title: 'Next', content: 'Practice traversal.' },
+      ],
+    }, { topic: 'Trees' });
+    const markdown = lessons.lessonToMarkdown(lesson);
+
+    expect(lesson.studyGuide.keyConcepts).toEqual(expect.arrayContaining(['Root', 'Leaves']));
+    expect(lesson.studyGuide.checkpoints).toContain('Which node has no parent?');
+    expect(lesson.sections.some(section => section.title === 'Source Outline')).toBe(false);
+    expect(markdown).toContain('## Study Guide');
+    expect(markdown).not.toContain('## Source Outline');
   });
 
   it('rejects generic instructional general notes with weak source-fact coverage', () => {

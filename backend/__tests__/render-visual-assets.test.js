@@ -113,6 +113,40 @@ describe('render visual asset preflight', () => {
       layoutTemplate: 'source_main',
       fallbackGeneratedVisual: false,
     });
+    expect(result.scenes[0].visualData.assetRole).toBe('storyboard_frame_image');
+    expect(result.scenes[0].visualData.placement).toMatchObject({ mode: 'frame', layoutTemplate: 'source_main' });
+  });
+
+  it('keeps gallery-only OCR references out of render scene payloads', async () => {
+    const result = await renderVisualAssets.preflightScriptAssets({
+      slides: [{ visual_type: 'source_reference', image_path: pngPath }],
+    }, {
+      scenes: [{
+        id: 'gallery-reference',
+        visualType: 'source_page_reference',
+        visualData: { type: 'source_page_reference', imagePath: pngPath, assetRole: 'source_reference_image' },
+      }],
+    });
+
+    expect(result.script.slides[0].image_path).toBeUndefined();
+    expect(result.scenes[0].visualData.imagePath).toBeUndefined();
+    expect(result.scenes[0].visualData.assetRole).toBeUndefined();
+  });
+
+  it('rejects overlay assets without explicit normalized placement', async () => {
+    const result = await renderVisualAssets.preflightScriptAssets({
+      slides: [{ visual_type: 'source_reference', image_path: pngPath, asset_role: 'overlay_asset' }],
+    }, {
+      scenes: [{
+        id: 'invalid-overlay',
+        visualType: 'source_page_reference',
+        visualData: { type: 'source_page_reference', imagePath: pngPath, assetRole: 'overlay_asset' },
+      }],
+    });
+
+    expect(result.warnings).toEqual(expect.arrayContaining([expect.objectContaining({ reason: 'overlay_placement_required' })]));
+    expect(result.script.slides[0].image_path).toBeUndefined();
+    expect(result.scenes[0].visualData.imagePath).toBeUndefined();
   });
 
   it('replaces unreadable tree source images with a meaningful generated tree visual before render', async () => {

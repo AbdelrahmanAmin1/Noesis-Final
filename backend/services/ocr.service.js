@@ -51,6 +51,8 @@ function ocrToolDirs() {
     path.join(localApp, 'Programs', 'GhostscriptPortable', 'gs10071', 'bin'),
     ...childDirs(path.join(programFiles, 'gs'), name => /^gs/i.test(name), 'bin'),
     ...childDirs(path.join(programFilesX86, 'gs'), name => /^gs/i.test(name), 'bin'),
+    path.join(programFiles, 'LibreOffice', 'program'),
+    path.join(programFilesX86, 'LibreOffice', 'program'),
   ];
   return existingDirs(dirs);
 }
@@ -219,6 +221,35 @@ async function ocrPdfWithOcrmypdf({ filePath, materialId, quality }) {
 }
 
 async function ocrImageWithTesseract(filePath, opts = {}) {
+  const result = await ocrImageDataWithTesseract(filePath, opts);
+  return result.text;
+}
+
+function parseTesseractTsv(value) {
+  const words = [];
+  const lines = String(value || '').split(/\r?\n/);
+  for (let i = 1; i < lines.length; i += 1) {
+    const cols = lines[i].split('\t');
+    if (cols.length < 12) continue;
+    const text = cols.slice(11).join('\t').trim();
+    const confidence = Number(cols[10]);
+    if (!text || !Number.isFinite(confidence) || confidence < 0) continue;
+    words.push({
+      text,
+      confidence,
+      page: Number(cols[1] || 1),
+      block: Number(cols[2] || 0),
+      paragraph: Number(cols[3] || 0),
+      line: Number(cols[4] || 0),
+      word: Number(cols[5] || 0),
+      boundingBox: { left: Number(cols[6] || 0), top: Number(cols[7] || 0), width: Number(cols[8] || 0), height: Number(cols[9] || 0) },
+    });
+  }
+  const confidence = words.length ? words.reduce((sum, word) => sum + word.confidence, 0) / words.length : null;
+  return { words, confidence: confidence == null ? null : Number(confidence.toFixed(2)) };
+}
+
+async function ocrImageDataWithTesseract(filePath, opts = {}) {
   const availability = providerAvailability('tesseract');
   if (!availability.available) {
     const err = new Error('ocr_provider_unavailable');
@@ -229,13 +260,25 @@ async function ocrImageWithTesseract(filePath, opts = {}) {
   const outBase = path.join(workDir, `image-${Date.now()}-${Math.random().toString(16).slice(2)}`);
   const args = [filePath, outBase];
   if (env.OCR_TESSERACT_LANG) args.push('-l', env.OCR_TESSERACT_LANG);
-  args.push('txt');
+  args.push('txt', 'tsv');
   await runProcess('tesseract', args, { timeoutMs: opts.timeoutMs || env.OCR_TIMEOUT_MS });
   const txtPath = `${outBase}.txt`;
-  return fs.existsSync(txtPath) ? fs.readFileSync(txtPath, 'utf8') : '';
+  const tsvPath = `${outBase}.tsv`;
+  const parsed = fs.existsSync(tsvPath) ? parseTesseractTsv(fs.readFileSync(tsvPath, 'utf8')) : { words: [], confidence: null };
+  return {
+    text: fs.existsSync(txtPath) ? fs.readFileSync(txtPath, 'utf8') : '',
+    words: parsed.words,
+    confidence: parsed.confidence,
+    warnings: parsed.words.length ? [] : ['ocr_layout_or_confidence_unavailable'],
+  };
 }
 
 async function ocrImageWithTesseractJs(filePath) {
+  const result = await ocrImageDataWithTesseractJs(filePath);
+  return result.text;
+}
+
+async function ocrImageDataWithTesseractJs(filePath) {
   let mod;
   try {
     mod = require('tesseract.js');
@@ -247,7 +290,19 @@ async function ocrImageWithTesseractJs(filePath) {
   const result = await mod.recognize(filePath, env.OCR_TESSERACT_LANG || 'eng', {
     logger: () => {},
   });
-  return result && result.data && result.data.text ? result.data.text : '';
+  const data = result && result.data || {};
+  const words = (data.words || []).map((word, index) => ({
+    text: word.text || '',
+    confidence: Number(word.confidence == null ? data.confidence : word.confidence),
+    word: index + 1,
+    boundingBox: word.bbox ? { left: word.bbox.x0, top: word.bbox.y0, width: word.bbox.x1 - word.bbox.x0, height: word.bbox.y1 - word.bbox.y0 } : {},
+  })).filter(word => word.text);
+  return {
+    text: data.text || '',
+    words,
+    confidence: Number.isFinite(Number(data.confidence)) ? Number(Number(data.confidence).toFixed(2)) : null,
+    warnings: words.length ? [] : ['ocr_layout_or_confidence_unavailable'],
+  };
 }
 
 function materializeVisualSource(visual, workDir, index) {
@@ -286,16 +341,23 @@ async function ocrVisualSources({ visualSources = [], materialId, provider }) {
     const visual = capped[i];
     const imagePath = materializeVisualSource(visual, workDir, i + 1);
     if (!imagePath) continue;
-    let text = '';
-    if (selected === 'tesseractjs') text = await ocrImageWithTesseractJs(imagePath);
-    else text = await ocrImageWithTesseract(imagePath, { workDir });
+    let data = { text: '', words: [], confidence: null, warnings: [] };
+    if (selected === 'tesseractjs') data = await ocrImageDataWithTesseractJs(imagePath);
+    else data = await ocrImageDataWithTesseract(imagePath, { workDir });
     const key = visual.slideNumber != null ? `s:${visual.slideNumber}` : `p:${visual.pageNumber || 1}`;
     const existing = byLocation.get(key) || {
       pageNumber: visual.pageNumber || null,
       slideNumber: visual.slideNumber || null,
       text: '',
+      words: [],
+      confidence: null,
+      warnings: [],
     };
-    existing.text = [existing.text, text].filter(Boolean).join('\n');
+    existing.text = [existing.text, data.text].filter(Boolean).join('\n');
+    existing.words.push(...(data.words || []));
+    const confidences = [existing.confidence, data.confidence].filter(value => value != null && Number.isFinite(Number(value)));
+    existing.confidence = confidences.length ? Number((confidences.reduce((sum, value) => sum + Number(value), 0) / confidences.length).toFixed(2)) : null;
+    existing.warnings.push(...(data.warnings || []));
     byLocation.set(key, existing);
   }
   return {
@@ -339,7 +401,9 @@ module.exports = {
     extFromMime,
     materializeVisualSource,
     ocrImageWithTesseract,
+    ocrImageDataWithTesseract,
     ocrImageWithTesseractJs,
+    ocrImageDataWithTesseractJs,
     ocrPdfWithOcrmypdf,
     ocrVisualSources,
     providerForType,
@@ -347,5 +411,6 @@ module.exports = {
     childEnvWithOcrTools,
     ocrToolDirs,
     weakVisualSources,
+    parseTesseractTsv,
   },
 };

@@ -20,6 +20,9 @@ async function extractText(filePath, mimeOrExt) {
   if (ext === '.ppt' || mime === 'application/vnd.ms-powerpoint') {
     throw new Error('ppt_legacy_unsupported: PowerPoint .ppt files are binary and cannot be indexed reliably. Please save the deck as .pptx and upload it again.');
   }
+  if (ext === '.docx' || mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return extractDocxStructure(filePath);
+  }
   if (ext === '.docx' || ext === '.doc' || mime.includes('officedocument') || mime.includes('msword')) {
     const mammoth = require('mammoth');
     const out = await mammoth.extractRawText({ path: filePath });
@@ -180,6 +183,55 @@ function textFromPdfItems(items = []) {
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+async function extractDocxStructure(filePath) {
+  const AdmZip = require('adm-zip');
+  const mammoth = require('mammoth');
+  const out = await mammoth.extractRawText({ path: filePath });
+  const text = cleanText(out.value || '');
+  const zip = new AdmZip(filePath);
+  const entries = zip.getEntries();
+  const documentEntry = entries.find(entry => entry.entryName === 'word/document.xml');
+  const documentXml = documentEntry ? documentEntry.getData().toString('utf8') : '';
+  const visualSources = entries.filter(entry => /^word\/media\//i.test(entry.entryName) && /\.(?:png|jpe?g|webp|gif)$/i.test(entry.entryName)).map(entry => ({
+    pageNumber: 1,
+    slideNumber: null,
+    name: path.posix.basename(entry.entryName),
+    entryName: entry.entryName,
+    mime: mimeFromName(entry.entryName),
+    buffer: entry.getData(),
+    associationMethod: 'docx_embedded_media',
+    associationConfidence: 0.6,
+  }));
+  const tables = [];
+  const tableRe = /<w:tbl\b[\s\S]*?<\/w:tbl>/gi;
+  let tableMatch;
+  while ((tableMatch = tableRe.exec(documentXml))) {
+    const rows = [];
+    const rowRe = /<w:tr\b[\s\S]*?<\/w:tr>/gi;
+    let rowMatch;
+    while ((rowMatch = rowRe.exec(tableMatch[0]))) {
+      const cells = [];
+      const cellRe = /<w:tc\b[\s\S]*?<\/w:tc>/gi;
+      let cellMatch;
+      while ((cellMatch = cellRe.exec(rowMatch[0]))) {
+        const values = [...cellMatch[0].matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/gi)].map(match => decodeXml(match[1])).filter(Boolean);
+        cells.push(values.join(' ').trim());
+      }
+      if (cells.some(Boolean)) rows.push(cells);
+    }
+    if (rows.length) tables.push({ pageNumber: 1, slideNumber: null, cells: rows, rawText: rows.map(row => row.join('\t')).join('\n'), caption: '' });
+  }
+  return {
+    type: 'doc',
+    text,
+    pageCount: 1,
+    pages: [{ pageNumber: 1, slideNumber: null, heading: headingFromText(text), text, sourceKind: 'text' }],
+    visualSources,
+    tables,
+    diagnostics: { embeddedImages: visualSources.length, tables: tables.length },
+  };
+}
+
 function median(values = []) {
   const nums = values.filter(Number.isFinite).sort((a, b) => a - b);
   if (!nums.length) return 0;
@@ -236,6 +288,7 @@ function extractPptxStructure(filePath) {
   const parts = [];
   const pages = [];
   const visualSources = [];
+  const tables = [];
   for (const slideName of slideNames) {
     const n = slideNumber(slideName);
     const slideXml = byName.get(slideName).getData().toString('utf8');
@@ -257,6 +310,7 @@ function extractPptxStructure(filePath) {
       text,
       sourceKind: 'text',
     });
+    tables.push(...extractStructuredTables(slideXml).map(table => ({ ...table, pageNumber: null, slideNumber: n })));
     visualSources.push(...extractSlideImageSources(zip, byName, slideName, slideXml, n));
   }
 
@@ -266,6 +320,7 @@ function extractPptxStructure(filePath) {
     pageCount: slideNames.length,
     pages,
     visualSources,
+    tables,
     diagnostics: {
       slideCount: slideNames.length,
       embeddedImages: visualSources.length,
@@ -321,6 +376,26 @@ function extractTableText(tableXml) {
   return collapseRepeats(rows);
 }
 
+function extractStructuredTables(xml) {
+  const tables = [];
+  const tableRe = /<a:tbl\b[\s\S]*?<\/a:tbl>/gi;
+  let match;
+  while ((match = tableRe.exec(String(xml || '')))) {
+    const rows = [];
+    const rowRe = /<a:tr\b[\s\S]*?<\/a:tr>/gi;
+    let rowMatch;
+    while ((rowMatch = rowRe.exec(match[0]))) {
+      const cells = [];
+      const cellRe = /<a:tc\b[\s\S]*?<\/a:tc>/gi;
+      let cellMatch;
+      while ((cellMatch = cellRe.exec(rowMatch[0]))) cells.push(extractParagraphText(cellMatch[0]).join(' / ').trim());
+      if (cells.some(Boolean)) rows.push(cells);
+    }
+    if (rows.length) tables.push({ cells: rows, rawText: rows.map(row => row.join('\t')).join('\n'), caption: '' });
+  }
+  return tables;
+}
+
 function extractParagraphText(xml) {
   const paragraphs = [];
   const re = /<a:p\b[^>]*>([\s\S]*?)<\/a:p>/gi;
@@ -348,6 +423,22 @@ function extractSlideImageSources(zip, byName, slideName, slideXml, n) {
   const relsEntry = byName.get(relsName);
   if (!relsEntry) return [];
   const embeddedIds = new Set();
+  const boxesById = new Map();
+  const picRe = /<p:pic\b[\s\S]*?<\/p:pic>/gi;
+  let picMatch;
+  while ((picMatch = picRe.exec(slideXml))) {
+    const idMatch = picMatch[0].match(/\br:embed=(["'])([^"']+)\1/i);
+    if (!idMatch) continue;
+    const off = picMatch[0].match(/<a:off\b[^>]*\bx=(["'])(\d+)\1[^>]*\by=(["'])(\d+)\3/i);
+    const ext = picMatch[0].match(/<a:ext\b[^>]*\bcx=(["'])(\d+)\1[^>]*\bcy=(["'])(\d+)\3/i);
+    boxesById.set(idMatch[2], {
+      x: off ? Number(off[2]) : null,
+      y: off ? Number(off[4]) : null,
+      width: ext ? Number(ext[2]) : null,
+      height: ext ? Number(ext[4]) : null,
+      unit: 'emu',
+    });
+  }
   const embedRe = /\br:embed=(["'])([^"']+)\1/gi;
   let embedMatch;
   while ((embedMatch = embedRe.exec(slideXml))) embeddedIds.add(embedMatch[2]);
@@ -370,6 +461,7 @@ function extractSlideImageSources(zip, byName, slideName, slideXml, n) {
       entryName,
       mime: mimeFromName(entryName),
       buffer: entry.getData(),
+      boundingBox: boxesById.get(attrs.Id) || {},
     });
   }
   return out;
@@ -522,6 +614,7 @@ module.exports = {
     extractPdfStructure,
     extractPptxStructure,
     extractPptxText,
+    extractDocxStructure,
     extractSlideImageSources,
     headingFromSlideLines,
     isImageFile,
@@ -530,6 +623,7 @@ module.exports = {
     xmlTextRuns,
     extractSlideXmlText,
     extractTableText,
+    extractStructuredTables,
     looksLikeContentHeading,
     isWeakHeading,
   },

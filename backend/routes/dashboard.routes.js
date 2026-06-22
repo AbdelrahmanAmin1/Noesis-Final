@@ -232,7 +232,10 @@ router.get('/', requireAuth, (req, res, next) => {
       SELECT f.id, f.question, f.deck,
              (SELECT due_at FROM flashcard_reviews r WHERE r.card_id=f.id ORDER BY reviewed_at DESC LIMIT 1) AS due_at,
              (SELECT rating FROM flashcard_reviews r WHERE r.card_id=f.id ORDER BY reviewed_at DESC LIMIT 1) AS last_rating
-      FROM flashcards f WHERE f.user_id=? LIMIT 200
+      FROM flashcards f
+      LEFT JOIN flashcard_generations g ON g.id=f.generation_id
+      WHERE f.user_id=? AND (g.is_active=1 OR f.generation_id IS NULL)
+      LIMIT 200
     `).all(userId);
     const now = new Date().toISOString();
     const dueNow = due.filter(d => !d.due_at || d.due_at <= now);
@@ -255,7 +258,9 @@ router.get('/', requireAuth, (req, res, next) => {
     const counts = {
       materials: (db.prepare('SELECT COUNT(*) AS c FROM materials WHERE user_id=?').get(userId) || {}).c || 0,
       notes: (db.prepare('SELECT COUNT(*) AS c FROM notes WHERE user_id=?').get(userId) || {}).c || 0,
-      flashcards: (db.prepare('SELECT COUNT(*) AS c FROM flashcards WHERE user_id=?').get(userId) || {}).c || 0,
+      flashcards: (db.prepare(`SELECT COUNT(*) AS c FROM flashcards f
+                              LEFT JOIN flashcard_generations g ON g.id=f.generation_id
+                              WHERE f.user_id=? AND (g.is_active=1 OR f.generation_id IS NULL)`).get(userId) || {}).c || 0,
       quizzes: (db.prepare('SELECT COUNT(*) AS c FROM quizzes WHERE user_id=?').get(userId) || {}).c || 0,
       quizzes_completed: (db.prepare('SELECT COUNT(*) AS c FROM quiz_attempts WHERE user_id=? AND finished_at IS NOT NULL').get(userId) || {}).c || 0,
     };
@@ -356,8 +361,11 @@ router.get('/progress', requireAuth, (req, res, next) => {
 
     const concepts = db.prepare('SELECT name, mastery_pct FROM concepts WHERE user_id=? ORDER BY mastery_pct DESC LIMIT 12').all(userId);
     const cardCounts = Object.fromEntries(db.prepare(`
-      SELECT COALESCE(topic, deck, 'General') AS topic, COUNT(*) AS count
-      FROM flashcards WHERE user_id=? GROUP BY COALESCE(topic, deck, 'General')
+      SELECT COALESCE(f.topic, f.deck, 'General') AS topic, COUNT(*) AS count
+      FROM flashcards f
+      LEFT JOIN flashcard_generations g ON g.id=f.generation_id
+      WHERE f.user_id=? AND (g.is_active=1 OR f.generation_id IS NULL)
+      GROUP BY COALESCE(f.topic, f.deck, 'General')
     `).all(userId).map(r => [r.topic, r.count]));
     const concept_breakdown = concepts.map(c => ({ t: c.name, m: c.mastery_pct, cards: cardCounts[c.name] || 0, attention: c.mastery_pct < 50 }));
 

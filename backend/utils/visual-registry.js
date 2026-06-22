@@ -11,6 +11,11 @@ const SUPPORTED_VISUALS = {
     aliases: ['class_object_visual', 'classes_objects', 'classes_and_objects', 'oop_class_diagram', 'class_diagram', 'uml_class', 'abstraction_contract', 'interface_contract'],
     concrete: true,
   },
+  state_behavior: {
+    name: 'StateBehaviorVisual',
+    aliases: ['state_behavior_visual', 'state_and_behavior', 'object_state_behavior', 'state_transition_class'],
+    concrete: true,
+  },
   inheritance_uml: {
     name: 'InheritanceVisual',
     aliases: ['inheritance', 'inheritance_visual', 'inheritance_tree', 'extends_uml'],
@@ -136,6 +141,7 @@ const CANONICAL_VISUAL_TYPES = Object.keys(SUPPORTED_VISUALS);
 const LEGACY_SLIDE_VISUAL_TYPES = {
   encapsulation_boundary: 'class_diagram',
   class_object: 'class_diagram',
+  state_behavior: 'class_diagram',
   inheritance_uml: 'class_diagram',
   polymorphism_dispatch: 'class_diagram',
   linked_list_operation: 'linkedlist',

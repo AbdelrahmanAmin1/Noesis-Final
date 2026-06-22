@@ -7,7 +7,7 @@ const sourceTopicPlans = require('./source-topic-plan.service');
 const sourceVisualCandidates = require('./source-visual-candidates.service');
 const sourceTextQuality = require('./source-text-quality.service');
 
-const TOPIC_MAP_VERSION = 2;
+const TOPIC_MAP_VERSION = 3;
 
 function nowIso() { return new Date().toISOString(); }
 

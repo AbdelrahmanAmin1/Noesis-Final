@@ -146,6 +146,9 @@ function mergeStructuredWithOcr(structured = {}, ocrResult = null) {
       ocrText: '',
       normalTextChars: usefulCharCount(page.text || page.normalText || ''),
       ocrTextChars: 0,
+      ocrConfidence: null,
+      ocrWords: [],
+      warnings: [],
     }));
     return { ...structured, pages, text: cleanText(structured.text || ''), ocrResult: null };
   }
@@ -156,6 +159,9 @@ function mergeStructuredWithOcr(structured = {}, ocrResult = null) {
       ...page,
       normalText: cleanText(page.text || page.normalText || ''),
       ocrText: '',
+      ocrConfidence: null,
+      ocrWords: [],
+      warnings: [],
     });
   }
   for (const page of (ocrResult && ocrResult.pages) || []) {
@@ -168,6 +174,9 @@ function mergeStructuredWithOcr(structured = {}, ocrResult = null) {
       text: '',
     };
     current.ocrText = mergeText(current.ocrText || '', page.text || page.ocrText || '');
+    current.ocrConfidence = page.confidence == null ? current.ocrConfidence : Number(page.confidence);
+    current.ocrWords = [...(current.ocrWords || []), ...(page.words || [])];
+    current.warnings = [...new Set([...(current.warnings || []), ...(page.warnings || [])])];
     byKey.set(key, current);
   }
 
@@ -188,6 +197,9 @@ function mergeStructuredWithOcr(structured = {}, ocrResult = null) {
         ocrText: page.ocrText || '',
         normalTextChars: normalChars,
         ocrTextChars: ocrChars,
+        ocrConfidence: page.ocrConfidence == null ? null : Number(page.ocrConfidence),
+        ocrWords: page.ocrWords || [],
+        warnings: page.warnings || [],
         sourceKind,
       };
     });

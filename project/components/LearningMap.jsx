@@ -4,6 +4,7 @@ const TopicVisual = ({ template = 'learning_map', data = {}, code = null, compac
   if (resolved === 'polymorphism_dispatch') return <DispatchVisual compact={compact} />;
   if (resolved === 'encapsulation_boundary') return <EncapsulationVisual nodes={nodes} compact={compact} />;
   if (resolved === 'class_object' || resolved === 'inheritance_uml') return <UmlVisual nodes={nodes} compact={compact} />;
+  if (resolved === 'state_behavior') return <StateBehaviorVisual nodes={nodes} compact={compact} />;
   if (resolved === 'linked_list_operation') return <LinkedListVisual compact={compact} />;
   if (resolved === 'hash_table_operation') return <HashTableVisual compact={compact} nodes={nodes} />;
   if (resolved === 'stack_operation') return <StackVisual compact={compact} />;
@@ -78,6 +79,7 @@ function visualKey(value) {
 const TOPIC_VISUALS = {
   encapsulation_boundary: ['encapsulation', 'data_hiding', 'private_fields', 'getter_setter'],
   class_object: ['class_object_visual', 'classes_objects', 'classes_and_objects', 'oop_class_diagram', 'class_diagram', 'uml_class', 'abstraction_contract', 'interface_contract'],
+  state_behavior: ['state_behavior_visual', 'state_and_behavior', 'object_state_behavior', 'state_transition_class'],
   inheritance_uml: ['inheritance', 'inheritance_visual', 'inheritance_tree', 'extends_uml'],
   polymorphism_dispatch: ['polymorphism', 'polymorphism_visual', 'runtime_dispatch', 'dynamic_dispatch'],
   linked_list_operation: ['linked_list', 'linkedlist', 'linked_list_visual', 'linked_list_operation_visual'],
@@ -688,6 +690,22 @@ const UmlVisual = ({ nodes, compact }) => {
       <ClassBox x={405} y={165} name="Rectangle" rows={['- width', '- height', '+ area()']}/>
       <Arrow x1={205} y1={165} x2={290} y2={115} label="extends"/>
       <Arrow x1={445} y1={165} x2={360} y2={115} label="extends"/>
+    </svg>
+  </div>;
+};
+
+const StateBehaviorVisual = ({ nodes = [], compact }) => {
+  const state = nodes.find(n => /state|field|value/i.test(n)) || 'current state';
+  const behavior = nodes.find(n => /method|behavior|action/i.test(n)) || 'method call';
+  const result = nodes.find(n => /result|next|updated|transition/i.test(n)) || 'updated state';
+  return <div style={{ ...tv.box, minHeight: compact ? 180 : 250 }}>
+    <svg viewBox="0 0 700 250" style={tv.svg}>
+      <TextBox x={35} y={88} w={170} h={62} text={state} fill="#dbeafe" stroke="#2563eb"/>
+      <TextBox x={265} y={88} w={170} h={62} text={behavior} fill="#fef3c7" stroke="#d97706"/>
+      <TextBox x={495} y={88} w={170} h={62} text={result} fill="#dcfce7" stroke="#16a34a"/>
+      <Arrow x1={205} y1={119} x2={265} y2={119} label="invokes"/>
+      <Arrow x1={435} y1={119} x2={495} y2={119} label="changes"/>
+      <SvgTextLines x={350} y={210} width={360} text="Behavior transforms object state" fontSize={15} lineHeight={17} fill="#475569" maxLines={2}/>
     </svg>
   </div>;
 };
