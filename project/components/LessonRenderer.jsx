@@ -1,39 +1,61 @@
-const LessonRenderer = ({ lesson, markdown }) => {
+const LessonRenderer = ({ lesson, markdown, meta = {} }) => {
   const parsed = parseLesson(lesson);
-  if (!parsed) return <MarkdownFallback markdown={markdown} />;
+  if (!parsed) {
+    return (
+      <article className="note-doc-layout" style={lr.page}>
+        <div style={lr.content}>
+          <LessonHeader lesson={{ topic: meta.title || 'Learning Note', sourceMaterial: {} }} meta={meta} />
+          <MarkdownFallback markdown={markdown} />
+        </div>
+      </article>
+    );
+  }
   const objectives = parsed.learningObjectives || [];
   const studyGuide = studyGuideFor(parsed);
   const sections = (parsed.sections || []).filter(section => !/^source outline$/i.test(String(section && section.title || '').trim()));
   const startHere = parsed.startHere || parsed.learningPath && parsed.learningPath.startHere || parsed.prerequisites && parsed.prerequisites.length && `Review ${parsed.prerequisites[0]} first`;
-  const byType = (type) => sections.filter(s => s.type === type);
-  const usedSourceVisuals = new Set(sections.flatMap(section => section.sourceVisuals || [])
-    .map(v => String(v && (v.id || `${v.pageNumber || v.sourcePage || ''}:${v.slideNumber || ''}:${v.heading || ''}`))));
-  const remainingSourceVisuals = (parsed.sourceVisuals || []).filter(v => !usedSourceVisuals.has(String(v && (v.id || `${v.pageNumber || v.sourcePage || ''}:${v.slideNumber || ''}:${v.heading || ''}`))));
+  const groups = groupLessonSections(sections);
+  const sourceVisuals = collectSourceVisuals(parsed);
+  const summary = quickSummaryFor(parsed, objectives, groups);
+  const toc = [
+    summary.length ? { id: 'quick-summary', label: 'Summary' } : null,
+    studyGuide ? { id: 'study-guide', label: 'Study Guide' } : null,
+    groups.core.length ? { id: 'core-concepts', label: 'Core Concepts' } : null,
+    sourceVisuals.length ? { id: 'source-visuals', label: 'Source Visuals' } : null,
+    groups.procedures.length ? { id: 'algorithms-procedures', label: 'Procedures' } : null,
+    groups.code.length ? { id: 'code-examples', label: 'Code' } : null,
+    groups.practice.length ? { id: 'practice-questions', label: 'Practice' } : null,
+    groups.mistakes.length ? { id: 'common-mistakes', label: 'Mistakes' } : null,
+    groups.final.length || parsed.relatedTopics && parsed.relatedTopics.length ? { id: 'final-review', label: 'Checklist' } : null,
+  ].filter(Boolean);
 
   return (
-    <article style={lr.page}>
-      <header style={lr.hero}>
-        <div style={lr.eyebrow}>{labelFor(parsed.lessonType)} lesson</div>
-        <h1 style={lr.title}>{parsed.topic || 'Learning Note'}</h1>
-        {parsed.sourceMaterial && parsed.sourceMaterial.grounding && (
-          <div style={lr.meta}>Grounding: {parsed.sourceMaterial.grounding}</div>
+    <article className="note-doc-layout" style={lr.page}>
+      <nav className="note-toc" style={lr.toc} aria-label="Note sections">
+        <div style={lr.tocLabel}>On this note</div>
+        {toc.map(item => <a key={item.id} href={`#${item.id}`} style={lr.tocLink}>{item.label}</a>)}
+      </nav>
+
+      <div style={lr.content}>
+        <LessonHeader lesson={parsed} meta={meta} />
+        <div className="note-toc-chips" style={lr.tocChips}>
+          {toc.map(item => <a key={item.id} href={`#${item.id}`} style={lr.tocChip}>{item.label}</a>)}
+        </div>
+
+        {summary.length > 0 && (
+          <section id="quick-summary" style={lr.objectives}>
+            {summary.slice(0, 5).map((item, i) => (
+              <div key={i} style={lr.objectiveCard}>
+                <div style={lr.cardNumber}>{String(i + 1).padStart(2, '0')}</div>
+                <div style={lr.cardText}>{item}</div>
+              </div>
+            ))}
+          </section>
         )}
-      </header>
 
-      {objectives.length > 0 && (
-        <section style={lr.objectives}>
-          {objectives.slice(0, 4).map((item, i) => (
-            <div key={i} style={lr.objectiveCard}>
-              <div style={lr.cardNumber}>{String(i + 1).padStart(2, '0')}</div>
-              <div style={lr.cardText}>{item}</div>
-            </div>
-          ))}
-        </section>
-      )}
+        <StudyGuide guide={studyGuide} id="study-guide" />
 
-      <StudyGuide guide={studyGuide} />
-
-      {startHere && (
+        {startHere && (
         <section style={lr.startHere}>
           <div style={lr.sectionLabel}>Start here</div>
           <div style={lr.startTitle}>{startHere}</div>
@@ -41,30 +63,108 @@ const LessonRenderer = ({ lesson, markdown }) => {
             <div style={lr.chips}>{parsed.prerequisites.slice(0, 5).map(t => <span key={t} style={lr.chip}>{t}</span>)}</div>
           )}
         </section>
-      )}
+        )}
 
-      {sections.map((section, i) => (
-        <React.Fragment key={`${section.type}-${i}`}>
-          <LessonSection section={section} />
-          <SourceVisuals visuals={section.sourceVisuals} inline />
-        </React.Fragment>
-      ))}
-
-      <SourceVisuals visuals={remainingSourceVisuals} />
-
-      {parsed.relatedTopics && parsed.relatedTopics.length > 0 && (
-        <section style={lr.band}>
-          <div style={lr.sectionLabel}>Related topics</div>
-          <div style={lr.chips}>
-            {parsed.relatedTopics.map(t => <span key={t} style={lr.chip}>{t}</span>)}
-          </div>
-        </section>
-      )}
+        <SectionGroup id="core-concepts" label="Core Concepts" sections={groups.core} />
+        <SourceVisuals visuals={sourceVisuals} />
+        <SectionGroup id="algorithms-procedures" label="Algorithms / Procedures" sections={groups.procedures} />
+        <SectionGroup id="code-examples" label="Code Examples" sections={groups.code} />
+        <SectionGroup id="practice-questions" label="Practice Questions" sections={groups.practice} />
+        <SectionGroup id="common-mistakes" label="Common Mistakes" sections={groups.mistakes} />
+        <FinalReview id="final-review" sections={groups.final} relatedTopics={parsed.relatedTopics} />
+      </div>
     </article>
   );
 };
 
-const StudyGuide = ({ guide }) => {
+const LessonHeader = ({ lesson, meta = {} }) => {
+  const sourceTitle = lesson.sourceMaterial && lesson.sourceMaterial.title || meta.sourceTitle || '';
+  const grounding = lesson.sourceMaterial && lesson.sourceMaterial.grounding || meta.grounding || '';
+  const updated = meta.updatedAt || meta.updated || '';
+  return (
+    <header style={lr.hero}>
+      <div style={lr.eyebrow}>{labelFor(lesson.lessonType)} study document</div>
+      <h1 style={lr.title}>{lesson.topic || meta.title || 'Learning Note'}</h1>
+      <div style={lr.metaRow}>
+        {sourceTitle && <span style={lr.metaPill}>Source: {sourceTitle}</span>}
+        {updated && <span style={lr.metaPill}>Updated {updated}</span>}
+        {grounding && <span style={lr.groundingPill}>Grounded: {grounding}</span>}
+      </div>
+    </header>
+  );
+};
+
+function quickSummaryFor(lesson, objectives, groups) {
+  const lines = [];
+  for (const item of objectives || []) lines.push(item);
+  for (const section of [...(groups.core || []), ...(groups.final || [])]) {
+    if (section && section.content) lines.push(section.content);
+    if (lines.length >= 5) break;
+  }
+  return [...new Set(lines.map(item => String(item || '').replace(/\s+/g, ' ').trim()).filter(Boolean))]
+    .map(item => item.length > 210 ? `${item.slice(0, 207).trim()}...` : item)
+    .slice(0, 5);
+}
+
+function collectSourceVisuals(lesson) {
+  const seen = new Set();
+  const visuals = [];
+  const add = (visual) => {
+    if (!visual || !visual.id || !visual.materialId || !visual.imagePath) return;
+    const key = String(visual.id || `${visual.pageNumber || visual.sourcePage || ''}:${visual.slideNumber || ''}:${visual.heading || ''}`);
+    if (seen.has(key)) return;
+    seen.add(key);
+    visuals.push(visual);
+  };
+  for (const visual of lesson.sourceVisuals || []) add(visual);
+  for (const section of lesson.sections || []) for (const visual of section.sourceVisuals || []) add(visual);
+  return visuals;
+}
+
+function groupLessonSections(sections = []) {
+  const out = { core: [], procedures: [], code: [], practice: [], mistakes: [], final: [] };
+  for (const section of sections || []) {
+    const title = String(section && section.title || '').toLowerCase();
+    const text = [title, section && section.content].join(' ').toLowerCase();
+    if (section.type === 'common_mistakes') out.mistakes.push(section);
+    else if (section.type === 'checkpoint') out.practice.push(section);
+    else if (section.type === 'code_example') out.code.push(section);
+    else if (section.type === 'code_walkthrough' || section.type === 'complexity' || /\b(algorithm|procedure|traversal|search|insert|delete|deletion|insertion|step|process|complexity)\b/.test(text)) out.procedures.push(section);
+    else if (section.type === 'recap' || section.type === 'next_steps' || /checklist|review|related study path|summary/.test(title)) out.final.push(section);
+    else out.core.push(section);
+  }
+  return out;
+}
+
+const SectionGroup = ({ id, label, sections }) => {
+  if (!sections || !sections.length) return null;
+  return (
+    <section id={id} style={lr.group}>
+      <div style={lr.groupHead}>
+        <div style={lr.sectionLabel}>{label}</div>
+      </div>
+      {sections.map((section, i) => <LessonSection key={`${id}-${section.title}-${i}`} section={section} />)}
+    </section>
+  );
+};
+
+const FinalReview = ({ id, sections, relatedTopics }) => {
+  if ((!sections || !sections.length) && (!relatedTopics || !relatedTopics.length)) return null;
+  return (
+    <section id={id} style={lr.group}>
+      <div style={lr.sectionLabel}>Final Review Checklist</div>
+      {sections.map((section, i) => <LessonSection key={`${id}-${section.title}-${i}`} section={section} />)}
+      {relatedTopics && relatedTopics.length > 0 && (
+        <div style={lr.finalTopics}>
+          <div style={lr.studyGuideLabel}>Related topics</div>
+          <div style={lr.chips}>{relatedTopics.map(t => <span key={t} style={lr.chip}>{t}</span>)}</div>
+        </div>
+      )}
+    </section>
+  );
+};
+
+const StudyGuide = ({ guide, id }) => {
   if (!guide) return null;
   const groups = [
     ['What you will learn', guide.whatYouWillLearn],
@@ -76,7 +176,7 @@ const StudyGuide = ({ guide }) => {
   const mistakes = Array.isArray(guide.commonMistakes) ? guide.commonMistakes : [];
   if (!groups.length && !mistakes.length) return null;
   return (
-    <section style={lr.studyGuide}>
+    <section id={id} style={lr.studyGuide}>
       <div style={lr.studyGuideHead}>
         <div style={lr.sectionLabel}>Study Guide</div>
         <h2 style={lr.studyGuideTitle}>How to learn this material</h2>
@@ -131,20 +231,31 @@ function studyGuideFor(lesson) {
 // Real diagrams/figures detected in the uploaded material. Only candidates that actually
 // have an image are shown; text-only references are skipped here so notes never display an
 // empty or meaningless visual placeholder.
-const SourceVisuals = ({ visuals, inline = false }) => {
+const SourceVisuals = ({ visuals }) => {
+  const [selected, setSelected] = React.useState(null);
   const list = (visuals || []).filter(v => v && v.id && v.materialId && v.imagePath);
   if (!list.length) return null;
   return (
-    <section style={lr.band}>
-      <div style={lr.sectionLabel}>{inline ? 'Source visual' : 'From your material'}</div>
+    <section id="source-visuals" style={lr.sourceBand}>
+      <div style={lr.sectionLabel}>Visuals From Source</div>
+      <h2 style={lr.h2}>Figures and OCR-backed source images</h2>
       <div style={lr.sourceGrid}>
-        {list.slice(0, inline ? 2 : 6).map(v => <SourceImage key={v.id} candidate={v} />)}
+        {list.slice(0, 6).map(v => <SourceImage key={v.id} candidate={v} onOpen={setSelected} />)}
       </div>
+      {selected && (
+        <div className="note-source-modal" style={lr.modalBackdrop} onClick={() => setSelected(null)}>
+          <div style={lr.modalPanel} onClick={e => e.stopPropagation()}>
+            <button className="btn btn-ghost" style={lr.modalClose} onClick={() => setSelected(null)}>Close</button>
+            <img src={selected.url} alt={selected.caption || 'Source visual'} style={lr.modalImg} />
+            <div style={lr.caption}>{selected.caption}</div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };
 
-const SourceImage = ({ candidate }) => {
+const SourceImage = ({ candidate, onOpen }) => {
   const [url, setUrl] = React.useState('');
   const [failed, setFailed] = React.useState(false);
   React.useEffect(() => {
@@ -169,6 +280,7 @@ const SourceImage = ({ candidate }) => {
       {(candidate.caption || candidate.explanation || where) && (
         <figcaption style={lr.caption}>{candidate.explanation || candidate.caption || 'Source visual'}{where ? ` (${where})` : ''}</figcaption>
       )}
+      {url && <button className="btn btn-ghost" style={lr.viewButton} onClick={() => onOpen && onOpen({ url, caption: `${candidate.explanation || candidate.caption || 'Source visual'}${where ? ` (${where})` : ''}` })}>View larger</button>}
     </figure>
   );
 };
@@ -588,11 +700,19 @@ function labelFor(type) {
 }
 
 const lr = {
-  page: { color: 'var(--fg-1)' },
+  page: { color: 'var(--fg-1)', display: 'grid', gridTemplateColumns: 'minmax(128px, 172px) minmax(0, 1fr)', gap: 'calc(24px * var(--app-density-scale))', alignItems: 'start' },
+  content: { minWidth: 0 },
+  toc: { position: 'sticky', top: 86, display: 'flex', flexDirection: 'column', gap: 'calc(6px * var(--app-density-scale))', padding: 'calc(12px * var(--app-density-scale))', border: '1px solid var(--line-soft)', borderRadius: 8, background: 'color-mix(in oklab, var(--bg-1) 84%, transparent)', boxShadow: 'var(--shadow-sm)' },
+  tocLabel: { fontSize: 'calc(10px * var(--app-font-scale))', letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 'calc(3px * var(--app-density-scale))' },
+  tocLink: { color: 'var(--fg-2)', fontSize: 'calc(11.5px * var(--app-font-scale))', textDecoration: 'none', padding: '5px 6px', borderRadius: 6 },
+  tocChips: { display: 'none', gap: 'calc(7px * var(--app-density-scale))', flexWrap: 'wrap', marginBottom: 'calc(18px * var(--app-density-scale))' },
+  tocChip: { textDecoration: 'none', border: '1px solid var(--line)', borderRadius: 999, padding: '5px 9px', color: 'var(--fg-2)', background: 'var(--bg-1)', fontSize: 'calc(11.5px * var(--app-font-scale))' },
   hero: { padding: '10px 0 24px', borderBottom: '1px solid var(--line-soft)', marginBottom: 'calc(22px * var(--app-density-scale))' },
   eyebrow: { fontSize: 'calc(11px * var(--app-font-scale))', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 'calc(8px * var(--app-density-scale))' },
-  title: { fontFamily: 'var(--font-display)', fontSize: 'calc(38px * var(--app-font-scale))', fontWeight: 300, lineHeight: 1.12, margin: 0, color: 'var(--fg-0)' },
-  meta: { marginTop: 'calc(10px * var(--app-density-scale))', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
+  title: { fontFamily: 'var(--font-display)', fontSize: 'calc(34px * var(--app-font-scale))', fontWeight: 400, lineHeight: 1.16, margin: 0, color: 'var(--fg-0)' },
+  metaRow: { display: 'flex', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap', marginTop: 'calc(14px * var(--app-density-scale))' },
+  metaPill: { border: '1px solid var(--line)', borderRadius: 999, padding: '5px 9px', background: 'var(--bg-1)', color: 'var(--fg-3)', fontSize: 'calc(11.5px * var(--app-font-scale))' },
+  groundingPill: { border: '1px solid var(--accent-soft)', borderRadius: 999, padding: '5px 9px', background: 'var(--accent-glow)', color: 'var(--accent)', fontSize: 'calc(11.5px * var(--app-font-scale))' },
   objectives: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'calc(10px * var(--app-density-scale))', marginBottom: 'calc(22px * var(--app-density-scale))' },
   objectiveCard: { border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(14px * var(--app-density-scale))' },
   cardNumber: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--accent)', fontFamily: 'var(--font-mono)', marginBottom: 'calc(8px * var(--app-density-scale))' },
@@ -610,6 +730,8 @@ const lr = {
   startTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(24px * var(--app-font-scale))', color: 'var(--fg-0)', marginBottom: 'calc(10px * var(--app-density-scale))', lineHeight: 1.2 },
   hook: { padding: 'calc(20px * var(--app-density-scale))', borderRadius: 8, background: 'linear-gradient(135deg, color-mix(in oklab, var(--accent) 12%, transparent), var(--bg-1))', border: '1px solid var(--line)', marginBottom: 'calc(18px * var(--app-density-scale))' },
   hookText: { fontSize: 'calc(17px * var(--app-font-scale))', lineHeight: 1.65, margin: 0, color: 'var(--fg-0)' },
+  group: { marginBottom: 'calc(18px * var(--app-density-scale))', scrollMarginTop: 90 },
+  groupHead: { marginBottom: 'calc(8px * var(--app-density-scale))' },
   band: { padding: '18px 0', borderBottom: '1px solid var(--line-soft)' },
   sectionLabel: { fontSize: 'calc(10.5px * var(--app-font-scale))', letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--fg-3)', marginBottom: 'calc(7px * var(--app-density-scale))' },
   h2: { fontSize: 'calc(24px * var(--app-font-scale))', fontWeight: 500, lineHeight: 1.22, margin: '0 0 10px', color: 'var(--fg-0)' },
@@ -649,10 +771,16 @@ const lr = {
   flowRoot: { padding: '8px 12px', borderRadius: 8, background: 'var(--accent-glow)', border: '1px solid var(--accent-soft)', color: 'var(--fg-0)', fontSize: 'calc(12px * var(--app-font-scale))', maxWidth: 180, overflowWrap: 'anywhere', wordBreak: 'break-word' },
   flowNode: { padding: '8px 12px', borderRadius: 8, background: 'var(--bg-2)', border: '1px solid var(--line)', color: 'var(--fg-0)', fontSize: 'calc(12px * var(--app-font-scale))', maxWidth: 180, overflowWrap: 'anywhere', wordBreak: 'break-word' },
   caption: { margin: '8px 0 0', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
-  sourceGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'calc(12px * var(--app-density-scale))', marginTop: 'calc(10px * var(--app-density-scale))' },
-  sourceFigure: { margin: 0, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', padding: 'calc(10px * var(--app-density-scale))' },
-  sourceImg: { width: '100%', height: 'auto', display: 'block', borderRadius: 6, background: 'var(--bg-0)' },
+  sourceBand: { padding: 'calc(18px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)', marginBottom: 'calc(18px * var(--app-density-scale))', scrollMarginTop: 90 },
+  sourceGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'calc(12px * var(--app-density-scale))', marginTop: 'calc(10px * var(--app-density-scale))' },
+  sourceFigure: { margin: 0, border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-0)', padding: 'calc(10px * var(--app-density-scale))', display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))' },
+  sourceImg: { width: '100%', maxHeight: 420, objectFit: 'contain', display: 'block', borderRadius: 6, background: 'var(--bg-0)' },
   sourceLoading: { padding: 'calc(22px * var(--app-density-scale))', textAlign: 'center', color: 'var(--fg-3)', fontSize: 'calc(12px * var(--app-font-scale))' },
+  viewButton: { alignSelf: 'flex-start', fontSize: 'calc(11.5px * var(--app-font-scale))', padding: '5px 9px' },
+  modalBackdrop: { position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(15, 23, 42, 0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(24px * var(--app-density-scale))' },
+  modalPanel: { width: 'min(96vw, 1040px)', maxHeight: '92vh', overflow: 'auto', borderRadius: 10, border: '1px solid var(--line)', background: 'var(--bg-1)', boxShadow: 'var(--shadow-lg)', padding: 'calc(14px * var(--app-density-scale))' },
+  modalClose: { float: 'right', marginBottom: 'calc(8px * var(--app-density-scale))' },
+  modalImg: { width: '100%', maxHeight: '78vh', objectFit: 'contain', display: 'block', clear: 'both', borderRadius: 8, background: 'var(--bg-0)' },
   callouts: { display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))', marginTop: 'calc(12px * var(--app-density-scale))' },
   callout: { borderLeft: '3px solid var(--accent)', background: 'var(--bg-1)', padding: '9px 11px', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.5 },
   sourceBadges: { display: 'inline-flex', gap: 'calc(5px * var(--app-density-scale))', flexWrap: 'wrap', marginLeft: 8, verticalAlign: 'middle' },
@@ -664,6 +792,7 @@ const lr = {
   explain: { marginTop: 'calc(4px * var(--app-density-scale))', color: 'var(--fg-2)', fontSize: 'calc(12.5px * var(--app-font-scale))', lineHeight: 1.45 },
   chips: { display: 'flex', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap' },
   chip: { border: '1px solid var(--line)', borderRadius: 999, padding: '5px 9px', fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-2)', background: 'var(--bg-1)' },
+  finalTopics: { marginTop: 'calc(14px * var(--app-density-scale))', padding: 'calc(12px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, background: 'var(--bg-1)' },
   markdown: { minHeight: 420, fontSize: 'calc(14.5px * var(--app-font-scale))', lineHeight: 1.75, color: 'var(--fg-1)' },
 };
 

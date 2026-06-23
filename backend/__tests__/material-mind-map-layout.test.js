@@ -53,4 +53,13 @@ describe('material mind-map spatial layout', () => {
     expect(pathData).toMatch(/^M /);
     expect(pathData).toContain(' C ');
   });
+
+  it('finds a task topic and expands its parent branch when needed', () => {
+    const { findMaterialMapTopic } = loadInternals();
+    expect(findMaterialMapTopic(tree, 'Concept 1.3')).toEqual({
+      id: 'branch-0-child-2',
+      expandIds: ['branch-0'],
+    });
+    expect(findMaterialMapTopic(tree, 'Missing topic')).toBeNull();
+  });
 });

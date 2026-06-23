@@ -115,6 +115,65 @@ function driftedTreesLessonJson() {
   });
 }
 
+function contaminatedTreesLessonJson() {
+  return JSON.stringify({
+    topic: 'SELVA KUMAR S / COLLEGE OF ENGINEERING / Trees / Leaf Node',
+    audienceLevel: 'beginner',
+    lessonType: 'data_structure',
+    sourceMaterial: { title: 'SELVA KUMAR S', grounding: 'strong', selectedChunkIds: [1, 2] },
+    learningObjectives: [
+      'Review Selva, Kumar, and Trees.',
+      'Explain root, leaf node, and binary search tree operations.',
+    ],
+    studyGuide: {
+      whatYouWillLearn: ['SELVA KUMAR S', 'Tree terminology', 'Binary Search Tree search'],
+      keyConcepts: ['Selva', 'Kumar', 'College of Engineering', 'Root node', 'Leaf node', 'Hashing'],
+      suggestedOrder: ['Assistant Professor', 'Root node', 'BST traversal'],
+      prerequisites: ['Unit 4'],
+      commonMistakes: [{ mistake: 'Reviewing the author name', correction: 'Focus on root, leaf, height, depth, and traversal.' }],
+      checkpoints: ['What is Kumar?', 'Why does BST search choose one subtree?'],
+    },
+    sections: [
+      { type: 'hook', title: 'SELVA KUMAR S', content: 'Trees organize nodes under a root. Leaf nodes have no children.' },
+      { type: 'definition', title: 'College of Engineering', content: 'A tree has root, parent, child, siblings, height, depth, subtree, and leaf node terminology.' },
+      {
+        type: 'deep_explanation',
+        title: 'Important Details From The Source',
+        content: 'A binary search tree stores smaller keys in the left subtree and larger keys in the right subtree. Hashing uses a hash function and handles collisions.',
+        cards: [
+          { title: 'Kumar', text: 'Metadata, not a study concept.' },
+          { title: 'Binary Search Tree', text: 'Search follows the left/right subtree ordering rule.' },
+        ],
+      },
+      {
+        type: 'diagram',
+        title: 'Source Table',
+        content: 'Tree terms should be organized as concepts.',
+        diagram: { type: 'mindmap', nodes: ['SELVA', 'Kumar', 'Root node', 'Leaf node', 'Hash function'], edges: [] },
+      },
+      {
+        type: 'common_mistakes',
+        title: 'Common Mistakes',
+        cards: [{ title: 'Height vs depth', text: 'Height measures downward to leaves; depth measures upward from root.' }],
+      },
+      {
+        type: 'checkpoint',
+        title: 'Review Questions',
+        content: 'Practice the topic.',
+        quiz: [{
+          question: 'Which term describes the top node in a tree?',
+          options: ['Selva', 'Kumar', 'Root node', 'College of Engineering'],
+          answer: 'Root node',
+          explanation: 'The root node has no parent.',
+        }],
+      },
+      { type: 'recap', title: 'Exam-Ready Summary', content: 'Review trees, BST operations, traversal, and hashing.' },
+      { type: 'next_steps', title: 'Next Steps', content: 'Review Selva and Kumar before tree traversal.' },
+    ],
+    relatedTopics: ['Assistant Professor', 'Binary Search Tree', 'Hashing'],
+  });
+}
+
 describe('note generation material-grounding repair', () => {
   let app;
   let db;
@@ -289,5 +348,73 @@ describe('note generation material-grounding repair', () => {
     const sourceMap = JSON.parse(res.body.source_map_json);
     expect(sourceMap.verifier.repaired).toBe(true);
     expect(sourceMap.verifier.repairs.some(item => item.stage === 'final_source_repair' || item.stage === 'quality_repair')).toBe(true);
+  });
+
+  it('filters professor and institution metadata from Trees/BST/Hashing generated notes while preserving source visuals', async () => {
+    ai.generate.mockResolvedValue(contaminatedTreesLessonJson());
+    const materialId = seedMaterial(db, user.id, 'Trees and Hashing - Unit 4', [
+      {
+        title: 'SELVA KUMAR S',
+        heading: 'SELVA KUMAR S',
+        text: [
+          'SELVA KUMAR S',
+          'Assistant Professor, B.M.S. College of Engineering',
+          'UNIT 4 DATA STRUCTURES',
+          'Trees organize nodes in a hierarchy. The root node has no parent. Parent, child, siblings, degree, internal node, leaf node, level, height, depth, subtree, and forest are tree terminology.',
+        ].join('\n'),
+        keywords: ['SELVA', 'Kumar', 'College of Engineering', 'trees', 'root', 'leaf node', 'height', 'depth'],
+      },
+      {
+        title: 'Binary Search Tree',
+        text: 'A binary search tree stores smaller keys in the left subtree and larger keys in the right subtree. Search, insertion, deletion, preorder, inorder, and postorder traversal are relevant operations.',
+        keywords: ['binary search tree', 'bst', 'left subtree', 'right subtree', 'search', 'insertion', 'deletion', 'traversal'],
+      },
+      {
+        title: 'Hashing',
+        text: 'Hashing maps keys through a hash function. A collision occurs when two keys map to the same bucket, and chaining is one collision handling method.',
+        keywords: ['hashing', 'hash function', 'collision', 'bucket', 'chaining'],
+      },
+    ]);
+    db.prepare(`
+      INSERT INTO source_visual_candidates
+        (material_id, page_number, image_path, heading, nearby_text, ocr_text, visual_type_guess, importance_score, visual_usefulness_score, metadata_json)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      materialId,
+      2,
+      'uploads/materials/tree-page.png',
+      'Binary Search Tree diagram',
+      'Root node with left subtree and right subtree.',
+      'SELVA KUMAR S Assistant Professor Binary Search Tree root leaf',
+      'tree_diagram',
+      0.9,
+      0.9,
+      JSON.stringify({ classification: 'data_structure_visual' })
+    );
+
+    const res = await request(app)
+      .post('/api/notes/generate')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ material_id: materialId, sourceScope: 'material' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toMatch(/tree|binary search|hash/i);
+    expect(res.body.title).not.toMatch(/selva|kumar|college|assistant professor/i);
+    expect(res.body.body_md).toMatch(/root|leaf|height|depth|binary search tree|hash function|collision/i);
+    expect(res.body.body_md).not.toMatch(/selva|kumar|college of engineering|assistant professor/i);
+
+    const tags = JSON.parse(db.prepare('SELECT tags_json FROM notes WHERE id=?').get(res.body.id).tags_json);
+    expect(tags.join(' ')).toMatch(/trees|binary-search-tree|hashing|data-structures|traversal/i);
+    expect(tags.join(' ')).not.toMatch(/lesson|selva|kumar|college/i);
+
+    const lesson = JSON.parse(res.body.lesson_json);
+    expect(lesson.studyGuide.keyConcepts.join(' ')).not.toMatch(/selva|kumar|college|assistant professor/i);
+    const quizText = JSON.stringify(lesson.sections.flatMap(section => section.quiz || []));
+    expect(quizText).not.toMatch(/selva|kumar|college|assistant professor/i);
+
+    const sourceMap = JSON.parse(res.body.source_map_json);
+    expect(sourceMap.source_visuals.length).toBeGreaterThan(0);
+    expect(JSON.stringify(sourceMap.source_visuals)).toMatch(/Binary Search Tree diagram|Root node|left subtree/i);
+    expect(sourceMap.verifier.content_quality.passed).toBe(true);
   });
 });

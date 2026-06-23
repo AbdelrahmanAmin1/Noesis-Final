@@ -70,12 +70,14 @@ Return ONLY valid JSON with this exact shape:
 }
 
 Required content:
-- Include hook, definition, deep_explanation, common_mistakes, checkpoint, recap, and next_steps sections.
+- Use this clean note sequence in spirit: Header metadata, Quick Summary, Study Guide, Core Concepts, Visuals From Source, Algorithms / Procedures when supported, Code Examples only when justified, Practice Questions, Common Mistakes, Final Review Checklist.
+- Include hook, definition, deep_explanation, common_mistakes, checkpoint, recap, and next_steps sections, but title them with student-facing labels such as "Quick Summary", "Core Concepts", "Practice Questions", and "Final Review Checklist".
 - Fill every applicable Study Guide field with source-grounded learning goals, concepts, order, prerequisites, corrections, and checkpoints. Never create a visible section titled "Source Outline".
 - If the topic map contains multiple topics, preserve topic-map order and allocate sections across all major topics. Do not collapse the lesson to only the first or primary topic.
 - Do not open sections with "The uploaded material is about". Teach directly from the concept, operation, process, or example.
 - Include diagram/code sections only when they genuinely help the uploaded material.
 - Include code and line-by-line code explanation only when the topic is programming, OOP, Data Structures, or Algorithms.
+- If the uploaded source does not contain code but a short code or pseudocode helper would help a CS topic, title that section "AI helper example: ..." and explicitly say it is extra practice, not copied source content.
 - If a visual helps, include a semantic diagram spec suited to the subject. OOP needs UML/class relationship diagrams. Data structures need operation or memory-style diagrams. Non-CS subjects may use concept maps, process flows, comparisons, timelines, or no diagram when cards/tables are clearer.
 - Include common mistakes with the correction.
 - Include exam-tip or remember callouts when useful.
@@ -88,6 +90,10 @@ Required content:
 - For non-CS uploaded material, prefer concept cards, classification tables, comparison tables, source page/slide references, or no diagram over generic objective maps.
 - Do not introduce unrelated OOP/Data Structures/Algorithms terms unless they appear in the uploaded source.
 - Never mention page numbers, slide numbers, lecture numbers, chapter numbers, course-header text, dates, authors, or instructor bylines in visible lesson content.
+- Never put author names, professor names, college/university/institution names, department names, page headers, footers, watermarks, dates, or isolated unit/page labels in topic, sourceMaterial.title, learningObjectives, studyGuide, section titles, cards, diagram nodes, quiz questions/options/answers, relatedTopics, recap, or next_steps.
+- Page or slide numbers may appear only as non-concept source visual metadata supplied by the application UI; do not make them learning concepts.
+- Never title a section "Important Details From The Source", "Source Table", "Source Visual Review", "Review Questions" with generic options, or "Next Steps" about metadata.
+- Practice questions must test actual concepts from the topic. For Trees/BST/Hashing, use options such as root, leaf node, height, depth, traversal, left subtree, hash function, collision, bucket, and load factor; never use person or institution names as answer choices.
 - Do not include raw markdown fences in JSON strings unless they are inside code.content.
 - Do not show raw chunk references in visible content. Do not emit sourceChunkIds; source mapping is internal to the backend.
 - Keep uploaded material as the primary source for course-specific facts. Curated knowledge is trusted expansion, not a replacement.

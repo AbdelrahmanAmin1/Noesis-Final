@@ -12169,6 +12169,39 @@ function clampMapValue(value, min, max) {
 function materialMapNodeId(node, fallback) {
   return String(node && (node.id || node.label) || fallback || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
+function findMaterialMapTopic(tree, topic) {
+  const target = materialMapNodeId({
+    label: topic
+  }, '');
+  if (!tree || !target) return null;
+  const rootId = materialMapNodeId(tree, 'root');
+  const matchesTopic = node => materialMapNodeId({
+    label: node && node.label
+  }, '') === target || materialMapNodeId({
+    label: node && node.id
+  }, '') === target;
+  if (matchesTopic(tree)) return {
+    id: rootId,
+    expandIds: []
+  };
+  for (let branchIndex = 0; branchIndex < (tree.children || []).length; branchIndex += 1) {
+    const branch = tree.children[branchIndex];
+    const branchId = materialMapNodeId(branch, `branch-${branchIndex}`);
+    if (matchesTopic(branch)) return {
+      id: branchId,
+      expandIds: []
+    };
+    for (let childIndex = 0; childIndex < (branch.children || []).length; childIndex += 1) {
+      const child = branch.children[childIndex];
+      const childId = materialMapNodeId(child, `${branchId}-${childIndex}`);
+      if (matchesTopic(child)) return {
+        id: childId,
+        expandIds: [branchId]
+      };
+    }
+  }
+  return null;
+}
 function materialMapLayout(tree, expanded = {}) {
   if (!tree) return {
     nodes: [],
@@ -12326,7 +12359,9 @@ const MaterialMindMap = ({
   onRegenerate,
   onTutor,
   onQuiz,
-  onFlashcards
+  onFlashcards,
+  activeTopic = '',
+  onNodeSelect
 }) => {
   const Icon = window.Icon;
   const tree = map && map.tree;
@@ -12372,6 +12407,22 @@ const MaterialMindMap = ({
       [materialMapNodeId(first, 'first-branch')]: true
     } : {});
   }, [tree && tree.id, map && map.generatedAt]);
+  React.useEffect(() => {
+    const match = findMaterialMapTopic(tree, activeTopic);
+    if (!match) return;
+    if (match.expandIds.length) {
+      setExpanded(current => {
+        const next = {
+          ...current
+        };
+        match.expandIds.forEach(id => {
+          next[id] = true;
+        });
+        return next;
+      });
+    }
+    setSelectedId(match.id);
+  }, [tree, activeTopic]);
   React.useEffect(() => {
     if (!fullScreen) return undefined;
     const onKey = event => {
@@ -12427,6 +12478,10 @@ const MaterialMindMap = ({
   };
   const stopDragging = () => {
     dragRef.current = null;
+  };
+  const selectNode = pos => {
+    setSelectedId(pos.id);
+    if (onNodeSelect) onNodeSelect(pos.node);
   };
   const toggleBranch = (id, event) => {
     event.stopPropagation();
@@ -12558,7 +12613,7 @@ const MaterialMindMap = ({
       key: pos.id,
       className: "material-map-node",
       onPointerDown: event => event.stopPropagation(),
-      onClick: () => setSelectedId(pos.id),
+      onClick: () => selectNode(pos),
       style: {
         ...mm.node,
         ...(isRoot ? mm.rootNode : pos.depth === 1 ? mm.branchNode : mm.leafNode),
@@ -12977,7 +13032,8 @@ const mm = {
 window.NoesisMaterialMapInternals = {
   materialMapLayout,
   materialMapEdgePath,
-  materialMapNodeId
+  materialMapNodeId,
+  findMaterialMapTopic
 };
 window.MaterialMindMap = MaterialMindMap;
 })();
@@ -14652,34 +14708,41 @@ window.StoryboardReview = StoryboardReview;
 // ---- components/StudyPlan.jsx ----
 (function () {
   window.__NOESIS_BOOT.files.push("components/StudyPlan.jsx");
+const STUDY_TASK_XP = 20;
 const StudyPlan = ({
   onNav
 }) => {
   const Icon = window.Icon;
   const [plan, setPlan] = React.useState(null);
   const [map, setMap] = React.useState(null);
+  const [game, setGame] = React.useState(null);
   const [busy, setBusy] = React.useState(false);
+  const [loading, setLoading] = React.useState(true);
   const [status, setStatus] = React.useState('');
   const [highlightNode, setHighlightNode] = React.useState('');
   const [prefs, setPrefs] = React.useState(null);
   const [materials, setMaterials] = React.useState([]);
   const [picker, setPicker] = React.useState(null);
   const load = React.useCallback(async () => {
+    setLoading(true);
     setStatus('');
     try {
-      const [planRes, mapRes, prefsRes, materialsRes] = await Promise.all([window.NoesisAPI.study.activePlan().catch(() => ({
+      const [planRes, mapRes, prefsRes, materialsRes, gameRes] = await Promise.all([window.NoesisAPI.study.activePlan().catch(() => ({
         study_plan: null
       })), window.NoesisAPI.study.learningMap().catch(() => ({
         learning_map: null
       })), window.NoesisAPI.user.getPrefs().catch(() => ({})), window.NoesisAPI.materials.list().catch(() => ({
         materials: []
-      }))]);
+      })), window.NoesisAPI.gamification.summary().catch(() => null)]);
       setPlan(planRes.study_plan || null);
       setMap(mapRes.learning_map || null);
       setPrefs(prefsRes || {});
-      setMaterials((materialsRes.materials || []).filter(m => m.status === 'ready'));
+      setMaterials((materialsRes.materials || []).filter(material => material.status === 'ready'));
+      setGame(gameRes || null);
     } catch (e) {
       setStatus(e.message || 'Could not load your plan.');
+    } finally {
+      setLoading(false);
     }
   }, []);
   React.useEffect(() => {
@@ -14717,8 +14780,10 @@ const StudyPlan = ({
     setBusy(true);
     try {
       const res = await window.NoesisAPI.study.completeTask(taskId);
-      setPlan(res.study_plan || null);
-      const reward = res.study_plan && res.study_plan.reward;
+      const updatedPlan = res.study_plan || null;
+      setPlan(updatedPlan);
+      if (updatedPlan && updatedPlan.gamification) setGame(updatedPlan.gamification);
+      const reward = updatedPlan && updatedPlan.reward;
       setStatus(reward && reward.points ? `Task marked complete. +${reward.points} XP` : 'Task marked complete.');
     } catch (e) {
       setStatus('Could not update task: ' + (e.message || 'error'));
@@ -14794,13 +14859,22 @@ const StudyPlan = ({
   const planNeedsTrackRefresh = !!(planJson && planTrackId && currentTrack && planTrackId !== currentTrack);
   const days = planJson && Array.isArray(planJson.dailyPlan) ? planJson.dailyPlan : [];
   const taskRows = plan && Array.isArray(plan.tasks) ? plan.tasks : [];
-  const today = days[0] || null;
   const weakTopics = planJson && planJson.weakTopics || [];
-  const taskByDay = taskRows.reduce((acc, row) => {
-    if (!acc[row.day]) acc[row.day] = [];
-    acc[row.day].push(row);
-    return acc;
-  }, {});
+  const nextPendingIndex = taskRows.findIndex(row => row.status !== 'completed');
+  const completedTasks = taskRows.filter(row => row.status === 'completed');
+  const totalMinutes = taskRows.reduce((sum, row) => sum + Number(row.task && row.task.estimatedMinutes || 0), 0);
+  const completedMinutes = completedTasks.reduce((sum, row) => sum + Number(row.task && row.task.estimatedMinutes || 0), 0);
+  const completionPct = taskRows.length ? Math.round(completedTasks.length / taskRows.length * 100) : 0;
+  const nextTask = nextPendingIndex >= 0 ? taskRows[nextPendingIndex] : null;
+  const selectedTopic = highlightNode || nextTask && nextTask.task && nextTask.task.focusTopic || map && map.startHere || '';
+  const xp = game && game.xp ? game.xp : {};
+  const level = Number(xp.level || 1);
+  const levelPct = clampPercent(xp.progress_pct);
+  const xpToNext = Number(xp.xp_to_next_level || 0);
+  const currentXp = Number(xp.total_xp || 0);
+  const selectTopic = topic => {
+    if (topic) setHighlightNode(topic);
+  };
   return React.createElement("div", null, React.createElement(window.Topbar, {
     title: "Study Plan",
     crumbs: ['Personal path'],
@@ -14819,211 +14893,262 @@ const StudyPlan = ({
   }), React.createElement("div", {
     style: sp.page
   }, status && React.createElement("div", {
-    style: sp.status
-  }, status), React.createElement("section", {
+    style: sp.status,
+    role: "status"
+  }, status), React.createElement("header", {
     style: sp.hero
   }, React.createElement("div", null, React.createElement("div", {
     style: sp.eyebrow
-  }, "Adaptive study coach"), React.createElement("h1", {
+  }, React.createElement(Icon.Sparkles, {
+    size: 12
+  }), " Adaptive study coach"), React.createElement("h1", {
     style: sp.title
-  }, planJson ? planJson.planTitle : 'Build a path from your weak topics.'), React.createElement("p", {
+  }, planJson ? planJson.planTitle : 'Turn your learning into momentum.'), React.createElement("p", {
     style: sp.sub
-  }, "Noesis combines your onboarding profile, quiz misses, concept mastery, and uploaded material into a daily plan."), React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 'calc(8px * var(--app-density-scale))',
-      marginTop: 'calc(18px * var(--app-density-scale))',
-      flexWrap: 'wrap'
-    }
-  }, planJson && React.createElement("span", {
-    className: "chip chip-accent"
-  }, plan.status), planJson && planJson.goalProfile && React.createElement("span", {
-    className: "chip chip-accent"
-  }, planJson.goalProfile.short_label || planJson.goalProfile.label), planJson && React.createElement("span", {
-    className: "chip"
-  }, planJson.minutesPerSession || 45, " min sessions"), planJson && React.createElement("span", {
-    className: "chip"
-  }, planJson.learningStyle || 'mixed', " learning"), planJson && React.createElement("span", {
-    className: "chip"
-  }, planJson.preferredLanguage || 'java')), planNeedsGoalRefresh && React.createElement("div", {
-    style: sp.goalWarning
-  }, "Your goal is now ", goalLabels[currentGoal] || currentGoal, ". Refresh the plan to apply that new recommendation mix."), planNeedsTrackRefresh && React.createElement("div", {
-    style: sp.goalWarning
-  }, "Your track is now ", trackLabels[currentTrack] || currentTrack, ". Refresh the plan to rebuild the curriculum path.")), React.createElement("div", {
-    style: sp.actionCard
-  }, React.createElement("div", {
-    style: {
-      fontSize: 'calc(12px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      marginBottom: 'calc(8px * var(--app-density-scale))'
-    }
-  }, "Next action"), React.createElement("div", {
-    style: {
-      fontFamily: 'var(--font-display)',
-      fontSize: 'calc(24px * var(--app-font-scale))',
-      color: 'var(--fg-0)',
-      lineHeight: 1.15
-    }
-  }, today ? today.focusTopic : 'Generate your first plan'), React.createElement("p", {
-    style: {
-      fontSize: 'calc(12.5px * var(--app-font-scale))',
-      color: 'var(--fg-2)',
-      lineHeight: 1.5
-    }
-  }, today ? today.successCriteria : 'Upload material or generate a quiz to make recommendations sharper.'), plan && plan.status !== 'active' && React.createElement("button", {
+  }, "A clearer daily path, a living curriculum map, and just enough reward to keep the engine humming.")), plan && plan.status !== 'active' && React.createElement("button", {
     className: "btn btn-accent",
     disabled: busy,
     onClick: approve,
-    style: {
-      width: '100%',
-      justifyContent: 'center'
-    }
+    style: sp.approveButton
   }, React.createElement(Icon.Check, {
+    size: 13
+  }), " Approve plan")), planNeedsGoalRefresh && React.createElement("div", {
+    style: sp.goalWarning
+  }, "Your goal is now ", goalLabels[currentGoal] || currentGoal, ". Refresh the plan to apply that new recommendation mix."), planNeedsTrackRefresh && React.createElement("div", {
+    style: sp.goalWarning
+  }, "Your track is now ", trackLabels[currentTrack] || currentTrack, ". Refresh the plan to rebuild the curriculum path."), React.createElement("div", {
+    className: "study-plan-workspace"
+  }, React.createElement("main", {
+    style: sp.plannerShell
+  }, loading ? React.createElement("section", {
+    style: sp.emptyPlan
+  }, React.createElement(Icon.Sparkles, {
+    size: 25
+  }), React.createElement("div", {
+    style: sp.emptyTitle
+  }, "Loading your planning board..."), React.createElement("div", {
+    style: sp.emptyCopy
+  }, "Connecting your plan, progress, and curriculum map.")) : !planJson ? React.createElement("section", {
+    style: sp.emptyPlan
+  }, React.createElement("div", {
+    style: sp.emptyIcon
+  }, React.createElement(Icon.Calendar, {
+    size: 22
+  })), React.createElement("div", {
+    style: sp.emptyTitle
+  }, "Your study plan is waiting to be shaped."), React.createElement("div", {
+    style: sp.emptyCopy
+  }, "Noesis will turn your goals, weak topics, and study time into a focused daily route."), React.createElement("button", {
+    className: "btn btn-accent",
+    disabled: busy,
+    onClick: createPlan
+  }, React.createElement(Icon.Sparkle, {
     size: 12
-  }), " Approve plan"))), React.createElement("section", {
-    style: sp.grid
+  }), " Create my plan")) : React.createElement("section", {
+    style: sp.plannerCard
   }, React.createElement("div", {
-    style: sp.mapPanel
-  }, React.createElement("div", {
-    style: sp.cardHead
-  }, React.createElement("span", {
-    style: sp.cardTitle
-  }, "Curriculum map"), React.createElement("button", {
-    className: "btn btn-bare",
-    onClick: load,
-    style: {
-      fontSize: 'calc(11.5px * var(--app-font-scale))'
-    }
-  }, "Refresh ", React.createElement(Icon.ArrowRight, {
+    style: sp.planCardHead
+  }, React.createElement("div", null, React.createElement("div", {
+    style: sp.sectionEyebrow
+  }, "Plan dashboard"), planJson.source && planJson.source.label && React.createElement("div", {
+    style: sp.sourceNotice
+  }, React.createElement(Icon.Link, {
     size: 11
-  }))), window.MaterialMindMap ? React.createElement(window.MaterialMindMap, {
+  }), planJson.source.label)), React.createElement("span", {
+    style: {
+      ...sp.planStatus,
+      ...(plan.status === 'active' ? sp.planStatusActive : {})
+    }
+  }, formatPlanStatus(plan.status))), React.createElement("div", {
+    className: "study-plan-metric-grid",
+    style: sp.metricGrid
+  }, React.createElement(PlanMetric, {
+    icon: Icon.Calendar,
+    label: "Study rhythm",
+    value: `${planJson.daysPerWeek || 0} days / week`,
+    detail: `${planJson.durationDays || days.length} day path`
+  }), React.createElement(PlanMetric, {
+    icon: Icon.Clock,
+    label: "Session length",
+    value: `${planJson.minutesPerSession || 45} min`,
+    detail: `${totalMinutes || 0} minutes scheduled`
+  }), React.createElement(PlanMetric, {
+    icon: Icon.Target,
+    label: "Plan progress",
+    value: `${completionPct}% complete`,
+    detail: `${completedTasks.length} of ${taskRows.length} tasks done`,
+    progress: completionPct
+  }), React.createElement(PlanMetric, {
+    icon: Icon.Star,
+    label: `Level ${level}`,
+    value: `${currentXp} XP`,
+    detail: xpToNext ? `${xpToNext} XP to next level` : 'Level progress synced',
+    progress: levelPct,
+    accent: true
+  })), React.createElement("div", {
+    style: sp.contextRow
+  }, React.createElement("div", {
+    style: sp.legend,
+    "aria-label": "Task status legend"
+  }, React.createElement(StatusLegend, {
+    color: "var(--ok)",
+    label: "Completed"
+  }), React.createElement(StatusLegend, {
+    color: "var(--accent-3)",
+    label: "Up next"
+  }), React.createElement(StatusLegend, {
+    color: "var(--fg-3)",
+    label: "Planned"
+  })), React.createElement("div", {
+    className: "study-plan-focus-topics",
+    style: sp.focusTopics
+  }, React.createElement("span", {
+    style: sp.focusLabel
+  }, "Priority topics"), weakTopics.length ? weakTopics.slice(0, 4).map(topic => React.createElement("button", {
+    key: topic,
+    type: "button",
+    className: "chip",
+    onClick: () => selectTopic(topic),
+    style: {
+      ...sp.topicChip,
+      ...(sameTopic(topic, selectedTopic) ? sp.topicChipActive : {})
+    }
+  }, topic)) : React.createElement("span", {
+    style: sp.focusEmpty
+  }, "Take a quiz to calibrate this list."))), React.createElement("div", {
+    style: sp.tableFrame
+  }, React.createElement("div", {
+    className: "study-plan-table-head",
+    style: sp.tableHead,
+    "aria-hidden": "true"
+  }, React.createElement("span", null), React.createElement("span", null, "Day"), React.createElement("span", null, "Task"), React.createElement("span", null, "Time"), React.createElement("span", null, "Status"), React.createElement("span", null, "Reward")), React.createElement("div", {
+    style: sp.taskList
+  }, taskRows.map((row, index) => {
+    const task = row.task || {};
+    const taskState = taskStatus(row, index, nextPendingIndex);
+    const isDone = taskState.key === 'completed';
+    const isSelected = sameTopic(task.focusTopic, selectedTopic);
+    return React.createElement("div", {
+      key: row.id,
+      className: "study-plan-task-row",
+      style: {
+        ...sp.taskRow,
+        ...(isSelected ? sp.taskRowSelected : {}),
+        ...(isDone ? sp.taskRowDone : {})
+      }
+    }, React.createElement("button", {
+      type: "button",
+      disabled: busy || isDone,
+      onClick: () => completeTask(row.id),
+      "aria-label": isDone ? `${task.title} completed` : `Mark ${task.title} complete`,
+      title: isDone ? 'Completed' : 'Mark complete',
+      style: {
+        ...sp.taskToggle,
+        ...(isDone ? sp.taskToggleDone : {})
+      }
+    }, isDone ? React.createElement(Icon.Check, {
+      size: 12
+    }) : taskIcon(task.type, Icon)), React.createElement("div", {
+      className: "study-plan-day-cell",
+      style: sp.dayCell
+    }, React.createElement("span", {
+      className: "mono",
+      style: sp.dayNumber
+    }, "Day ", row.day)), React.createElement("button", {
+      type: "button",
+      className: "study-plan-task-cell",
+      onClick: () => selectTopic(task.focusTopic),
+      style: sp.taskCell,
+      title: `Highlight ${task.focusTopic || 'this topic'} in the curriculum map`
+    }, React.createElement("span", {
+      style: sp.taskTitle
+    }, task.title || 'Study task'), React.createElement("span", {
+      style: sp.taskTopic
+    }, React.createElement(Icon.Link, {
+      size: 10
+    }), " ", task.focusTopic || 'Curriculum topic')), React.createElement("div", {
+      className: "study-plan-time-cell",
+      style: sp.timeCell
+    }, React.createElement(Icon.Clock, {
+      size: 11
+    }), task.estimatedMinutes || 0, " min"), React.createElement("div", {
+      className: "study-plan-status-cell",
+      style: sp.statusCell
+    }, React.createElement("span", {
+      style: {
+        ...sp.stateChip,
+        color: taskState.color,
+        borderColor: taskState.border,
+        background: taskState.background
+      }
+    }, React.createElement("span", {
+      style: {
+        ...sp.stateDot,
+        background: taskState.color
+      }
+    }), taskState.label)), React.createElement("div", {
+      className: "study-plan-xp-cell",
+      style: sp.xpCell
+    }, React.createElement(Icon.Bolt, {
+      size: 11
+    }), isDone ? `+${STUDY_TASK_XP}` : `${STUDY_TASK_XP} XP`));
+  }))), React.createElement("footer", {
+    style: sp.progressFooter
+  }, React.createElement("div", {
+    style: sp.progressCopy
+  }, React.createElement("div", {
+    style: sp.progressMeta
+  }, React.createElement(Icon.Target, {
+    size: 14
+  }), " Plan progress"), React.createElement("div", {
+    style: sp.progressValue
+  }, completionPct, "% ", React.createElement("span", null, "complete")), React.createElement("div", {
+    style: sp.progressSub
+  }, completedMinutes, " of ", totalMinutes, " scheduled minutes finished")), React.createElement("div", {
+    style: sp.progressTrackWrap
+  }, React.createElement("div", {
+    style: sp.progressTrack
+  }, React.createElement("div", {
+    style: {
+      ...sp.progressFill,
+      width: `${completionPct}%`
+    }
+  })), React.createElement("div", {
+    style: sp.progressHint
+  }, Math.max(0, taskRows.length - completedTasks.length), " tasks left")), React.createElement("div", {
+    style: sp.rewardCard
+  }, React.createElement("div", {
+    style: sp.rewardIcon
+  }, React.createElement(Icon.Star, {
+    size: 18
+  })), React.createElement("div", null, React.createElement("div", {
+    style: sp.rewardLabel
+  }, "Next level"), React.createElement("div", {
+    style: sp.rewardValue
+  }, xpToNext || 0, " XP ", React.createElement("span", null, "to go"))))))), React.createElement("aside", {
+    className: "study-plan-map-rail",
+    style: sp.mapRail
+  }, window.MaterialMindMap ? React.createElement(window.MaterialMindMap, {
     map: map || planJson && planJson.learningMap,
-    eyebrow: "Curriculum study map",
-    subtitle: "Driven by your selected OOP, Data Structures, or combined track.",
+    eyebrow: "Linked curriculum map",
+    subtitle: selectedTopic ? `Showing the connection to ${selectedTopic}.` : 'Select a task or concept to follow its connection.',
     statusLabel: map && map.trackLabel || planJson && planJson.trackLabel || 'Curriculum path',
     showRegenerate: false,
+    activeTopic: selectedTopic,
+    onNodeSelect: node => selectTopic(node && node.label),
     onTutor: startCurriculumTutor,
     onQuiz: node => openMaterialPicker('quiz', node),
     onFlashcards: node => openMaterialPicker('flashcards', node)
   }) : React.createElement("div", {
-    style: sp.empty
-  }, "Learning map renderer is not loaded.")), React.createElement("div", {
-    className: "card",
-    style: {
-      padding: 'calc(22px * var(--app-density-scale))'
-    }
-  }, React.createElement("div", {
-    style: sp.cardHead
-  }, React.createElement("span", {
-    style: sp.cardTitle
-  }, "Weak topics"), React.createElement(Icon.Target, {
-    size: 14,
-    style: {
-      color: 'var(--accent)'
-    }
-  })), React.createElement("div", {
-    style: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 'calc(8px * var(--app-density-scale))',
-      marginTop: 'calc(14px * var(--app-density-scale))'
-    }
-  }, weakTopics.length ? weakTopics.slice(0, 7).map(t => React.createElement("button", {
-    key: t,
-    type: "button",
-    onClick: () => setHighlightNode(t),
-    style: {
-      ...sp.topicRow,
-      ...(highlightNode === t ? sp.topicRowActive : {})
-    },
-    "aria-pressed": highlightNode === t
-  }, React.createElement("span", null, t), React.createElement("span", {
-    className: "chip"
-  }, "priority"))) : React.createElement("div", {
-    style: sp.empty
-  }, "No weak topics yet. Take a quiz to calibrate the map.")))), React.createElement("section", {
-    className: "card",
-    style: {
-      padding: 'calc(22px * var(--app-density-scale))',
-      marginBottom: 'calc(40px * var(--app-density-scale))'
-    }
-  }, React.createElement("div", {
-    style: sp.cardHead
-  }, React.createElement("span", {
-    style: sp.cardTitle
-  }, "Daily plan"), React.createElement("span", {
-    style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)'
-    }
-  }, days.length, " day preview")), !days.length ? React.createElement("div", {
-    style: sp.empty
-  }, "No plan yet. Create one to generate a daily path.") : React.createElement("div", {
-    style: sp.days
-  }, days.slice(0, 14).map(day => React.createElement("div", {
-    key: day.day,
-    style: sp.dayCard
-  }, React.createElement("div", {
-    style: sp.dayTop
-  }, React.createElement("span", {
-    className: "mono",
-    style: sp.dayNumber
-  }, "Day ", day.day), React.createElement("span", {
-    style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)'
-    }
-  }, day.estimatedMinutes, " min")), React.createElement("div", {
-    style: sp.focus
-  }, day.focusTopic), React.createElement("div", {
-    style: {
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 'calc(7px * var(--app-density-scale))',
-      marginTop: 'calc(12px * var(--app-density-scale))'
-    }
-  }, (taskByDay[day.day] || []).map(row => {
-    const t = row.task || {};
-    const done = row.status === 'completed';
-    return React.createElement("button", {
-      key: row.id,
-      disabled: busy || done,
-      onClick: () => completeTask(row.id),
-      style: {
-        ...sp.task,
-        ...(done ? sp.taskDone : {})
-      }
-    }, React.createElement("span", {
-      style: sp.taskDot
-    }, done ? React.createElement(Icon.Check, {
-      size: 9
-    }) : taskIcon(t.type, Icon)), React.createElement("span", {
-      style: {
-        flex: 1,
-        textAlign: 'left'
-      }
-    }, t.title), React.createElement("span", {
-      className: "chip chip-accent",
-      style: {
-        fontSize: 'calc(10px * var(--app-font-scale))'
-      }
-    }, "+20 XP"), React.createElement("span", {
-      className: "mono",
-      style: {
-        fontSize: 'calc(10px * var(--app-font-scale))',
-        color: 'var(--fg-3)'
-      }
-    }, t.estimatedMinutes || 0, "m"));
-  })), React.createElement("div", {
-    style: sp.success
-  }, day.successCriteria))))), picker && React.createElement("div", {
+    style: sp.mapFallback
+  }, "Learning map renderer is not loaded."))), picker && React.createElement("div", {
     style: sp.pickerOverlay,
     onClick: () => !busy && setPicker(null)
   }, React.createElement("section", {
     style: sp.picker,
     onClick: event => event.stopPropagation()
   }, React.createElement("div", {
-    style: sp.cardHead
+    style: sp.pickerHead
   }, React.createElement("div", null, React.createElement("div", {
     style: sp.pickerEyebrow
   }, picker.kind === 'quiz' ? 'Choose quiz source' : 'Choose card source'), React.createElement("div", {
@@ -15044,7 +15169,7 @@ const StudyPlan = ({
   }, React.createElement(Icon.File, {
     size: 14,
     style: {
-      color: 'var(--accent)'
+      color: 'var(--accent-3)'
     }
   }), React.createElement("span", {
     style: {
@@ -15065,6 +15190,84 @@ const StudyPlan = ({
     size: 12
   }), " Upload material"))))));
 };
+const PlanMetric = ({
+  icon: MetricIcon,
+  label,
+  value,
+  detail,
+  progress,
+  accent
+}) => React.createElement("div", {
+  style: {
+    ...sp.metric,
+    ...(accent ? sp.metricAccent : {})
+  }
+}, React.createElement("div", {
+  style: sp.metricIcon
+}, React.createElement(MetricIcon, {
+  size: 15
+})), React.createElement("div", {
+  style: sp.metricContent
+}, React.createElement("div", {
+  style: sp.metricLabel
+}, label), React.createElement("div", {
+  style: sp.metricValue
+}, value), React.createElement("div", {
+  style: sp.metricDetail
+}, detail), typeof progress === 'number' && React.createElement("div", {
+  style: sp.miniTrack
+}, React.createElement("div", {
+  style: {
+    ...sp.miniFill,
+    width: `${clampPercent(progress)}%`
+  }
+}))));
+const StatusLegend = ({
+  color,
+  label
+}) => React.createElement("span", {
+  style: sp.legendItem
+}, React.createElement("span", {
+  style: {
+    ...sp.legendDot,
+    background: color
+  }
+}), label);
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Number(value) || 0));
+}
+function sameTopic(a, b) {
+  const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return !!normalize(a) && normalize(a) === normalize(b);
+}
+function taskStatus(row, index, nextPendingIndex) {
+  if (row.status === 'completed') return {
+    key: 'completed',
+    label: 'Completed',
+    color: 'var(--ok)',
+    border: 'color-mix(in srgb, var(--ok) 38%, transparent)',
+    background: 'color-mix(in srgb, var(--ok) 12%, transparent)'
+  };
+  if (index === nextPendingIndex) return {
+    key: 'up-next',
+    label: 'Up next',
+    color: 'var(--accent-3)',
+    border: 'color-mix(in srgb, var(--accent-3) 42%, transparent)',
+    background: 'color-mix(in srgb, var(--accent-3) 11%, transparent)'
+  };
+  return {
+    key: 'planned',
+    label: 'Planned',
+    color: 'var(--fg-3)',
+    border: 'var(--line)',
+    background: 'var(--bg-2)'
+  };
+}
+function formatPlanStatus(status) {
+  if (status === 'active') return 'Active plan';
+  if (status === 'draft') return 'Draft · review ready';
+  return status || 'Plan ready';
+}
 function trackFromSubjectClient(subject) {
   const raw = String(subject || '').toLowerCase();
   const hasDs = /data.?struct|\bds\b/.test(raw);
@@ -15076,25 +15279,25 @@ function trackFromSubjectClient(subject) {
 }
 function taskIcon(type, Icon) {
   if (type === 'watch_video') return React.createElement(Icon.Play, {
-    size: 9
+    size: 11
   });
   if (type === 'read_notes') return React.createElement(Icon.PenNib, {
-    size: 9
+    size: 11
   });
   if (type === 'quiz') return React.createElement(Icon.Target, {
-    size: 9
+    size: 11
   });
   if (type === 'flashcards') return React.createElement(Icon.Cards, {
-    size: 9
+    size: 11
   });
   return React.createElement(Icon.Sparkle, {
-    size: 9
+    size: 11
   });
 }
 const sp = {
   page: {
     padding: 'calc(28px * var(--app-density-scale))',
-    maxWidth: 1440,
+    maxWidth: 1580,
     margin: '0 auto'
   },
   status: {
@@ -15107,35 +15310,45 @@ const sp = {
     marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   hero: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 320px',
+    display: 'flex',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
     gap: 'calc(18px * var(--app-density-scale))',
-    alignItems: 'stretch',
-    marginBottom: 'calc(14px * var(--app-density-scale))'
+    margin: 'calc(4px * var(--app-density-scale)) 0 calc(20px * var(--app-density-scale))'
   },
   eyebrow: {
-    fontSize: 'calc(11px * var(--app-font-scale))',
-    color: 'var(--accent)',
-    letterSpacing: '0.12em',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
+    color: 'var(--accent-3)',
+    letterSpacing: '0.13em',
     textTransform: 'uppercase',
-    marginBottom: 'calc(10px * var(--app-density-scale))'
+    marginBottom: 'calc(9px * var(--app-density-scale))',
+    fontWeight: 700
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 'calc(44px * var(--app-font-scale))',
+    fontSize: 'clamp(32px, calc(42px * var(--app-font-scale)), 52px)',
     fontWeight: 300,
-    letterSpacing: '-0.02em',
+    letterSpacing: '-0.03em',
+    color: 'var(--fg-0)',
     margin: 0,
-    lineHeight: 1.08
+    lineHeight: 1.05
   },
   sub: {
-    fontSize: 'calc(14px * var(--app-font-scale))',
+    margin: 'calc(9px * var(--app-density-scale)) 0 0',
+    maxWidth: 690,
     color: 'var(--fg-2)',
-    maxWidth: 680,
-    lineHeight: 1.6
+    fontSize: 'calc(13px * var(--app-font-scale))',
+    lineHeight: 1.55
+  },
+  approveButton: {
+    flexShrink: 0,
+    marginBottom: 'calc(3px * var(--app-density-scale))'
   },
   goalWarning: {
-    marginTop: 'calc(14px * var(--app-density-scale))',
+    marginBottom: 'calc(14px * var(--app-density-scale))',
     padding: '10px 12px',
     borderRadius: 'var(--r-sm)',
     border: '1px solid var(--accent-soft)',
@@ -15143,127 +15356,451 @@ const sp = {
     color: 'var(--fg-1)',
     fontSize: 'calc(12px * var(--app-font-scale))'
   },
-  actionCard: {
-    padding: 'calc(20px * var(--app-density-scale))',
-    borderRadius: 'var(--r-lg)',
-    background: 'var(--bg-1)',
-    border: '1px solid var(--line)'
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: 'calc(14px * var(--app-density-scale))',
-    marginBottom: 'calc(14px * var(--app-density-scale))'
-  },
-  mapPanel: {
-    padding: 'calc(18px * var(--app-density-scale))',
-    gridColumn: 'span 2',
-    borderRadius: 'var(--r-lg)',
-    background: 'var(--bg-1)',
-    border: '1px solid var(--line)',
+  plannerShell: {
     minWidth: 0
   },
-  cardHead: {
+  plannerCard: {
+    overflow: 'hidden',
+    border: '1px solid color-mix(in srgb, var(--accent-3) 22%, var(--line))',
+    borderRadius: 'var(--r-xl)',
+    background: 'linear-gradient(145deg, color-mix(in srgb, var(--bg-1) 94%, var(--accent-3) 6%), var(--bg-1))',
+    boxShadow: 'var(--shadow-lg)'
+  },
+  planCardHead: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 'calc(14px * var(--app-density-scale))',
+    padding: 'calc(20px * var(--app-density-scale)) calc(22px * var(--app-density-scale)) calc(16px * var(--app-density-scale))'
+  },
+  sectionEyebrow: {
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    color: 'var(--accent-3)',
+    letterSpacing: '.12em',
+    textTransform: 'uppercase',
+    fontWeight: 700,
+    marginBottom: 5
+  },
+  sourceNotice: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 'calc(12px * var(--app-density-scale))'
+    gap: 5,
+    maxWidth: 620,
+    marginTop: 'calc(8px * var(--app-density-scale))',
+    color: 'var(--fg-2)',
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
+    lineHeight: 1.4
   },
-  cardTitle: {
-    fontSize: 'calc(13px * var(--app-font-scale))',
-    color: 'var(--fg-1)',
-    fontWeight: 500
+  planStatus: {
+    padding: '6px 9px',
+    borderRadius: 999,
+    border: '1px solid var(--accent-soft)',
+    background: 'var(--accent-glow)',
+    color: 'var(--accent)',
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    fontWeight: 700,
+    whiteSpace: 'nowrap'
   },
-  empty: {
-    padding: 'calc(18px * var(--app-density-scale))',
-    color: 'var(--fg-3)',
-    fontSize: 'calc(12.5px * var(--app-font-scale))',
-    textAlign: 'center'
+  planStatusActive: {
+    color: 'var(--ok)',
+    borderColor: 'color-mix(in srgb, var(--ok) 36%, transparent)',
+    background: 'color-mix(in srgb, var(--ok) 10%, transparent)'
   },
-  topicRow: {
+  metricGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+    gap: 'calc(9px * var(--app-density-scale))',
+    padding: '0 calc(22px * var(--app-density-scale)) calc(16px * var(--app-density-scale))'
+  },
+  metric: {
     display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 'calc(8px * var(--app-density-scale))',
-    width: '100%',
-    padding: '9px 10px',
-    borderRadius: 'var(--r-sm)',
-    background: 'var(--bg-2)',
+    gap: 'calc(10px * var(--app-density-scale))',
+    minWidth: 0,
+    padding: 'calc(12px * var(--app-density-scale))',
     border: '1px solid var(--line)',
-    color: 'var(--fg-1)',
-    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    borderRadius: 'var(--r-md)',
+    background: 'color-mix(in srgb, var(--bg-2) 82%, transparent)'
+  },
+  metricAccent: {
+    borderColor: 'color-mix(in srgb, var(--accent-3) 31%, var(--line))',
+    background: 'linear-gradient(135deg, color-mix(in srgb, var(--accent-3) 11%, var(--bg-2)), var(--bg-2))'
+  },
+  metricIcon: {
+    width: 30,
+    height: 30,
+    flexShrink: 0,
+    display: 'grid',
+    placeItems: 'center',
+    borderRadius: 9,
+    color: 'var(--accent-3)',
+    background: 'color-mix(in srgb, var(--accent-3) 12%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--accent-3) 18%, transparent)'
+  },
+  metricContent: {
+    minWidth: 0,
+    flex: 1
+  },
+  metricLabel: {
+    color: 'var(--fg-3)',
+    fontSize: 'calc(9.5px * var(--app-font-scale))',
+    letterSpacing: '.08em',
+    textTransform: 'uppercase',
+    marginBottom: 4
+  },
+  metricValue: {
+    color: 'var(--fg-0)',
+    fontSize: 'calc(13px * var(--app-font-scale))',
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+  metricDetail: {
+    color: 'var(--fg-3)',
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    marginTop: 3,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+  miniTrack: {
+    height: 3,
+    overflow: 'hidden',
+    borderRadius: 99,
+    background: 'var(--line)',
+    marginTop: 8
+  },
+  miniFill: {
+    height: '100%',
+    borderRadius: 99,
+    background: 'var(--accent-3)',
+    boxShadow: '0 0 12px color-mix(in srgb, var(--accent-3) 65%, transparent)'
+  },
+  contextRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 'calc(14px * var(--app-density-scale))',
+    flexWrap: 'wrap',
+    padding: 'calc(10px * var(--app-density-scale)) calc(22px * var(--app-density-scale))',
+    borderTop: '1px solid var(--line-soft)',
+    borderBottom: '1px solid var(--line-soft)',
+    background: 'color-mix(in srgb, var(--bg-0) 34%, transparent)'
+  },
+  legend: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'calc(11px * var(--app-density-scale))',
+    flexWrap: 'wrap'
+  },
+  legendItem: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    color: 'var(--fg-3)',
+    fontSize: 'calc(10.5px * var(--app-font-scale))'
+  },
+  legendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 99,
+    boxShadow: '0 0 8px currentColor'
+  },
+  focusTopics: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'calc(6px * var(--app-density-scale))',
+    minWidth: 0,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end'
+  },
+  focusLabel: {
+    color: 'var(--fg-3)',
+    fontSize: 'calc(9.5px * var(--app-font-scale))',
+    textTransform: 'uppercase',
+    letterSpacing: '.08em',
+    marginRight: 2
+  },
+  focusEmpty: {
+    color: 'var(--fg-3)',
+    fontSize: 'calc(10.5px * var(--app-font-scale))'
+  },
+  topicChip: {
+    cursor: 'pointer',
+    maxWidth: 160,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
+  },
+  topicChipActive: {
+    color: 'var(--accent-3)',
+    borderColor: 'var(--accent-3)',
+    background: 'color-mix(in srgb, var(--accent-3) 13%, transparent)'
+  },
+  tableFrame: {
+    overflow: 'hidden'
+  },
+  tableHead: {
+    display: 'grid',
+    gridTemplateColumns: '42px minmax(54px, .52fr) minmax(190px, 1.75fr) minmax(70px, .55fr) minmax(96px, .76fr) minmax(70px, .48fr)',
+    alignItems: 'center',
+    gap: 'calc(10px * var(--app-density-scale))',
+    padding: 'calc(11px * var(--app-density-scale)) calc(18px * var(--app-density-scale))',
+    color: 'var(--fg-3)',
+    fontSize: 'calc(9.5px * var(--app-font-scale))',
+    letterSpacing: '.09em',
+    textTransform: 'uppercase',
+    borderBottom: '1px solid var(--line-soft)',
+    background: 'color-mix(in srgb, var(--bg-0) 44%, transparent)'
+  },
+  taskList: {
+    display: 'flex',
+    flexDirection: 'column'
+  },
+  taskRow: {
+    display: 'grid',
+    gridTemplateColumns: '42px minmax(54px, .52fr) minmax(190px, 1.75fr) minmax(70px, .55fr) minmax(96px, .76fr) minmax(70px, .48fr)',
+    alignItems: 'center',
+    gap: 'calc(10px * var(--app-density-scale))',
+    padding: 'calc(10px * var(--app-density-scale)) calc(18px * var(--app-density-scale))',
+    borderBottom: '1px solid var(--line-soft)',
+    background: 'transparent',
+    transition: 'background 160ms var(--ease-out), box-shadow 160ms var(--ease-out)'
+  },
+  taskRowSelected: {
+    background: 'linear-gradient(90deg, color-mix(in srgb, var(--accent-3) 10%, transparent), transparent 78%)',
+    boxShadow: 'inset 3px 0 0 var(--accent-3)'
+  },
+  taskRowDone: {
+    opacity: .72
+  },
+  taskToggle: {
+    width: 29,
+    height: 29,
+    display: 'grid',
+    placeItems: 'center',
+    borderRadius: 9,
+    border: '1px solid color-mix(in srgb, var(--accent-3) 32%, var(--line))',
+    background: 'color-mix(in srgb, var(--accent-3) 9%, transparent)',
+    color: 'var(--accent-3)',
+    cursor: 'pointer'
+  },
+  taskToggleDone: {
+    color: 'var(--bg-0)',
+    background: 'var(--ok)',
+    borderColor: 'var(--ok)'
+  },
+  dayCell: {
+    minWidth: 0
+  },
+  dayNumber: {
+    color: 'var(--fg-2)',
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    whiteSpace: 'nowrap'
+  },
+  taskCell: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    gap: 3,
+    minWidth: 0,
+    padding: 0,
+    border: 0,
+    color: 'inherit',
+    background: 'transparent',
     cursor: 'pointer',
     textAlign: 'left'
   },
-  topicRowActive: {
-    borderColor: 'var(--accent)',
-    boxShadow: '0 0 0 2px var(--accent-soft)',
-    color: 'var(--fg-0)'
-  },
-  days: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-    gap: 'calc(12px * var(--app-density-scale))',
-    marginTop: 'calc(14px * var(--app-density-scale))'
-  },
-  dayCard: {
-    padding: 'calc(16px * var(--app-density-scale))',
-    borderRadius: 'var(--r-md)',
-    background: 'var(--bg-2)',
-    border: '1px solid var(--line)'
-  },
-  dayTop: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between'
-  },
-  dayNumber: {
-    color: 'var(--accent)',
-    fontSize: 'calc(10.5px * var(--app-font-scale))',
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase'
-  },
-  focus: {
-    fontFamily: 'var(--font-display)',
-    fontSize: 'calc(22px * var(--app-font-scale))',
-    color: 'var(--fg-0)',
-    marginTop: 'calc(8px * var(--app-density-scale))'
-  },
-  task: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'calc(8px * var(--app-density-scale))',
+  taskTitle: {
     width: '100%',
-    padding: '8px 9px',
-    borderRadius: 'var(--r-sm)',
-    background: 'var(--bg-1)',
-    border: '1px solid var(--line)',
     color: 'var(--fg-1)',
-    fontSize: 'calc(12px * var(--app-font-scale))'
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
   },
-  taskDone: {
-    opacity: 0.62,
-    textDecoration: 'line-through'
+  taskTopic: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    maxWidth: '100%',
+    color: 'var(--accent-3)',
+    fontSize: 'calc(9.5px * var(--app-font-scale))',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
   },
-  taskDot: {
-    width: 18,
-    height: 18,
-    borderRadius: 6,
-    background: 'var(--accent-glow)',
-    border: '1px solid var(--accent-soft)',
+  timeCell: {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'center',
-    color: 'var(--accent)',
-    flexShrink: 0
-  },
-  success: {
-    borderTop: '1px solid var(--line-soft)',
-    marginTop: 'calc(12px * var(--app-density-scale))',
-    paddingTop: 'calc(10px * var(--app-density-scale))',
+    gap: 5,
     color: 'var(--fg-3)',
-    fontSize: 'calc(11.5px * var(--app-font-scale))',
-    lineHeight: 1.45
+    fontSize: 'calc(10.5px * var(--app-font-scale))',
+    whiteSpace: 'nowrap'
+  },
+  statusCell: {
+    minWidth: 0
+  },
+  stateChip: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '4px 7px',
+    borderRadius: 999,
+    border: '1px solid',
+    fontSize: 'calc(9.5px * var(--app-font-scale))',
+    fontWeight: 700,
+    whiteSpace: 'nowrap'
+  },
+  stateDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 99
+  },
+  xpCell: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+    color: 'var(--accent-3)',
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    fontFamily: 'var(--font-mono)',
+    whiteSpace: 'nowrap'
+  },
+  progressFooter: {
+    display: 'grid',
+    gridTemplateColumns: 'minmax(160px, .7fr) minmax(180px, 1fr) minmax(146px, .65fr)',
+    alignItems: 'center',
+    gap: 'calc(18px * var(--app-density-scale))',
+    padding: 'calc(16px * var(--app-density-scale)) calc(22px * var(--app-density-scale))',
+    background: 'linear-gradient(90deg, color-mix(in srgb, var(--accent-3) 11%, var(--bg-2)), var(--bg-2))'
+  },
+  progressCopy: {
+    minWidth: 0
+  },
+  progressMeta: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    color: 'var(--accent-3)',
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    textTransform: 'uppercase',
+    letterSpacing: '.09em',
+    fontWeight: 700
+  },
+  progressValue: {
+    marginTop: 4,
+    color: 'var(--fg-0)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 'calc(25px * var(--app-font-scale))',
+    lineHeight: 1
+  },
+  progressSub: {
+    marginTop: 5,
+    color: 'var(--fg-3)',
+    fontSize: 'calc(10px * var(--app-font-scale))'
+  },
+  progressTrackWrap: {
+    minWidth: 0
+  },
+  progressTrack: {
+    height: 7,
+    borderRadius: 99,
+    overflow: 'hidden',
+    background: 'color-mix(in srgb, var(--bg-0) 55%, var(--line))'
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 99,
+    background: 'linear-gradient(90deg, var(--accent-3), var(--ok))',
+    boxShadow: '0 0 18px color-mix(in srgb, var(--accent-3) 68%, transparent)',
+    transition: 'width 300ms var(--ease-out)'
+  },
+  progressHint: {
+    marginTop: 7,
+    color: 'var(--fg-3)',
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    textAlign: 'right'
+  },
+  rewardCard: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 'calc(9px * var(--app-density-scale))',
+    minWidth: 0
+  },
+  rewardIcon: {
+    width: 35,
+    height: 35,
+    display: 'grid',
+    placeItems: 'center',
+    flexShrink: 0,
+    borderRadius: 12,
+    color: 'var(--bg-0)',
+    background: 'var(--accent-3)',
+    boxShadow: '0 0 0 3px color-mix(in srgb, var(--accent-3) 17%, transparent)'
+  },
+  rewardLabel: {
+    color: 'var(--fg-3)',
+    fontSize: 'calc(9px * var(--app-font-scale))',
+    textTransform: 'uppercase',
+    letterSpacing: '.08em'
+  },
+  rewardValue: {
+    marginTop: 3,
+    color: 'var(--fg-0)',
+    fontSize: 'calc(13px * var(--app-font-scale))',
+    fontWeight: 700,
+    whiteSpace: 'nowrap'
+  },
+  mapRail: {
+    minWidth: 0
+  },
+  mapFallback: {
+    minHeight: 320,
+    display: 'grid',
+    placeItems: 'center',
+    padding: 20,
+    borderRadius: 'var(--r-xl)',
+    border: '1px solid var(--line)',
+    background: 'var(--bg-1)',
+    color: 'var(--fg-3)',
+    fontSize: 'calc(12px * var(--app-font-scale))',
+    textAlign: 'center'
+  },
+  emptyPlan: {
+    minHeight: 470,
+    display: 'grid',
+    placeItems: 'center',
+    alignContent: 'center',
+    gap: 'calc(12px * var(--app-density-scale))',
+    padding: 'calc(32px * var(--app-density-scale))',
+    border: '1px dashed color-mix(in srgb, var(--accent-3) 36%, var(--line-strong))',
+    borderRadius: 'var(--r-xl)',
+    background: 'radial-gradient(circle at 50% 24%, color-mix(in srgb, var(--accent-3) 11%, transparent), transparent 38%), var(--bg-1)',
+    color: 'var(--accent-3)',
+    textAlign: 'center'
+  },
+  emptyIcon: {
+    width: 44,
+    height: 44,
+    display: 'grid',
+    placeItems: 'center',
+    borderRadius: 14,
+    background: 'color-mix(in srgb, var(--accent-3) 14%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--accent-3) 25%, transparent)'
+  },
+  emptyTitle: {
+    color: 'var(--fg-0)',
+    fontFamily: 'var(--font-display)',
+    fontSize: 'calc(25px * var(--app-font-scale))',
+    lineHeight: 1.15
+  },
+  emptyCopy: {
+    maxWidth: 440,
+    color: 'var(--fg-2)',
+    fontSize: 'calc(12.5px * var(--app-font-scale))',
+    lineHeight: 1.55
   },
   pickerOverlay: {
     position: 'fixed',
@@ -15285,9 +15822,15 @@ const sp = {
     background: 'var(--bg-1)',
     boxShadow: 'var(--shadow-lg)'
   },
+  pickerHead: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 'calc(12px * var(--app-density-scale))'
+  },
   pickerEyebrow: {
     fontSize: 'calc(10px * var(--app-font-scale))',
-    color: 'var(--accent)',
+    color: 'var(--accent-3)',
     letterSpacing: '0.12em',
     textTransform: 'uppercase',
     marginBottom: 5
@@ -15329,6 +15872,11 @@ const sp = {
   }
 };
 window.StudyPlan = StudyPlan;
+window.NoesisStudyPlanInternals = {
+  clampPercent,
+  sameTopic,
+  taskStatus
+};
 })();
 
 
@@ -15337,32 +15885,90 @@ window.StudyPlan = StudyPlan;
   window.__NOESIS_BOOT.files.push("components/LessonRenderer.jsx");
 const LessonRenderer = ({
   lesson,
-  markdown
+  markdown,
+  meta = {}
 }) => {
   const parsed = parseLesson(lesson);
-  if (!parsed) return React.createElement(MarkdownFallback, {
-    markdown: markdown
-  });
+  if (!parsed) {
+    return React.createElement("article", {
+      className: "note-doc-layout",
+      style: lr.page
+    }, React.createElement("div", {
+      style: lr.content
+    }, React.createElement(LessonHeader, {
+      lesson: {
+        topic: meta.title || 'Learning Note',
+        sourceMaterial: {}
+      },
+      meta: meta
+    }), React.createElement(MarkdownFallback, {
+      markdown: markdown
+    })));
+  }
   const objectives = parsed.learningObjectives || [];
   const studyGuide = studyGuideFor(parsed);
   const sections = (parsed.sections || []).filter(section => !/^source outline$/i.test(String(section && section.title || '').trim()));
   const startHere = parsed.startHere || parsed.learningPath && parsed.learningPath.startHere || parsed.prerequisites && parsed.prerequisites.length && `Review ${parsed.prerequisites[0]} first`;
-  const byType = type => sections.filter(s => s.type === type);
-  const usedSourceVisuals = new Set(sections.flatMap(section => section.sourceVisuals || []).map(v => String(v && (v.id || `${v.pageNumber || v.sourcePage || ''}:${v.slideNumber || ''}:${v.heading || ''}`))));
-  const remainingSourceVisuals = (parsed.sourceVisuals || []).filter(v => !usedSourceVisuals.has(String(v && (v.id || `${v.pageNumber || v.sourcePage || ''}:${v.slideNumber || ''}:${v.heading || ''}`))));
+  const groups = groupLessonSections(sections);
+  const sourceVisuals = collectSourceVisuals(parsed);
+  const summary = quickSummaryFor(parsed, objectives, groups);
+  const toc = [summary.length ? {
+    id: 'quick-summary',
+    label: 'Summary'
+  } : null, studyGuide ? {
+    id: 'study-guide',
+    label: 'Study Guide'
+  } : null, groups.core.length ? {
+    id: 'core-concepts',
+    label: 'Core Concepts'
+  } : null, sourceVisuals.length ? {
+    id: 'source-visuals',
+    label: 'Source Visuals'
+  } : null, groups.procedures.length ? {
+    id: 'algorithms-procedures',
+    label: 'Procedures'
+  } : null, groups.code.length ? {
+    id: 'code-examples',
+    label: 'Code'
+  } : null, groups.practice.length ? {
+    id: 'practice-questions',
+    label: 'Practice'
+  } : null, groups.mistakes.length ? {
+    id: 'common-mistakes',
+    label: 'Mistakes'
+  } : null, groups.final.length || parsed.relatedTopics && parsed.relatedTopics.length ? {
+    id: 'final-review',
+    label: 'Checklist'
+  } : null].filter(Boolean);
   return React.createElement("article", {
+    className: "note-doc-layout",
     style: lr.page
-  }, React.createElement("header", {
-    style: lr.hero
+  }, React.createElement("nav", {
+    className: "note-toc",
+    style: lr.toc,
+    "aria-label": "Note sections"
   }, React.createElement("div", {
-    style: lr.eyebrow
-  }, labelFor(parsed.lessonType), " lesson"), React.createElement("h1", {
-    style: lr.title
-  }, parsed.topic || 'Learning Note'), parsed.sourceMaterial && parsed.sourceMaterial.grounding && React.createElement("div", {
-    style: lr.meta
-  }, "Grounding: ", parsed.sourceMaterial.grounding)), objectives.length > 0 && React.createElement("section", {
+    style: lr.tocLabel
+  }, "On this note"), toc.map(item => React.createElement("a", {
+    key: item.id,
+    href: `#${item.id}`,
+    style: lr.tocLink
+  }, item.label))), React.createElement("div", {
+    style: lr.content
+  }, React.createElement(LessonHeader, {
+    lesson: parsed,
+    meta: meta
+  }), React.createElement("div", {
+    className: "note-toc-chips",
+    style: lr.tocChips
+  }, toc.map(item => React.createElement("a", {
+    key: item.id,
+    href: `#${item.id}`,
+    style: lr.tocChip
+  }, item.label))), summary.length > 0 && React.createElement("section", {
+    id: "quick-summary",
     style: lr.objectives
-  }, objectives.slice(0, 4).map((item, i) => React.createElement("div", {
+  }, summary.slice(0, 5).map((item, i) => React.createElement("div", {
     key: i,
     style: lr.objectiveCard
   }, React.createElement("div", {
@@ -15370,7 +15976,8 @@ const LessonRenderer = ({
   }, String(i + 1).padStart(2, '0')), React.createElement("div", {
     style: lr.cardText
   }, item)))), React.createElement(StudyGuide, {
-    guide: studyGuide
+    guide: studyGuide,
+    id: "study-guide"
   }), startHere && React.createElement("section", {
     style: lr.startHere
   }, React.createElement("div", {
@@ -15382,34 +15989,149 @@ const LessonRenderer = ({
   }, parsed.prerequisites.slice(0, 5).map(t => React.createElement("span", {
     key: t,
     style: lr.chip
-  }, t)))), sections.map((section, i) => React.createElement(React.Fragment, {
-    key: `${section.type}-${i}`
-  }, React.createElement(LessonSection, {
-    section: section
+  }, t)))), React.createElement(SectionGroup, {
+    id: "core-concepts",
+    label: "Core Concepts",
+    sections: groups.core
   }), React.createElement(SourceVisuals, {
-    visuals: section.sourceVisuals,
-    inline: true
-  }))), React.createElement(SourceVisuals, {
-    visuals: remainingSourceVisuals
-  }), parsed.relatedTopics && parsed.relatedTopics.length > 0 && React.createElement("section", {
-    style: lr.band
+    visuals: sourceVisuals
+  }), React.createElement(SectionGroup, {
+    id: "algorithms-procedures",
+    label: "Algorithms / Procedures",
+    sections: groups.procedures
+  }), React.createElement(SectionGroup, {
+    id: "code-examples",
+    label: "Code Examples",
+    sections: groups.code
+  }), React.createElement(SectionGroup, {
+    id: "practice-questions",
+    label: "Practice Questions",
+    sections: groups.practice
+  }), React.createElement(SectionGroup, {
+    id: "common-mistakes",
+    label: "Common Mistakes",
+    sections: groups.mistakes
+  }), React.createElement(FinalReview, {
+    id: "final-review",
+    sections: groups.final,
+    relatedTopics: parsed.relatedTopics
+  })));
+};
+const LessonHeader = ({
+  lesson,
+  meta = {}
+}) => {
+  const sourceTitle = lesson.sourceMaterial && lesson.sourceMaterial.title || meta.sourceTitle || '';
+  const grounding = lesson.sourceMaterial && lesson.sourceMaterial.grounding || meta.grounding || '';
+  const updated = meta.updatedAt || meta.updated || '';
+  return React.createElement("header", {
+    style: lr.hero
+  }, React.createElement("div", {
+    style: lr.eyebrow
+  }, labelFor(lesson.lessonType), " study document"), React.createElement("h1", {
+    style: lr.title
+  }, lesson.topic || meta.title || 'Learning Note'), React.createElement("div", {
+    style: lr.metaRow
+  }, sourceTitle && React.createElement("span", {
+    style: lr.metaPill
+  }, "Source: ", sourceTitle), updated && React.createElement("span", {
+    style: lr.metaPill
+  }, "Updated ", updated), grounding && React.createElement("span", {
+    style: lr.groundingPill
+  }, "Grounded: ", grounding)));
+};
+function quickSummaryFor(lesson, objectives, groups) {
+  const lines = [];
+  for (const item of objectives || []) lines.push(item);
+  for (const section of [...(groups.core || []), ...(groups.final || [])]) {
+    if (section && section.content) lines.push(section.content);
+    if (lines.length >= 5) break;
+  }
+  return [...new Set(lines.map(item => String(item || '').replace(/\s+/g, ' ').trim()).filter(Boolean))].map(item => item.length > 210 ? `${item.slice(0, 207).trim()}...` : item).slice(0, 5);
+}
+function collectSourceVisuals(lesson) {
+  const seen = new Set();
+  const visuals = [];
+  const add = visual => {
+    if (!visual || !visual.id || !visual.materialId || !visual.imagePath) return;
+    const key = String(visual.id || `${visual.pageNumber || visual.sourcePage || ''}:${visual.slideNumber || ''}:${visual.heading || ''}`);
+    if (seen.has(key)) return;
+    seen.add(key);
+    visuals.push(visual);
+  };
+  for (const visual of lesson.sourceVisuals || []) add(visual);
+  for (const section of lesson.sections || []) for (const visual of section.sourceVisuals || []) add(visual);
+  return visuals;
+}
+function groupLessonSections(sections = []) {
+  const out = {
+    core: [],
+    procedures: [],
+    code: [],
+    practice: [],
+    mistakes: [],
+    final: []
+  };
+  for (const section of sections || []) {
+    const title = String(section && section.title || '').toLowerCase();
+    const text = [title, section && section.content].join(' ').toLowerCase();
+    if (section.type === 'common_mistakes') out.mistakes.push(section);else if (section.type === 'checkpoint') out.practice.push(section);else if (section.type === 'code_example') out.code.push(section);else if (section.type === 'code_walkthrough' || section.type === 'complexity' || /\b(algorithm|procedure|traversal|search|insert|delete|deletion|insertion|step|process|complexity)\b/.test(text)) out.procedures.push(section);else if (section.type === 'recap' || section.type === 'next_steps' || /checklist|review|related study path|summary/.test(title)) out.final.push(section);else out.core.push(section);
+  }
+  return out;
+}
+const SectionGroup = ({
+  id,
+  label,
+  sections
+}) => {
+  if (!sections || !sections.length) return null;
+  return React.createElement("section", {
+    id: id,
+    style: lr.group
+  }, React.createElement("div", {
+    style: lr.groupHead
   }, React.createElement("div", {
     style: lr.sectionLabel
+  }, label)), sections.map((section, i) => React.createElement(LessonSection, {
+    key: `${id}-${section.title}-${i}`,
+    section: section
+  })));
+};
+const FinalReview = ({
+  id,
+  sections,
+  relatedTopics
+}) => {
+  if ((!sections || !sections.length) && (!relatedTopics || !relatedTopics.length)) return null;
+  return React.createElement("section", {
+    id: id,
+    style: lr.group
+  }, React.createElement("div", {
+    style: lr.sectionLabel
+  }, "Final Review Checklist"), sections.map((section, i) => React.createElement(LessonSection, {
+    key: `${id}-${section.title}-${i}`,
+    section: section
+  })), relatedTopics && relatedTopics.length > 0 && React.createElement("div", {
+    style: lr.finalTopics
+  }, React.createElement("div", {
+    style: lr.studyGuideLabel
   }, "Related topics"), React.createElement("div", {
     style: lr.chips
-  }, parsed.relatedTopics.map(t => React.createElement("span", {
+  }, relatedTopics.map(t => React.createElement("span", {
     key: t,
     style: lr.chip
   }, t)))));
 };
 const StudyGuide = ({
-  guide
+  guide,
+  id
 }) => {
   if (!guide) return null;
   const groups = [['What you will learn', guide.whatYouWillLearn], ['Key concepts', guide.keyConcepts], ['Suggested learning order', guide.suggestedOrder], ['Prerequisites', guide.prerequisites], ['Quick checkpoints', guide.checkpoints]].filter(([, items]) => Array.isArray(items) && items.length);
   const mistakes = Array.isArray(guide.commonMistakes) ? guide.commonMistakes : [];
   if (!groups.length && !mistakes.length) return null;
   return React.createElement("section", {
+    id: id,
     style: lr.studyGuide
   }, React.createElement("div", {
     style: lr.studyGuideHead
@@ -15465,24 +16187,46 @@ function studyGuideFor(lesson) {
   };
 }
 const SourceVisuals = ({
-  visuals,
-  inline = false
+  visuals
 }) => {
+  const [selected, setSelected] = React.useState(null);
   const list = (visuals || []).filter(v => v && v.id && v.materialId && v.imagePath);
   if (!list.length) return null;
   return React.createElement("section", {
-    style: lr.band
+    id: "source-visuals",
+    style: lr.sourceBand
   }, React.createElement("div", {
     style: lr.sectionLabel
-  }, inline ? 'Source visual' : 'From your material'), React.createElement("div", {
+  }, "Visuals From Source"), React.createElement("h2", {
+    style: lr.h2
+  }, "Figures and OCR-backed source images"), React.createElement("div", {
     style: lr.sourceGrid
-  }, list.slice(0, inline ? 2 : 6).map(v => React.createElement(SourceImage, {
+  }, list.slice(0, 6).map(v => React.createElement(SourceImage, {
     key: v.id,
-    candidate: v
-  }))));
+    candidate: v,
+    onOpen: setSelected
+  }))), selected && React.createElement("div", {
+    className: "note-source-modal",
+    style: lr.modalBackdrop,
+    onClick: () => setSelected(null)
+  }, React.createElement("div", {
+    style: lr.modalPanel,
+    onClick: e => e.stopPropagation()
+  }, React.createElement("button", {
+    className: "btn btn-ghost",
+    style: lr.modalClose,
+    onClick: () => setSelected(null)
+  }, "Close"), React.createElement("img", {
+    src: selected.url,
+    alt: selected.caption || 'Source visual',
+    style: lr.modalImg
+  }), React.createElement("div", {
+    style: lr.caption
+  }, selected.caption))));
 };
 const SourceImage = ({
-  candidate
+  candidate,
+  onOpen
 }) => {
   const [url, setUrl] = React.useState('');
   const [failed, setFailed] = React.useState(false);
@@ -15515,7 +16259,14 @@ const SourceImage = ({
     style: lr.sourceLoading
   }, "Loading source visual\u2026"), (candidate.caption || candidate.explanation || where) && React.createElement("figcaption", {
     style: lr.caption
-  }, candidate.explanation || candidate.caption || 'Source visual', where ? ` (${where})` : ''));
+  }, candidate.explanation || candidate.caption || 'Source visual', where ? ` (${where})` : ''), url && React.createElement("button", {
+    className: "btn btn-ghost",
+    style: lr.viewButton,
+    onClick: () => onOpen && onOpen({
+      url,
+      caption: `${candidate.explanation || candidate.caption || 'Source visual'}${where ? ` (${where})` : ''}`
+    })
+  }, "View larger"));
 };
 function parseLesson(value) {
   if (!value) return null;
@@ -16189,7 +16940,55 @@ function labelFor(type) {
 }
 const lr = {
   page: {
-    color: 'var(--fg-1)'
+    color: 'var(--fg-1)',
+    display: 'grid',
+    gridTemplateColumns: 'minmax(128px, 172px) minmax(0, 1fr)',
+    gap: 'calc(24px * var(--app-density-scale))',
+    alignItems: 'start'
+  },
+  content: {
+    minWidth: 0
+  },
+  toc: {
+    position: 'sticky',
+    top: 86,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'calc(6px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
+    border: '1px solid var(--line-soft)',
+    borderRadius: 8,
+    background: 'color-mix(in oklab, var(--bg-1) 84%, transparent)',
+    boxShadow: 'var(--shadow-sm)'
+  },
+  tocLabel: {
+    fontSize: 'calc(10px * var(--app-font-scale))',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    color: 'var(--fg-3)',
+    marginBottom: 'calc(3px * var(--app-density-scale))'
+  },
+  tocLink: {
+    color: 'var(--fg-2)',
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
+    textDecoration: 'none',
+    padding: '5px 6px',
+    borderRadius: 6
+  },
+  tocChips: {
+    display: 'none',
+    gap: 'calc(7px * var(--app-density-scale))',
+    flexWrap: 'wrap',
+    marginBottom: 'calc(18px * var(--app-density-scale))'
+  },
+  tocChip: {
+    textDecoration: 'none',
+    border: '1px solid var(--line)',
+    borderRadius: 999,
+    padding: '5px 9px',
+    color: 'var(--fg-2)',
+    background: 'var(--bg-1)',
+    fontSize: 'calc(11.5px * var(--app-font-scale))'
   },
   hero: {
     padding: '10px 0 24px',
@@ -16205,16 +17004,33 @@ const lr = {
   },
   title: {
     fontFamily: 'var(--font-display)',
-    fontSize: 'calc(38px * var(--app-font-scale))',
-    fontWeight: 300,
-    lineHeight: 1.12,
+    fontSize: 'calc(34px * var(--app-font-scale))',
+    fontWeight: 400,
+    lineHeight: 1.16,
     margin: 0,
     color: 'var(--fg-0)'
   },
-  meta: {
-    marginTop: 'calc(10px * var(--app-density-scale))',
-    fontSize: 'calc(12px * var(--app-font-scale))',
-    color: 'var(--fg-3)'
+  metaRow: {
+    display: 'flex',
+    gap: 'calc(8px * var(--app-density-scale))',
+    flexWrap: 'wrap',
+    marginTop: 'calc(14px * var(--app-density-scale))'
+  },
+  metaPill: {
+    border: '1px solid var(--line)',
+    borderRadius: 999,
+    padding: '5px 9px',
+    background: 'var(--bg-1)',
+    color: 'var(--fg-3)',
+    fontSize: 'calc(11.5px * var(--app-font-scale))'
+  },
+  groundingPill: {
+    border: '1px solid var(--accent-soft)',
+    borderRadius: 999,
+    padding: '5px 9px',
+    background: 'var(--accent-glow)',
+    color: 'var(--accent)',
+    fontSize: 'calc(11.5px * var(--app-font-scale))'
   },
   objectives: {
     display: 'grid',
@@ -16321,6 +17137,13 @@ const lr = {
     lineHeight: 1.65,
     margin: 0,
     color: 'var(--fg-0)'
+  },
+  group: {
+    marginBottom: 'calc(18px * var(--app-density-scale))',
+    scrollMarginTop: 90
+  },
+  groupHead: {
+    marginBottom: 'calc(8px * var(--app-density-scale))'
   },
   band: {
     padding: '18px 0',
@@ -16633,9 +17456,17 @@ const lr = {
     fontSize: 'calc(12px * var(--app-font-scale))',
     color: 'var(--fg-3)'
   },
+  sourceBand: {
+    padding: 'calc(18px * var(--app-density-scale))',
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)',
+    marginBottom: 'calc(18px * var(--app-density-scale))',
+    scrollMarginTop: 90
+  },
   sourceGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
     gap: 'calc(12px * var(--app-density-scale))',
     marginTop: 'calc(10px * var(--app-density-scale))'
   },
@@ -16643,12 +17474,16 @@ const lr = {
     margin: 0,
     border: '1px solid var(--line)',
     borderRadius: 8,
-    background: 'var(--bg-1)',
-    padding: 'calc(10px * var(--app-density-scale))'
+    background: 'var(--bg-0)',
+    padding: 'calc(10px * var(--app-density-scale))',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'calc(8px * var(--app-density-scale))'
   },
   sourceImg: {
     width: '100%',
-    height: 'auto',
+    maxHeight: 420,
+    objectFit: 'contain',
     display: 'block',
     borderRadius: 6,
     background: 'var(--bg-0)'
@@ -16658,6 +17493,44 @@ const lr = {
     textAlign: 'center',
     color: 'var(--fg-3)',
     fontSize: 'calc(12px * var(--app-font-scale))'
+  },
+  viewButton: {
+    alignSelf: 'flex-start',
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
+    padding: '5px 9px'
+  },
+  modalBackdrop: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 80,
+    background: 'rgba(15, 23, 42, 0.55)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'calc(24px * var(--app-density-scale))'
+  },
+  modalPanel: {
+    width: 'min(96vw, 1040px)',
+    maxHeight: '92vh',
+    overflow: 'auto',
+    borderRadius: 10,
+    border: '1px solid var(--line)',
+    background: 'var(--bg-1)',
+    boxShadow: 'var(--shadow-lg)',
+    padding: 'calc(14px * var(--app-density-scale))'
+  },
+  modalClose: {
+    float: 'right',
+    marginBottom: 'calc(8px * var(--app-density-scale))'
+  },
+  modalImg: {
+    width: '100%',
+    maxHeight: '78vh',
+    objectFit: 'contain',
+    display: 'block',
+    clear: 'both',
+    borderRadius: 8,
+    background: 'var(--bg-0)'
   },
   callouts: {
     display: 'flex',
@@ -16733,6 +17606,13 @@ const lr = {
     color: 'var(--fg-2)',
     background: 'var(--bg-1)'
   },
+  finalTopics: {
+    marginTop: 'calc(14px * var(--app-density-scale))',
+    padding: 'calc(12px * var(--app-density-scale))',
+    border: '1px solid var(--line)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
+  },
   markdown: {
     minHeight: 420,
     fontSize: 'calc(14.5px * var(--app-font-scale))',
@@ -16758,23 +17638,32 @@ const Notes = ({
     folders: []
   });
   const [active, setActive] = React.useState(0);
+  const [activeFolder, setActiveFolder] = React.useState('all');
   const [status, setStatus] = React.useState('');
   const refresh = React.useCallback(async () => {
-    const d = await window.NoesisAPI.notes.list();
+    const d = await window.NoesisAPI.notes.list(activeFolder === 'all' ? undefined : activeFolder);
     setData(d || {
       notes: [],
       folders: []
     });
     setActive(i => Math.min(i, Math.max(0, (d && d.notes || []).length - 1)));
-  }, []);
+  }, [activeFolder]);
   React.useEffect(() => {
     refresh().catch(e => setStatus(e.message || 'Failed to load notes'));
   }, [refresh]);
-  const folders = (data.folders || []).map((f, i) => ({
+  const folderRows = data.folders || [];
+  const totalNotes = folderRows.reduce((sum, f) => sum + Number(f.count || 0), 0) || (data.notes || []).length;
+  const folders = [{
+    name: 'all',
+    label: 'All notes',
+    count: totalNotes,
+    active: activeFolder === 'all'
+  }].concat(folderRows.map(f => ({
     name: f.folder,
+    label: f.folder,
     count: f.count,
-    active: i === 0
-  }));
+    active: activeFolder === f.folder
+  })));
   const notes = (data.notes || []).map((n, i) => ({
     id: n.id,
     material_id: n.material_id,
@@ -16820,88 +17709,55 @@ const Notes = ({
       size: 12
     }), " New note")
   }), React.createElement("div", {
+    className: "notes-workspace",
     style: ns.layout
   }, React.createElement("aside", {
-    style: ns.folders
+    className: "notes-library-panel",
+    style: ns.library
   }, React.createElement("div", {
+    style: ns.libraryHead
+  }, React.createElement("div", null, React.createElement("div", {
     style: ns.sideHead
-  }, "Folders"), React.createElement("div", {
+  }, "Notebook"), React.createElement("div", {
+    style: ns.libraryTitle
+  }, activeFolder === 'all' ? 'All notes' : activeFolder), React.createElement("div", {
+    style: ns.librarySub
+  }, notes.length, " note", notes.length === 1 ? '' : 's', " sorted by recent")), React.createElement("span", {
+    className: "chip chip-accent"
+  }, totalNotes)), React.createElement("div", {
+    style: ns.folderChips
+  }, folders.map((f, i) => React.createElement("button", {
+    key: `${f.name}-${i}`,
+    onClick: () => {
+      setActiveFolder(f.name);
+      setActive(0);
+    },
     style: {
-      padding: '0 8px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 'calc(1px * var(--app-density-scale))'
-    }
-  }, folders.length === 0 && React.createElement("div", {
-    style: ns.emptySide
-  }, "No folders yet"), folders.map((f, i) => React.createElement("button", {
-    key: i,
-    style: {
-      ...ns.folderButton,
-      background: f.active ? 'var(--bg-2)' : 'transparent',
-      color: f.active ? 'var(--fg-0)' : 'var(--fg-2)'
+      ...ns.folderChip,
+      ...(f.active ? ns.folderChipActive : {})
     }
   }, React.createElement(Icon.Folder, {
-    size: 13
-  }), React.createElement("span", {
-    style: {
-      flex: 1,
-      textAlign: 'left'
-    }
-  }, f.name), React.createElement("span", {
-    style: {
-      fontSize: 'calc(10.5px * var(--app-font-scale))',
-      color: 'var(--fg-3)'
-    },
-    className: "mono"
-  }, f.count))))), React.createElement("section", {
-    style: ns.list
-  }, React.createElement("div", {
-    style: {
-      padding: '16px 18px',
-      borderBottom: '1px solid var(--line-soft)'
-    }
-  }, React.createElement("div", {
-    style: {
-      fontSize: 'calc(13px * var(--app-font-scale))',
-      color: 'var(--fg-0)',
-      fontWeight: 500
-    }
-  }, folders[0] && folders[0].name || 'All notes'), React.createElement("div", {
-    style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      marginTop: 'calc(2px * var(--app-density-scale))'
-    }
-  }, notes.length, " note", notes.length === 1 ? '' : 's', " sorted by recent"), status && React.createElement("div", {
-    style: {
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      marginTop: 'calc(6px * var(--app-density-scale))'
-    }
-  }, status)), React.createElement("div", null, notes.length === 0 && React.createElement("div", {
+    size: 12
+  }), React.createElement("span", null, f.label), React.createElement("span", {
+    className: "mono",
+    style: ns.folderCount
+  }, f.count)))), status && React.createElement("div", {
+    style: ns.status
+  }, status), React.createElement("div", {
+    style: ns.noteList
+  }, notes.length === 0 && React.createElement("div", {
     style: ns.emptyList
   }, "No notes yet. Generate notes from a material or create one manually."), notes.map((n, i) => React.createElement("button", {
     key: n.id,
     onClick: () => setActive(i),
     style: {
       ...ns.noteButton,
-      background: n.active ? 'var(--bg-2)' : 'transparent',
-      borderLeft: n.active ? '2px solid var(--accent)' : '2px solid transparent'
+      ...(n.active ? ns.noteButtonActive : {})
     }
   }, React.createElement("div", {
-    style: {
-      fontSize: 'calc(13px * var(--app-font-scale))',
-      color: 'var(--fg-0)',
-      fontWeight: 500
-    }
+    style: ns.noteTitle
   }, n.t), React.createElement("div", {
-    style: {
-      fontSize: 'calc(11.5px * var(--app-font-scale))',
-      color: 'var(--fg-3)',
-      display: 'flex',
-      gap: 'calc(8px * var(--app-density-scale))'
-    }
+    style: ns.noteMeta
   }, React.createElement("span", null, n.updated), React.createElement("span", null, n.tag)), React.createElement("div", {
     style: ns.preview
   }, n.preview || 'Empty note'))))), React.createElement(NotesEditor, {
@@ -16974,6 +17830,13 @@ const NotesEditor = ({
       tags: parsed
     };
   }, [current]);
+  const sourceMap = React.useMemo(() => {
+    try {
+      return current && current.source_map_json ? JSON.parse(current.source_map_json) : {};
+    } catch (_) {
+      return {};
+    }
+  }, [current && current.source_map_json]);
   const materialId = current && current.material_id ? current.material_id : null;
   const save = async () => {
     if (!current) return;
@@ -17137,13 +18000,11 @@ const NotesEditor = ({
     }
   };
   return React.createElement("main", {
+    className: "notes-reader-shell",
     style: ns.editor
   }, React.createElement("div", {
-    style: {
-      maxWidth: 720,
-      margin: '0 auto',
-      padding: '36px'
-    }
+    className: "note-document-shell",
+    style: ns.documentShell
   }, !current ? React.createElement("div", {
     style: ns.emptyEditor
   }, React.createElement(Icon.PenNib, {
@@ -17156,50 +18017,15 @@ const NotesEditor = ({
   }, "Pick a note to read"), React.createElement("p", {
     style: ns.emptyText
   }, "Generated and manual notes appear here with real backend persistence.")) : React.createElement(React.Fragment, null, React.createElement("div", {
-    style: {
-      display: 'flex',
-      gap: 'calc(8px * var(--app-density-scale))',
-      marginBottom: 'calc(18px * var(--app-density-scale))',
-      alignItems: 'center',
-      flexWrap: 'wrap'
-    }
+    style: ns.readerToolbar
+  }, React.createElement("div", {
+    style: ns.readerChips
   }, tags.folder && React.createElement("span", {
     className: "chip chip-accent"
   }, tags.folder), tags.tags.map(t => React.createElement("span", {
     key: t,
     className: "chip"
-  }, "#", t)), React.createElement("span", {
-    style: {
-      marginLeft: 'auto',
-      fontSize: 'calc(11px * var(--app-font-scale))',
-      color: 'var(--fg-3)'
-    }
-  }, current.updated ? `Updated ${current.updated}` : '')), React.createElement("div", {
-    style: {
-      display: 'flex',
-      alignItems: 'center',
-      marginBottom: 'calc(14px * var(--app-density-scale))',
-      gap: 'calc(8px * var(--app-density-scale))'
-    }
-  }, mode === 'edit' ? React.createElement("input", {
-    className: "input",
-    value: title,
-    onChange: e => setTitle(e.target.value),
-    style: {
-      ...ns.titleInput,
-      marginBottom: 0,
-      flex: 1
-    }
-  }) : React.createElement("h1", {
-    style: {
-      fontFamily: 'var(--font-display)',
-      fontSize: 'calc(32px * var(--app-font-scale))',
-      fontWeight: 300,
-      margin: 0,
-      flex: 1,
-      color: 'var(--fg-0)'
-    }
-  }, title || 'Untitled'), React.createElement("button", {
+  }, "#", t))), React.createElement("button", {
     className: "btn btn-ghost",
     onClick: () => setMode(mode === 'read' ? 'edit' : 'read'),
     style: {
@@ -17207,15 +18033,27 @@ const NotesEditor = ({
       padding: '6px 12px',
       whiteSpace: 'nowrap'
     }
-  }, mode === 'read' ? 'Edit' : 'Read')), mode === 'edit' ? React.createElement("textarea", {
+  }, mode === 'read' ? 'Edit' : 'Read')), mode === 'edit' ? React.createElement(React.Fragment, null, React.createElement("input", {
+    className: "input",
+    value: title,
+    onChange: e => setTitle(e.target.value),
+    style: ns.titleInput
+  }), React.createElement("textarea", {
     className: "input",
     value: body,
     onChange: e => setBody(e.target.value),
     style: ns.bodyInput,
     placeholder: "Write your note..."
-  }) : window.LessonRenderer ? React.createElement(window.LessonRenderer, {
+  })) : window.LessonRenderer ? React.createElement(window.LessonRenderer, {
     lesson: current.lesson_json,
-    markdown: body
+    markdown: body,
+    meta: {
+      title,
+      updatedAt: current.updated,
+      sourceTitle: sourceMap.source_title,
+      grounding: sourceMap.source_label || sourceMap.verifier && sourceMap.verifier.post && sourceMap.verifier.post.decision,
+      sourceMap
+    }
   }) : React.createElement("div", {
     className: "md-rendered",
     style: ns.mdBody,
@@ -17310,64 +18148,137 @@ const NotesEditor = ({
 const ns = {
   layout: {
     display: 'grid',
-    gridTemplateColumns: '220px 320px 1fr',
-    minHeight: 'calc(100vh - 57px)'
-  },
-  folders: {
-    borderRight: '1px solid var(--line)',
-    padding: '8px 0',
+    gridTemplateColumns: 'minmax(280px, 320px) minmax(0, 1fr)',
+    minHeight: 'calc(100vh - 57px)',
     background: 'var(--bg-0)'
   },
-  list: {
+  library: {
     borderRight: '1px solid var(--line)',
-    background: 'var(--bg-0)',
+    background: 'color-mix(in oklab, var(--bg-0) 88%, var(--bg-1))',
+    padding: 'calc(14px * var(--app-density-scale))',
     overflow: 'auto'
+  },
+  libraryHead: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 'calc(12px * var(--app-density-scale))',
+    alignItems: 'flex-start',
+    paddingBottom: 'calc(14px * var(--app-density-scale))',
+    borderBottom: '1px solid var(--line-soft)'
+  },
+  libraryTitle: {
+    fontFamily: 'var(--font-display)',
+    fontSize: 'calc(24px * var(--app-font-scale))',
+    color: 'var(--fg-0)',
+    lineHeight: 1.15,
+    marginTop: 'calc(4px * var(--app-density-scale))'
+  },
+  librarySub: {
+    fontSize: 'calc(11.5px * var(--app-font-scale))',
+    color: 'var(--fg-3)',
+    marginTop: 'calc(5px * var(--app-density-scale))'
   },
   editor: {
-    background: 'var(--bg-0)',
-    overflow: 'auto'
+    background: 'linear-gradient(180deg, var(--bg-0), color-mix(in oklab, var(--bg-0) 86%, var(--bg-2)))',
+    overflow: 'auto',
+    minWidth: 0
+  },
+  documentShell: {
+    width: 'min(100%, 1040px)',
+    margin: '0 auto',
+    padding: 'calc(28px * var(--app-density-scale))',
+    minHeight: '100%'
   },
   sideHead: {
-    padding: '16px 14px 8px',
     fontSize: 'calc(10.5px * var(--app-font-scale))',
     color: 'var(--fg-3)',
     letterSpacing: '0.1em',
     textTransform: 'uppercase'
   },
-  emptySide: {
-    padding: '8px 10px',
-    fontSize: 'calc(12px * var(--app-font-scale))',
-    color: 'var(--fg-3)'
-  },
   emptyList: {
     padding: 'calc(18px * var(--app-density-scale))',
     fontSize: 'calc(12px * var(--app-font-scale))',
-    color: 'var(--fg-3)'
+    color: 'var(--fg-3)',
+    border: '1px dashed var(--line-strong)',
+    borderRadius: 8,
+    background: 'var(--bg-1)'
   },
-  folderButton: {
+  folderChips: {
     display: 'flex',
+    gap: 'calc(7px * var(--app-density-scale))',
+    flexWrap: 'wrap',
+    padding: 'calc(12px * var(--app-density-scale)) 0'
+  },
+  folderChip: {
+    display: 'inline-flex',
     alignItems: 'center',
-    gap: 'calc(10px * var(--app-density-scale))',
-    padding: '8px 10px',
-    borderRadius: 'var(--r-sm)',
-    fontSize: 'calc(12.5px * var(--app-font-scale))'
+    gap: 'calc(6px * var(--app-density-scale))',
+    padding: '7px 9px',
+    borderRadius: 999,
+    border: '1px solid var(--line)',
+    background: 'var(--bg-1)',
+    color: 'var(--fg-2)',
+    fontSize: 'calc(11.5px * var(--app-font-scale))'
+  },
+  folderChipActive: {
+    color: 'var(--accent)',
+    borderColor: 'var(--accent-soft)',
+    background: 'var(--accent-glow)'
+  },
+  folderCount: {
+    color: 'var(--fg-3)',
+    fontSize: 'calc(10.5px * var(--app-font-scale))'
+  },
+  status: {
+    fontSize: 'calc(11px * var(--app-font-scale))',
+    color: 'var(--fg-3)',
+    marginBottom: 'calc(8px * var(--app-density-scale))'
+  },
+  noteList: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 'calc(8px * var(--app-density-scale))'
   },
   noteButton: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 'calc(4px * var(--app-density-scale))',
-    padding: '14px 18px',
-    borderBottom: '1px solid var(--line-soft)',
+    gap: 'calc(5px * var(--app-density-scale))',
+    padding: 'calc(13px * var(--app-density-scale))',
+    border: '1px solid var(--line)',
+    borderRadius: 8,
     textAlign: 'left',
-    width: '100%'
+    width: '100%',
+    background: 'var(--bg-1)',
+    boxShadow: '0 8px 22px rgba(15,23,42,0.04)'
+  },
+  noteButtonActive: {
+    borderColor: 'var(--accent-soft)',
+    background: 'linear-gradient(145deg, var(--accent-glow), var(--bg-1) 70%)',
+    boxShadow: '0 12px 30px rgba(15,23,42,0.08)'
+  },
+  noteTitle: {
+    fontSize: 'calc(13px * var(--app-font-scale))',
+    color: 'var(--fg-0)',
+    fontWeight: 600,
+    lineHeight: 1.3,
+    overflowWrap: 'anywhere'
+  },
+  noteMeta: {
+    fontSize: 'calc(11px * var(--app-font-scale))',
+    color: 'var(--fg-3)',
+    display: 'flex',
+    gap: 'calc(8px * var(--app-density-scale))',
+    flexWrap: 'wrap'
   },
   preview: {
     fontSize: 'calc(11.5px * var(--app-font-scale))',
     color: 'var(--fg-2)',
-    marginTop: 'calc(4px * var(--app-density-scale))',
+    marginTop: 'calc(3px * var(--app-density-scale))',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
     overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap'
+    lineHeight: 1.45
   },
   emptyEditor: {
     minHeight: '60vh',
@@ -17388,10 +18299,24 @@ const ns = {
     color: 'var(--fg-3)',
     margin: 0
   },
+  readerToolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 'calc(12px * var(--app-density-scale))',
+    flexWrap: 'wrap',
+    marginBottom: 'calc(16px * var(--app-density-scale))'
+  },
+  readerChips: {
+    display: 'flex',
+    gap: 'calc(8px * var(--app-density-scale))',
+    alignItems: 'center',
+    flexWrap: 'wrap'
+  },
   titleInput: {
     width: '100%',
     fontFamily: 'var(--font-display)',
-    fontSize: 'calc(32px * var(--app-font-scale))',
+    fontSize: 'calc(30px * var(--app-font-scale))',
     marginBottom: 'calc(14px * var(--app-density-scale))'
   },
   bodyInput: {

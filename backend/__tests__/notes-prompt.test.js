@@ -88,6 +88,13 @@ describe('LESSON_GENERATE prompt', () => {
     expect(result).toContain('"studyGuide"');
     expect(result).toContain('"whatYouWillLearn"');
     expect(result).toContain('Never create a visible section titled "Source Outline"');
+    expect(result).toContain('Quick Summary');
+    expect(result).toContain('Core Concepts');
+    expect(result).toContain('Final Review Checklist');
+    expect(result).toContain('author names');
+    expect(result).toContain('college/university/institution names');
+    expect(result).toContain('AI helper example');
+    expect(result).toContain('Practice questions must test actual concepts');
     expect(result).toContain('Shape');
     expect(result).toContain('Code sketch');
   });

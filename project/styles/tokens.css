@@ -82,6 +82,113 @@
 [data-motion='off'] .material-map-edge { animation: none; }
 [data-motion='off'] .material-map-node { transition: none !important; }
 
+/* Study plan: a dense planning board paired with its live curriculum map. */
+.study-plan-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.56fr) minmax(380px, .94fr);
+  gap: calc(16px * var(--app-density-scale));
+  align-items: start;
+}
+
+.study-plan-map-rail {
+  position: sticky;
+  top: calc(68px * var(--app-density-scale));
+  align-self: start;
+}
+
+.study-plan-task-row:hover {
+  background: color-mix(in srgb, var(--accent-3) 6%, transparent) !important;
+}
+
+.study-plan-task-cell:hover,
+.study-plan-task-cell:focus-visible {
+  outline: none;
+}
+
+.study-plan-task-cell:hover span:first-child,
+.study-plan-task-cell:focus-visible span:first-child {
+  color: var(--accent-3) !important;
+}
+
+@media (max-width: 1280px) {
+  .study-plan-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .study-plan-map-rail {
+    position: static;
+  }
+}
+
+@media (max-width: 820px) {
+  .study-plan-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .study-plan-focus-topics {
+    justify-content: flex-start !important;
+  }
+  .study-plan-task-row,
+  .study-plan-table-head {
+    grid-template-columns: 38px minmax(54px, .5fr) minmax(150px, 1.65fr) minmax(66px, .5fr) minmax(90px, .72fr) minmax(62px, .44fr) !important;
+    gap: calc(7px * var(--app-density-scale)) !important;
+    padding-left: calc(12px * var(--app-density-scale)) !important;
+    padding-right: calc(12px * var(--app-density-scale)) !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .study-plan-table-head {
+    display: none !important;
+  }
+  .study-plan-task-row {
+    grid-template-columns: 34px minmax(0, 1fr) auto !important;
+    grid-template-rows: auto auto auto;
+    gap: calc(4px * var(--app-density-scale)) calc(8px * var(--app-density-scale)) !important;
+    padding: calc(12px * var(--app-density-scale)) !important;
+  }
+  .study-plan-task-row > button:first-child {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    align-self: center;
+  }
+  .study-plan-task-row > .study-plan-task-cell {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .study-plan-task-row > .study-plan-status-cell {
+    grid-column: 3;
+    grid-row: 1;
+    align-self: start;
+  }
+  .study-plan-task-row > .study-plan-day-cell {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .study-plan-task-row > .study-plan-time-cell {
+    grid-column: 3;
+    grid-row: 2;
+    justify-self: end;
+  }
+  .study-plan-task-row > .study-plan-xp-cell {
+    grid-column: 2 / span 2;
+    grid-row: 3;
+  }
+  .study-plan-task-row .study-plan-task-cell span:first-child {
+    white-space: normal !important;
+  }
+  .study-plan-metric-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .study-plan-workspace {
+    gap: calc(12px * var(--app-density-scale));
+  }
+  .study-plan-focus-topics {
+    width: 100%;
+  }
+}
+
 @media (max-width: 1550px) {
   .material-detail-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -161,6 +268,8 @@
   --accent-soft: #8ea07d;
   --accent-glow: rgba(107, 127, 90, 0.14);
   --parchment: #d7cdb1;
+  --accent-2: #9874c0;
+  --accent-3: #278aa3;
 
   --ok: #547a5c;
   --warn: #a57a3b;
@@ -229,6 +338,8 @@
   --accent-soft: #7c8ff0;
   --accent-glow: rgba(165, 180, 252, 0.18);
   --parchment: #d6d2ff;
+  --accent-2: #c99afc;
+  --accent-3: #6ad0e8;
 
   --ok: #7fd8a8;
   --warn: #e4c07a;
@@ -554,6 +665,57 @@ html[data-transparency='reduced'] .grain::before {
   color: var(--fg-1);
 }
 .md-rendered blockquote strong { color: var(--accent); }
+
+.notes-workspace {
+  min-width: 0;
+}
+.notes-library-panel,
+.notes-reader-shell,
+.note-document-shell {
+  min-width: 0;
+}
+.note-doc-layout {
+  min-width: 0;
+}
+.note-doc-layout section {
+  scroll-margin-top: 92px;
+}
+
+@media (max-width: 1180px) {
+  .note-doc-layout {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .note-toc {
+    display: none !important;
+  }
+  .note-toc-chips {
+    display: flex !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .notes-workspace {
+    grid-template-columns: 1fr !important;
+  }
+  .notes-library-panel {
+    border-right: none !important;
+    border-bottom: 1px solid var(--line);
+    max-height: 42vh;
+  }
+  .note-document-shell {
+    padding: calc(18px * var(--app-density-scale)) !important;
+  }
+}
+
+@media (max-width: 560px) {
+  .notes-library-panel {
+    max-height: none;
+  }
+  .note-source-modal {
+    align-items: stretch !important;
+    padding: calc(10px * var(--app-density-scale)) !important;
+  }
+}
 
 .md-rendered table {
   width: 100%;

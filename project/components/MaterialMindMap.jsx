@@ -16,6 +16,26 @@ function materialMapNodeId(node, fallback) {
   return String(node && (node.id || node.label) || fallback || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 }
 
+function findMaterialMapTopic(tree, topic) {
+  const target = materialMapNodeId({ label: topic }, '');
+  if (!tree || !target) return null;
+  const rootId = materialMapNodeId(tree, 'root');
+  const matchesTopic = node => materialMapNodeId({ label: node && node.label }, '') === target || materialMapNodeId({ label: node && node.id }, '') === target;
+  if (matchesTopic(tree)) return { id: rootId, expandIds: [] };
+
+  for (let branchIndex = 0; branchIndex < (tree.children || []).length; branchIndex += 1) {
+    const branch = tree.children[branchIndex];
+    const branchId = materialMapNodeId(branch, `branch-${branchIndex}`);
+    if (matchesTopic(branch)) return { id: branchId, expandIds: [] };
+    for (let childIndex = 0; childIndex < (branch.children || []).length; childIndex += 1) {
+      const child = branch.children[childIndex];
+      const childId = materialMapNodeId(child, `${branchId}-${childIndex}`);
+      if (matchesTopic(child)) return { id: childId, expandIds: [branchId] };
+    }
+  }
+  return null;
+}
+
 function materialMapLayout(tree, expanded = {}) {
   if (!tree) return { nodes: [], edges: [], width: 900, height: 620 };
   const rootW = 230, rootH = 84, branchW = 192, branchH = 70, leafW = 164, leafH = 54;
@@ -97,6 +117,8 @@ const MaterialMindMap = ({
   onTutor,
   onQuiz,
   onFlashcards,
+  activeTopic = '',
+  onNodeSelect,
 }) => {
   const Icon = window.Icon;
   const tree = map && map.tree;
@@ -137,6 +159,19 @@ const MaterialMindMap = ({
     setSelectedId(materialMapNodeId(first || tree, 'root'));
     setExpanded(first ? { [materialMapNodeId(first, 'first-branch')]: true } : {});
   }, [tree && tree.id, map && map.generatedAt]);
+
+  React.useEffect(() => {
+    const match = findMaterialMapTopic(tree, activeTopic);
+    if (!match) return;
+    if (match.expandIds.length) {
+      setExpanded(current => {
+        const next = { ...current };
+        match.expandIds.forEach(id => { next[id] = true; });
+        return next;
+      });
+    }
+    setSelectedId(match.id);
+  }, [tree, activeTopic]);
 
   React.useEffect(() => {
     if (!fullScreen) return undefined;
@@ -180,6 +215,10 @@ const MaterialMindMap = ({
   };
 
   const stopDragging = () => { dragRef.current = null; };
+  const selectNode = (pos) => {
+    setSelectedId(pos.id);
+    if (onNodeSelect) onNodeSelect(pos.node);
+  };
   const toggleBranch = (id, event) => {
     event.stopPropagation();
     setExpanded(current => ({ ...current, [id]: !current[id] }));
@@ -252,7 +291,7 @@ const MaterialMindMap = ({
               key={pos.id}
               className="material-map-node"
               onPointerDown={event => event.stopPropagation()}
-              onClick={() => setSelectedId(pos.id)}
+              onClick={() => selectNode(pos)}
               style={{
                 ...mm.node,
                 ...(isRoot ? mm.rootNode : pos.depth === 1 ? mm.branchNode : mm.leafNode),
@@ -347,5 +386,5 @@ const mm = {
   empty: { minHeight: 420, display: 'grid', placeItems: 'center', alignContent: 'center', gap: 10, color: 'var(--fg-3)', fontSize: 'calc(12px * var(--app-font-scale))' },
 };
 
-window.NoesisMaterialMapInternals = { materialMapLayout, materialMapEdgePath, materialMapNodeId };
+window.NoesisMaterialMapInternals = { materialMapLayout, materialMapEdgePath, materialMapNodeId, findMaterialMapTopic };
 window.MaterialMindMap = MaterialMindMap;

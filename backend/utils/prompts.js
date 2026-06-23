@@ -87,10 +87,11 @@ Return ONLY valid JSON:
 {"topic":"{{TOPIC}}","audienceLevel":"beginner","lessonType":"oop|data_structure|algorithm|general","sourceMaterial":{"title":"{{TITLE}}","grounding":"{{GROUNDING_STATUS}}","selectedChunkIds":[]},"learningObjectives":["..."],"prerequisites":["..."],"studyGuide":{"whatYouWillLearn":["..."],"keyConcepts":["..."],"suggestedOrder":["..."],"prerequisites":["..."],"commonMistakes":[{"mistake":"...","correction":"..."}],"checkpoints":["..."]},"sections":[{"type":"hook|definition|deep_explanation|analogy|code_example|code_walkthrough|diagram|mindmap|common_mistakes|complexity|checkpoint|recap|next_steps","title":"...","content":"...","cards":[{"title":"...","text":"..."}],"code":{"language":"java","content":"...","explanation":[{"lineRange":"1-3","text":"..."}]},"diagram":{"type":"uml_class|inheritance_tree|linked_list|hash_table|stack|queue|tree|big_o_chart|mindmap|flow|concept_cards|classification_table|comparison_table|source_page_reference|source_slide_reference|no_visual","nodes":[],"edges":[],"operations":[],"caption":""},"callouts":[{"type":"remember|exam_tip|warning|source","text":"..."}],"quiz":[{"question":"...","options":["..."],"answer":"...","explanation":"..."}]}],"relatedTopics":["..."]}
 
 Required:
-- Include hook, definition, deep_explanation, common_mistakes, checkpoint, recap, and next_steps sections.
+- Use this clean note sequence in spirit: Header metadata, Quick Summary, Study Guide, Core Concepts, Visuals From Source, Algorithms / Procedures when supported, Code Examples only when justified, Practice Questions, Common Mistakes, Final Review Checklist.
+- Include hook, definition, deep_explanation, common_mistakes, checkpoint, recap, and next_steps sections, but title them with student-facing labels such as "Quick Summary", "Core Concepts", "Practice Questions", and "Final Review Checklist".
 - Fill every applicable Study Guide field from the uploaded source. Never create a visible section titled "Source Outline".
 - Include diagram/code sections only when they genuinely help the uploaded material.
-- Include real runnable code for OOP/Data Structures/Algorithms only.
+- Include real runnable code for OOP/Data Structures/Algorithms only. If the source does not contain code but a short helper is useful, title it "AI helper example: ..." and say it is extra practice, not copied source content.
 - Include line-by-line code explanation only for programming/OOP/Data Structures/Algorithms.
 - Include semantic diagram nodes and edges when a diagram is useful; otherwise use cards/tables/checkpoints without forcing a diagram.
 - Include exam-tip or remember callouts when useful.
@@ -101,6 +102,10 @@ Required:
 - For non-CS material, prefer concept cards, classification tables, comparison tables, source page/slide references, or no diagram over generic objective maps.
 - Do not use filename-like or generic labels such as "Document", "Chapter", "Slide", "Page", or numeric file fragments as the topic when source headings are available.
 - Do not introduce unrelated OOP/Data Structures/Algorithms terms unless they appear in the uploaded source.
+- Never put author names, professor names, college/university/institution names, department names, page headers, footers, watermarks, dates, or isolated unit/page labels in topic, sourceMaterial.title, learningObjectives, studyGuide, section titles, cards, diagram nodes, quiz questions/options/answers, relatedTopics, recap, or next_steps.
+- Page or slide numbers may appear only as non-concept source visual metadata supplied by the application UI; do not make them learning concepts.
+- Never title a section "Important Details From The Source", "Source Table", "Source Visual Review", or a metadata-based "Next Steps" section.
+- Practice questions must test actual concepts from the topic; never use person or institution names as answer choices.
 - Do not output raw markdown notes. JSON only.
 - Do not show [chunk:ID] in visible content. Do not emit sourceChunkIds; source mapping is internal to the backend.
 - Keep uploaded material as the primary source for course-specific facts. Curated knowledge is trusted expansion, not a replacement.

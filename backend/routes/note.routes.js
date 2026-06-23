@@ -22,6 +22,7 @@ const sourceGroundingJudge = require('../services/source-grounding-judge.service
 const sourceTopicPlans = require('../services/source-topic-plan.service');
 const materialTopicMap = require('../services/material-topic-map.service');
 const sourceTextQuality = require('../services/source-text-quality.service');
+const noteContentQuality = require('../services/note-content-quality.service');
 
 const router = express.Router();
 const nowIso = () => new Date().toISOString();
@@ -283,7 +284,16 @@ function evaluateNoteLesson(lesson, opts = {}) {
     topicMode: opts.topicMode,
     attempt: opts.attempt || 0,
   });
-  return { outputText, quality, drift, verifier, sourceRepair: !!(lesson && lesson.sourceRepair), topicMode: opts.topicMode };
+  const contentQuality = opts.metadataProfile
+    ? noteContentQuality.validateLesson(lesson, {
+      profile: opts.metadataProfile,
+      chunks: opts.uploadedChunks,
+      sourceOutline: opts.sourceOutline,
+      sourceVisuals: opts.sourceVisuals,
+      materialTitle: opts.materialTitle,
+    })
+    : { passed: true, hits: [], reasonCodes: [] };
+  return { outputText, quality, drift, verifier, contentQuality, sourceRepair: !!(lesson && lesson.sourceRepair), topicMode: opts.topicMode };
 }
 
 function noteLessonAccepted(result) {
@@ -294,7 +304,8 @@ function noteLessonAccepted(result) {
     && result.drift
     && !result.drift.drifted
     && result.verifier
-    && result.verifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT;
+    && result.verifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT
+    && (!result.contentQuality || result.contentQuality.passed);
   if (polishedAccepted) return true;
   if (!env.SOURCE_REPAIR_SAVE_SAFE_FALLBACK || !result || !result.sourceRepair) return false;
   const safeSourceRepair = sourceGroundingJudge.sourceRepairSafe(result.verifier);
@@ -305,7 +316,8 @@ function noteLessonAccepted(result) {
     && !result.quality.generalInstructionalFailure
     && driftOk
     && result.verifier
-    && (result.verifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT || safeSourceRepair);
+    && (result.verifier.decision === sourceGroundingJudge.DECISIONS.ACCEPT || safeSourceRepair)
+    && (!result.contentQuality || result.contentQuality.passed);
 }
 
 function sourceRepairLesson(opts = {}) {
@@ -468,7 +480,12 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     const scopeInfo = validateScope(db, req.user.id, material_id, scope);
     const topicMode = noteTopicMode(scope, query);
     const explicitQuery = hasExplicitQuery(query) ? cleanTopic(query) : '';
-    const scopedChunksForOutline = scopedSourceChunks(db, material_id, scope, topicMode === 'material_wide' ? 48 : 24);
+    const rawScopedChunksForOutline = scopedSourceChunks(db, material_id, scope, topicMode === 'material_wide' ? 48 : 24);
+    let metadataProfile = noteContentQuality.buildMetadataProfile({
+      chunks: rawScopedChunksForOutline,
+      materialTitle: m.title,
+    });
+    const scopedChunksForOutline = noteContentQuality.sanitizeChunks(rawScopedChunksForOutline, metadataProfile);
     const requestedTopicInfo = sourceDerivedTopic(req.user.id, m, scope, query, scopeInfo.title);
     const requestedTopic = requestedTopicInfo.topic;
     const domainInfo = domainDetection.detectMaterialDomain(req.user.id, material_id, { hint: requestedTopic });
@@ -537,6 +554,13 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
       minScore: 0.45,
     });
+    metadataProfile = noteContentQuality.buildMetadataProfile({
+      chunks: [...rawScopedChunksForOutline, ...uploadedChunks],
+      materialTitle: m.title,
+      sourceVisuals,
+    });
+    uploadedChunks = noteContentQuality.sanitizeChunks(uploadedChunks, metadataProfile);
+    sourceVisuals = noteContentQuality.sanitizeSourceVisuals(sourceVisuals, metadataProfile);
     let sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
       explicitQuery: explicitQuery || undefined,
       hint: resolvedTopic,
@@ -576,6 +600,16 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, resolvedTopic);
       avoidTerms = [];
     }
+    resolvedTopic = noteContentQuality.safeTitle(resolvedTopic, {
+      profile: metadataProfile,
+      sourceOutline,
+      chunks: uploadedChunks,
+      fallbackTopic: resolvedTopic,
+      materialTitle: m.title,
+      sourceVisuals,
+    });
+    focusTerms = noteFocusTerms(resolvedTopic, sourceOutline, topicMode);
+    avoidTerms = noteAvoidTerms(resolvedTopic, sourceOutline, topicMode);
     let preVerifier = sourceGroundingJudge.judge({
       feature: 'notes',
       stage: 'pre_generation',
@@ -623,6 +657,13 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         max: env.SOURCE_VISUALS_MAX_PER_MATERIAL,
         minScore: 0.45,
       });
+      metadataProfile = noteContentQuality.buildMetadataProfile({
+        chunks: [...rawScopedChunksForOutline, ...uploadedChunks],
+        materialTitle: m.title,
+        sourceVisuals,
+      });
+      uploadedChunks = noteContentQuality.sanitizeChunks(uploadedChunks, metadataProfile);
+      sourceVisuals = noteContentQuality.sanitizeSourceVisuals(sourceVisuals, metadataProfile);
       sourceOutline = materialUnderstanding.buildSourceOutline(uploadedChunks, {
         explicitQuery: explicitQuery || undefined,
         hint: resolvedTopic,
@@ -662,6 +703,16 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         focusTerms = sourceTopicPlans.focusTerms(sourceTopicPlan, resolvedTopic);
         avoidTerms = [];
       }
+      resolvedTopic = noteContentQuality.safeTitle(resolvedTopic, {
+        profile: metadataProfile,
+        sourceOutline,
+        chunks: uploadedChunks,
+        fallbackTopic: resolvedTopic,
+        materialTitle: m.title,
+        sourceVisuals,
+      });
+      focusTerms = noteFocusTerms(resolvedTopic, sourceOutline, topicMode);
+      avoidTerms = noteAvoidTerms(resolvedTopic, sourceOutline, topicMode);
       preVerifier = sourceGroundingJudge.judge({
         feature: 'notes',
         stage: 'pre_generation',
@@ -703,6 +754,7 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         ? educationalContext.formatEducationalContextForPrompt(education, { maxChars: env.KNOWLEDGE_CONTEXT_MAX_CHARS })
         : '(Curated educational context is disabled.)',
       sourceTopicPlanPrompt,
+      noteContentQuality.retryGuidance({ hits: [] }),
     ].filter(Boolean).join('\n\n');
     let repairPath = 'ai_initial';
     const repairTrace = [];
@@ -728,6 +780,15 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     lesson.topicMode = topicMode;
     lesson.sourceMaterial = lesson.sourceMaterial || {};
     lesson.sourceMaterial.title = scopeInfo.title || m.title;
+    lesson = noteContentQuality.sanitizeLesson(lesson, {
+      profile: metadataProfile,
+      chunks: uploadedChunks,
+      sourceOutline,
+      sourceVisuals,
+      fallbackTopic: resolvedTopic,
+      materialTitle: m.title,
+    });
+    resolvedTopic = lesson.topic || resolvedTopic;
     let evaluation = evaluateNoteLesson(lesson, {
       materialId: material_id,
       resolvedTopic,
@@ -741,10 +802,12 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       focusTerms,
       avoidTerms,
       topicMode,
+      metadataProfile,
+      materialTitle: m.title,
       attempt: 0,
     });
-    if (!noteLessonAccepted(evaluation) && (evaluation.quality.genericFailure || !evaluation.quality.passed || evaluation.drift.drifted)) {
-      const fallback = sourceRepairLesson({
+    if (!noteLessonAccepted(evaluation) && (evaluation.quality.genericFailure || !evaluation.quality.passed || evaluation.drift.drifted || (evaluation.contentQuality && !evaluation.contentQuality.passed))) {
+      let fallback = sourceRepairLesson({
         resolvedTopic,
         materialTitle: m.title,
         sourceTitle: scopeInfo.title || m.title,
@@ -757,6 +820,14 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         sourceVisuals,
         sourceTopicPlan,
         topicMode,
+      });
+      fallback = noteContentQuality.sanitizeLesson(fallback, {
+        profile: metadataProfile,
+        chunks: uploadedChunks,
+        sourceOutline,
+        sourceVisuals,
+        fallbackTopic: resolvedTopic,
+        materialTitle: m.title,
       });
       const fallbackEvaluation = evaluateNoteLesson(fallback, {
         materialId: material_id,
@@ -771,13 +842,15 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         focusTerms: noteFocusTerms(fallback.topic || resolvedTopic, sourceOutline, topicMode),
         avoidTerms: noteAvoidTerms(fallback.topic || resolvedTopic, sourceOutline, topicMode),
         topicMode,
+        metadataProfile,
+        materialTitle: m.title,
         attempt: 0,
       });
       repairTrace.push({
         stage: 'quality_repair',
         accepted: noteLessonAccepted(fallbackEvaluation),
-        before: { quality: evaluation.quality, drift: evaluation.drift, verifier: evaluation.verifier },
-        after: { quality: fallbackEvaluation.quality, drift: fallbackEvaluation.drift, verifier: fallbackEvaluation.verifier },
+        before: { quality: evaluation.quality, drift: evaluation.drift, verifier: evaluation.verifier, contentQuality: evaluation.contentQuality },
+        after: { quality: fallbackEvaluation.quality, drift: fallbackEvaluation.drift, verifier: fallbackEvaluation.verifier, contentQuality: fallbackEvaluation.contentQuality },
       });
       if (noteLessonAccepted(fallbackEvaluation)) {
         lesson = fallback;
@@ -789,15 +862,24 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       }
     }
     let { quality, drift, verifier: postVerifier } = evaluation;
-    if (!noteLessonAccepted(evaluation) && postVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY) {
+    if (!noteLessonAccepted(evaluation) && (postVerifier.decision === sourceGroundingJudge.DECISIONS.RETRY || (evaluation.contentQuality && !evaluation.contentQuality.passed))) {
       const retryTopic = postVerifier.correctedTopic || resolvedTopic;
       if (retryTopic !== resolvedTopic) resolvedTopic = retryTopic;
       if (topicMode === 'material_wide') resolvedTopic = materialWideResolvedTopic(sourceOutline, m.title, resolvedTopic, uploadedChunks);
+      resolvedTopic = noteContentQuality.safeTitle(resolvedTopic, {
+        profile: metadataProfile,
+        sourceOutline,
+        chunks: uploadedChunks,
+        fallbackTopic: resolvedTopic,
+        materialTitle: m.title,
+        sourceVisuals,
+      });
       focusTerms = noteFocusTerms(resolvedTopic, sourceOutline, topicMode);
       avoidTerms = noteAvoidTerms(resolvedTopic, sourceOutline, topicMode);
       const retryEducationalContextPrompt = [
         educationalContextPrompt,
         sourceGroundingJudge.retryGuidance(postVerifier),
+        noteContentQuality.retryGuidance(evaluation.contentQuality),
       ].filter(Boolean).join('\n\n');
       lesson = await lessons.generateEducationalLesson({
         topic: resolvedTopic,
@@ -821,6 +903,15 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       lesson.topicMode = topicMode;
       lesson.sourceMaterial = lesson.sourceMaterial || {};
       lesson.sourceMaterial.title = scopeInfo.title || m.title;
+      lesson = noteContentQuality.sanitizeLesson(lesson, {
+        profile: metadataProfile,
+        chunks: uploadedChunks,
+        sourceOutline,
+        sourceVisuals,
+        fallbackTopic: resolvedTopic,
+        materialTitle: m.title,
+      });
+      resolvedTopic = lesson.topic || resolvedTopic;
       evaluation = evaluateNoteLesson(lesson, {
         materialId: material_id,
         resolvedTopic,
@@ -834,6 +925,8 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         focusTerms,
         avoidTerms,
         topicMode,
+        metadataProfile,
+        materialTitle: m.title,
         attempt: 1,
       });
       quality = evaluation.quality;
@@ -849,7 +942,7 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
       if (noteLessonAccepted(evaluation)) repairPath = 'ai_retry';
     }
     if (!noteLessonAccepted(evaluation)) {
-      const fallback = sourceRepairLesson({
+      let fallback = sourceRepairLesson({
         resolvedTopic,
         materialTitle: m.title,
         sourceTitle: scopeInfo.title || m.title,
@@ -862,6 +955,14 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         sourceVisuals,
         sourceTopicPlan,
         topicMode,
+      });
+      fallback = noteContentQuality.sanitizeLesson(fallback, {
+        profile: metadataProfile,
+        chunks: uploadedChunks,
+        sourceOutline,
+        sourceVisuals,
+        fallbackTopic: resolvedTopic,
+        materialTitle: m.title,
       });
       const fallbackTopic = fallback.topic || resolvedTopic;
       const fallbackEvaluation = evaluateNoteLesson(fallback, {
@@ -877,13 +978,15 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         focusTerms: noteFocusTerms(fallbackTopic, sourceOutline, topicMode),
         avoidTerms: noteAvoidTerms(fallbackTopic, sourceOutline, topicMode),
         topicMode,
+        metadataProfile,
+        materialTitle: m.title,
         attempt: 1,
       });
       repairTrace.push({
         stage: 'final_source_repair',
         accepted: noteLessonAccepted(fallbackEvaluation),
-        before: { quality, drift, verifier: postVerifier },
-        after: { quality: fallbackEvaluation.quality, drift: fallbackEvaluation.drift, verifier: fallbackEvaluation.verifier },
+        before: { quality, drift, verifier: postVerifier, contentQuality: evaluation.contentQuality },
+        after: { quality: fallbackEvaluation.quality, drift: fallbackEvaluation.drift, verifier: fallbackEvaluation.verifier, contentQuality: fallbackEvaluation.contentQuality },
       });
       if (noteLessonAccepted(fallbackEvaluation)) {
         lesson = fallback;
@@ -909,6 +1012,44 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
     lesson = sourceTextQuality.sanitizeObjectStrings(lesson);
     const cleanSourceVisuals = sourceTextQuality.sanitizeObjectStrings(sourceVisuals);
     lesson.sourceVisuals = cleanSourceVisuals;
+    lesson = noteContentQuality.sanitizeLesson(lesson, {
+      profile: metadataProfile,
+      chunks: uploadedChunks,
+      sourceOutline,
+      sourceVisuals: cleanSourceVisuals,
+      fallbackTopic: resolvedTopic,
+      materialTitle: m.title,
+    });
+    resolvedTopic = noteContentQuality.safeTitle(lesson.topic || resolvedTopic, {
+      profile: metadataProfile,
+      sourceOutline,
+      chunks: uploadedChunks,
+      fallbackTopic: resolvedTopic,
+      materialTitle: m.title,
+      sourceVisuals: cleanSourceVisuals,
+    });
+    lesson.topic = resolvedTopic;
+    const finalContentQuality = noteContentQuality.validateLesson(lesson, {
+      profile: metadataProfile,
+      chunks: uploadedChunks,
+      sourceOutline,
+      sourceVisuals: cleanSourceVisuals,
+      materialTitle: m.title,
+    });
+    if (!finalContentQuality.passed) {
+      throw new HttpError(502, 'generation_metadata_blocked', 'The generated notes still contained source metadata, so I did not save them.', {
+        resolved_topic: resolvedTopic,
+        content_quality: finalContentQuality,
+        repair: repairTrace,
+      });
+    }
+    const noteTags = noteContentQuality.tagsForLesson(lesson, {
+      profile: metadataProfile,
+      chunks: uploadedChunks,
+      sourceOutline,
+      sourceVisuals: cleanSourceVisuals,
+      materialTitle: m.title,
+    });
     const md = sourceTextQuality.stripSourceNoise(lessons.lessonToMarkdown(lesson));
     if (!md) throw new HttpError(502, 'ai_empty_response', 'The AI returned an empty note. Try again.');
     const lessonJson = JSON.stringify(lesson);
@@ -948,12 +1089,13 @@ router.post('/generate', requireAuth, aiLimiter, async (req, res, next) => {
         repair_path: repairPath,
         repaired: repairPath !== 'ai_initial',
         repairs: repairTrace,
+        content_quality: finalContentQuality,
       },
     });
     const r = db.prepare(`INSERT INTO notes (user_id, material_id, folder, title, body_md, lesson_json, source_map_json, tags_json, created_at, updated_at)
                           VALUES (?,?,?,?,?,?,?,?,?,?)`).run(
       req.user.id, material_id, m.title,
-      resolvedTopic, md, lessonJson, sourceMapJson, JSON.stringify(['ai-generated', 'lesson']), nowIso(), nowIso()
+      resolvedTopic, md, lessonJson, sourceMapJson, JSON.stringify(noteTags), nowIso(), nowIso()
     );
     db.prepare(`INSERT INTO study_events (user_id, kind, ref_id, duration_s, occurred_at) VALUES (?,?,?,?,?)`)
       .run(req.user.id, 'reading', r.lastInsertRowid, 60, nowIso());

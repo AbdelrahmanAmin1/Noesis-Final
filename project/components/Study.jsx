@@ -4,17 +4,21 @@ const Notes = ({ onNav }) => {
   const Icon = window.Icon;
   const [data, setData] = React.useState({ notes: [], folders: [] });
   const [active, setActive] = React.useState(0);
+  const [activeFolder, setActiveFolder] = React.useState('all');
   const [status, setStatus] = React.useState('');
 
   const refresh = React.useCallback(async () => {
-    const d = await window.NoesisAPI.notes.list();
+    const d = await window.NoesisAPI.notes.list(activeFolder === 'all' ? undefined : activeFolder);
     setData(d || { notes: [], folders: [] });
     setActive(i => Math.min(i, Math.max(0, ((d && d.notes) || []).length - 1)));
-  }, []);
+  }, [activeFolder]);
 
   React.useEffect(() => { refresh().catch(e => setStatus(e.message || 'Failed to load notes')); }, [refresh]);
 
-  const folders = (data.folders || []).map((f, i) => ({ name: f.folder, count: f.count, active: i === 0 }));
+  const folderRows = data.folders || [];
+  const totalNotes = folderRows.reduce((sum, f) => sum + Number(f.count || 0), 0) || (data.notes || []).length;
+  const folders = [{ name: 'all', label: 'All notes', count: totalNotes, active: activeFolder === 'all' }]
+    .concat(folderRows.map(f => ({ name: f.folder, label: f.folder, count: f.count, active: activeFolder === f.folder })));
   const notes = (data.notes || []).map((n, i) => ({
     id: n.id,
     material_id: n.material_id,
@@ -54,44 +58,42 @@ const Notes = ({ onNav }) => {
       <window.Topbar title="Notes" crumbs={['Workspace']}
         right={<button className="btn btn-accent" onClick={createNote}><Icon.Plus size={12}/> New note</button>}
       />
-      <div style={ns.layout}>
-        <aside style={ns.folders}>
-          <div style={ns.sideHead}>Folders</div>
-          <div style={{ padding: '0 8px', display: 'flex', flexDirection: 'column', gap: 'calc(1px * var(--app-density-scale))' }}>
-            {folders.length === 0 && <div style={ns.emptySide}>No folders yet</div>}
+      <div className="notes-workspace" style={ns.layout}>
+        <aside className="notes-library-panel" style={ns.library}>
+          <div style={ns.libraryHead}>
+            <div>
+              <div style={ns.sideHead}>Notebook</div>
+              <div style={ns.libraryTitle}>{activeFolder === 'all' ? 'All notes' : activeFolder}</div>
+              <div style={ns.librarySub}>{notes.length} note{notes.length === 1 ? '' : 's'} sorted by recent</div>
+            </div>
+            <span className="chip chip-accent">{totalNotes}</span>
+          </div>
+          <div style={ns.folderChips}>
             {folders.map((f, i) => (
-              <button key={i} style={{ ...ns.folderButton, background: f.active ? 'var(--bg-2)' : 'transparent', color: f.active ? 'var(--fg-0)' : 'var(--fg-2)' }}>
-                <Icon.Folder size={13}/>
-                <span style={{ flex: 1, textAlign: 'left' }}>{f.name}</span>
-                <span style={{ fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)' }} className="mono">{f.count}</span>
+              <button key={`${f.name}-${i}`} onClick={() => { setActiveFolder(f.name); setActive(0); }} style={{ ...ns.folderChip, ...(f.active ? ns.folderChipActive : {}) }}>
+                <Icon.Folder size={12}/>
+                <span>{f.label}</span>
+                <span className="mono" style={ns.folderCount}>{f.count}</span>
               </button>
             ))}
           </div>
-        </aside>
-
-        <section style={ns.list}>
-          <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--line-soft)' }}>
-            <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{(folders[0] && folders[0].name) || 'All notes'}</div>
-            <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(2px * var(--app-density-scale))' }}>{notes.length} note{notes.length === 1 ? '' : 's'} sorted by recent</div>
-            {status && <div style={{ fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(6px * var(--app-density-scale))' }}>{status}</div>}
-          </div>
-          <div>
+          {status && <div style={ns.status}>{status}</div>}
+          <div style={ns.noteList}>
             {notes.length === 0 && <div style={ns.emptyList}>No notes yet. Generate notes from a material or create one manually.</div>}
             {notes.map((n, i) => (
               <button key={n.id} onClick={() => setActive(i)} style={{
                 ...ns.noteButton,
-                background: n.active ? 'var(--bg-2)' : 'transparent',
-                borderLeft: n.active ? '2px solid var(--accent)' : '2px solid transparent',
+                ...(n.active ? ns.noteButtonActive : {}),
               }}>
-                <div style={{ fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 500 }}>{n.t}</div>
-                <div style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', display: 'flex', gap: 'calc(8px * var(--app-density-scale))' }}>
+                <div style={ns.noteTitle}>{n.t}</div>
+                <div style={ns.noteMeta}>
                   <span>{n.updated}</span><span>{n.tag}</span>
                 </div>
                 <div style={ns.preview}>{n.preview || 'Empty note'}</div>
               </button>
             ))}
           </div>
-        </section>
+        </aside>
 
         <NotesEditor current={current} onSaved={refresh} onDeleted={async () => { await refresh(); setActive(0); }} />
       </div>
@@ -150,6 +152,9 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
     try { parsed = current && current.tags_json ? JSON.parse(current.tags_json) : []; } catch (_) {}
     return { folder: current && current.tag, tags: parsed };
   }, [current]);
+  const sourceMap = React.useMemo(() => {
+    try { return current && current.source_map_json ? JSON.parse(current.source_map_json) : {}; } catch (_) { return {}; }
+  }, [current && current.source_map_json]);
   const materialId = current && current.material_id ? current.material_id : null;
 
   const save = async () => {
@@ -305,8 +310,8 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
   };
 
   return (
-    <main style={ns.editor}>
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '36px' }}>
+    <main className="notes-reader-shell" style={ns.editor}>
+      <div className="note-document-shell" style={ns.documentShell}>
         {!current ? (
           <div style={ns.emptyEditor}>
             <Icon.PenNib size={28} style={{ color: 'var(--fg-3)' }}/>
@@ -315,26 +320,29 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', gap: 'calc(8px * var(--app-density-scale))', marginBottom: 'calc(18px * var(--app-density-scale))', alignItems: 'center', flexWrap: 'wrap' }}>
-              {tags.folder && <span className="chip chip-accent">{tags.folder}</span>}
-              {tags.tags.map((t) => <span key={t} className="chip">#{t}</span>)}
-              <span style={{ marginLeft: 'auto', fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)' }}>{current.updated ? `Updated ${current.updated}` : ''}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 'calc(14px * var(--app-density-scale))', gap: 'calc(8px * var(--app-density-scale))' }}>
-              {mode === 'edit' ? (
-                <input className="input" value={title} onChange={e => setTitle(e.target.value)} style={{ ...ns.titleInput, marginBottom: 0, flex: 1 }}/>
-              ) : (
-                <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(32px * var(--app-font-scale))', fontWeight: 300, margin: 0, flex: 1, color: 'var(--fg-0)' }}>{title || 'Untitled'}</h1>
-              )}
+            <div style={ns.readerToolbar}>
+              <div style={ns.readerChips}>
+                {tags.folder && <span className="chip chip-accent">{tags.folder}</span>}
+                {tags.tags.map((t) => <span key={t} className="chip">#{t}</span>)}
+              </div>
               <button className="btn btn-ghost" onClick={() => setMode(mode === 'read' ? 'edit' : 'read')} style={{ fontSize: 'calc(11.5px * var(--app-font-scale))', padding: '6px 12px', whiteSpace: 'nowrap' }}>
                 {mode === 'read' ? 'Edit' : 'Read'}
               </button>
             </div>
             {mode === 'edit' ? (
-              <textarea className="input" value={body} onChange={e => setBody(e.target.value)} style={ns.bodyInput} placeholder="Write your note..." />
+              <>
+                <input className="input" value={title} onChange={e => setTitle(e.target.value)} style={ns.titleInput}/>
+                <textarea className="input" value={body} onChange={e => setBody(e.target.value)} style={ns.bodyInput} placeholder="Write your note..." />
+              </>
             ) : (
               window.LessonRenderer
-                ? <window.LessonRenderer lesson={current.lesson_json} markdown={body} />
+                ? <window.LessonRenderer lesson={current.lesson_json} markdown={body} meta={{
+                  title,
+                  updatedAt: current.updated,
+                  sourceTitle: sourceMap.source_title,
+                  grounding: sourceMap.source_label || sourceMap.verifier && sourceMap.verifier.post && sourceMap.verifier.post.decision,
+                  sourceMap,
+                }} />
                 : <div className="md-rendered" style={ns.mdBody} dangerouslySetInnerHTML={{ __html: window.DOMPurify ? window.DOMPurify.sanitize(window.marked ? window.marked.parse(body || '') : body) : (body || '') }} />
             )}
             <div style={ns.audioPanel}>
@@ -375,20 +383,32 @@ const NotesEditor = ({ current, onSaved, onDeleted }) => {
 };
 
 const ns = {
-  layout: { display: 'grid', gridTemplateColumns: '220px 320px 1fr', minHeight: 'calc(100vh - 57px)' },
-  folders: { borderRight: '1px solid var(--line)', padding: '8px 0', background: 'var(--bg-0)' },
-  list: { borderRight: '1px solid var(--line)', background: 'var(--bg-0)', overflow: 'auto' },
-  editor: { background: 'var(--bg-0)', overflow: 'auto' },
-  sideHead: { padding: '16px 14px 8px', fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' },
-  emptySide: { padding: '8px 10px', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
-  emptyList: { padding: 'calc(18px * var(--app-density-scale))', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)' },
-  folderButton: { display: 'flex', alignItems: 'center', gap: 'calc(10px * var(--app-density-scale))', padding: '8px 10px', borderRadius: 'var(--r-sm)', fontSize: 'calc(12.5px * var(--app-font-scale))' },
-  noteButton: { display: 'flex', flexDirection: 'column', gap: 'calc(4px * var(--app-density-scale))', padding: '14px 18px', borderBottom: '1px solid var(--line-soft)', textAlign: 'left', width: '100%' },
-  preview: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-2)', marginTop: 'calc(4px * var(--app-density-scale))', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  layout: { display: 'grid', gridTemplateColumns: 'minmax(280px, 320px) minmax(0, 1fr)', minHeight: 'calc(100vh - 57px)', background: 'var(--bg-0)' },
+  library: { borderRight: '1px solid var(--line)', background: 'color-mix(in oklab, var(--bg-0) 88%, var(--bg-1))', padding: 'calc(14px * var(--app-density-scale))', overflow: 'auto' },
+  libraryHead: { display: 'flex', justifyContent: 'space-between', gap: 'calc(12px * var(--app-density-scale))', alignItems: 'flex-start', paddingBottom: 'calc(14px * var(--app-density-scale))', borderBottom: '1px solid var(--line-soft)' },
+  libraryTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(24px * var(--app-font-scale))', color: 'var(--fg-0)', lineHeight: 1.15, marginTop: 'calc(4px * var(--app-density-scale))' },
+  librarySub: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-3)', marginTop: 'calc(5px * var(--app-density-scale))' },
+  editor: { background: 'linear-gradient(180deg, var(--bg-0), color-mix(in oklab, var(--bg-0) 86%, var(--bg-2)))', overflow: 'auto', minWidth: 0 },
+  documentShell: { width: 'min(100%, 1040px)', margin: '0 auto', padding: 'calc(28px * var(--app-density-scale))', minHeight: '100%' },
+  sideHead: { fontSize: 'calc(10.5px * var(--app-font-scale))', color: 'var(--fg-3)', letterSpacing: '0.1em', textTransform: 'uppercase' },
+  emptyList: { padding: 'calc(18px * var(--app-density-scale))', fontSize: 'calc(12px * var(--app-font-scale))', color: 'var(--fg-3)', border: '1px dashed var(--line-strong)', borderRadius: 8, background: 'var(--bg-1)' },
+  folderChips: { display: 'flex', gap: 'calc(7px * var(--app-density-scale))', flexWrap: 'wrap', padding: 'calc(12px * var(--app-density-scale)) 0' },
+  folderChip: { display: 'inline-flex', alignItems: 'center', gap: 'calc(6px * var(--app-density-scale))', padding: '7px 9px', borderRadius: 999, border: '1px solid var(--line)', background: 'var(--bg-1)', color: 'var(--fg-2)', fontSize: 'calc(11.5px * var(--app-font-scale))' },
+  folderChipActive: { color: 'var(--accent)', borderColor: 'var(--accent-soft)', background: 'var(--accent-glow)' },
+  folderCount: { color: 'var(--fg-3)', fontSize: 'calc(10.5px * var(--app-font-scale))' },
+  status: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', marginBottom: 'calc(8px * var(--app-density-scale))' },
+  noteList: { display: 'flex', flexDirection: 'column', gap: 'calc(8px * var(--app-density-scale))' },
+  noteButton: { display: 'flex', flexDirection: 'column', gap: 'calc(5px * var(--app-density-scale))', padding: 'calc(13px * var(--app-density-scale))', border: '1px solid var(--line)', borderRadius: 8, textAlign: 'left', width: '100%', background: 'var(--bg-1)', boxShadow: '0 8px 22px rgba(15,23,42,0.04)' },
+  noteButtonActive: { borderColor: 'var(--accent-soft)', background: 'linear-gradient(145deg, var(--accent-glow), var(--bg-1) 70%)', boxShadow: '0 12px 30px rgba(15,23,42,0.08)' },
+  noteTitle: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-0)', fontWeight: 600, lineHeight: 1.3, overflowWrap: 'anywhere' },
+  noteMeta: { fontSize: 'calc(11px * var(--app-font-scale))', color: 'var(--fg-3)', display: 'flex', gap: 'calc(8px * var(--app-density-scale))', flexWrap: 'wrap' },
+  preview: { fontSize: 'calc(11.5px * var(--app-font-scale))', color: 'var(--fg-2)', marginTop: 'calc(3px * var(--app-density-scale))', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.45 },
   emptyEditor: { minHeight: '60vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center' },
   emptyTitle: { fontFamily: 'var(--font-display)', fontSize: 'calc(30px * var(--app-font-scale))', fontWeight: 300, margin: '16px 0 8px' },
   emptyText: { fontSize: 'calc(13px * var(--app-font-scale))', color: 'var(--fg-3)', margin: 0 },
-  titleInput: { width: '100%', fontFamily: 'var(--font-display)', fontSize: 'calc(32px * var(--app-font-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
+  readerToolbar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'calc(12px * var(--app-density-scale))', flexWrap: 'wrap', marginBottom: 'calc(16px * var(--app-density-scale))' },
+  readerChips: { display: 'flex', gap: 'calc(8px * var(--app-density-scale))', alignItems: 'center', flexWrap: 'wrap' },
+  titleInput: { width: '100%', fontFamily: 'var(--font-display)', fontSize: 'calc(30px * var(--app-font-scale))', marginBottom: 'calc(14px * var(--app-density-scale))' },
   bodyInput: { width: '100%', minHeight: 420, resize: 'vertical', fontSize: 'calc(14.5px * var(--app-font-scale))', lineHeight: 1.7 },
   mdBody: { minHeight: 420, fontSize: 'calc(14.5px * var(--app-font-scale))', lineHeight: 1.75, color: 'var(--fg-1)' },
   audioPanel: {

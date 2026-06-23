@@ -459,7 +459,7 @@ function treeLesson(topic, materialTitle, grounding, selectedChunkIds) {
       },
     }),
     section('deep_explanation', 'Tree ADT and Implementation', 'A Tree ADT usually exposes root(), parent(v), children(v), size(), and tests such as isRoot(), isInternal(), and isExternal(). A common implementation stores a root reference, parent links, first-child links, and sibling links so the structure can represent any number of children.'),
-    section('code_example', 'Java Tree Node Example', 'This small node class shows the references behind the hierarchy and a preorder traversal.', {
+    section('code_example', 'AI Helper Example: Java Tree Node', 'This is an AI helper example for extra practice, not copied from the uploaded source. It shows the references behind the hierarchy and a preorder traversal.', {
       code: {
         language: 'java',
         content: 'class TreeNode {\n  int data;\n  TreeNode left;\n  TreeNode right;\n}\n\nvoid preorder(TreeNode node) {\n  if (node == null) return;\n  visit(node);\n  preorder(node.left);\n  preorder(node.right);\n}',
@@ -523,7 +523,7 @@ function hashTableLesson(topic, materialTitle, grounding, selectedChunkIds) {
         caption: 'A key is hashed, reduced to a bucket index, then compared inside that bucket.',
       },
     }),
-    section('code_example', 'Java Lookup Sketch', 'This code shows the lookup path for a separate-chaining hash table.', {
+    section('code_example', 'AI Helper Example: Java Lookup Sketch', 'This is an AI helper example for extra practice, not copied from the uploaded source. It shows the lookup path for a separate-chaining hash table.', {
       code: {
         language: 'java',
         content: 'int index = (key.hashCode() & 0x7fffffff) % table.length;\nEntry current = table[index];\nwhile (current != null) {\n  if (current.key.equals(key)) return current.value;\n  current = current.next;\n}\nreturn null;',
@@ -910,6 +910,45 @@ function sourceVisualFromDecision(decision, lessonTopic, cards, concepts) {
   return null;
 }
 
+function reviewQuestionsForLesson(lessonTopic, concepts = []) {
+  const topicText = String(lessonTopic || '').toLowerCase();
+  if (/\b(tree|bst|binary search)\b/.test(topicText)) {
+    return [
+      'Which term describes a node with no children in a tree?',
+      'Why does BST search move to only one subtree after each comparison?',
+      'How are height and depth different in tree terminology?',
+    ];
+  }
+  if (/\b(hash|hashing)\b/.test(topicText)) {
+    return [
+      'What does a hash function do before a value is stored?',
+      'What is a collision in a hash table?',
+      'Why does load factor matter for hash table performance?',
+    ];
+  }
+  const cleanConcepts = uniqueList(concepts, 4);
+  if (cleanConcepts.length >= 2) {
+    return [
+      `How does ${cleanConcepts[0]} relate to ${cleanConcepts[1]}?`,
+      cleanConcepts[2] ? `When would ${cleanConcepts[2]} matter in this material?` : `Which detail explains ${cleanConcepts[0]} most clearly?`,
+      `What mistake would confuse ${cleanConcepts[0]} with a nearby concept?`,
+    ];
+  }
+  return [
+    `Which definition is essential for ${lessonTopic}?`,
+    `Which relationship or property should you check first when using ${lessonTopic}?`,
+    `What example from the material best tests your understanding of ${lessonTopic}?`,
+  ];
+}
+
+function quizOptionsForLesson(lessonTopic, concepts = []) {
+  const topicText = String(lessonTopic || '').toLowerCase();
+  const extras = [];
+  if (/\b(tree|bst|binary search)\b/.test(topicText)) extras.push('Root node', 'Leaf node', 'Left subtree', 'Inorder traversal');
+  if (/\b(hash|hashing)\b/.test(topicText)) extras.push('Hash function', 'Collision', 'Bucket', 'Load factor');
+  return uniqueList([...concepts, ...extras], 4);
+}
+
 function generalMaterialLesson(topic, materialTitle, grounding, selectedChunkIds, chunks = [], opts = {}) {
   const outline = outlineFromLessonInputs(chunks, { ...opts, topic, materialTitle });
   const planConcepts = opts.sourceTopicPlan && Array.isArray(opts.sourceTopicPlan.topicBundle)
@@ -955,15 +994,12 @@ function generalMaterialLesson(topic, materialTitle, grounding, selectedChunkIds
   ], sourceAnchors, 5).join(' ') || examples.slice(0, 3).join(' ');
   const reviewQuizItems = reviewQuestions.length
     ? reviewQuestions.slice(0, 3)
-    : [
-      `What is the main idea of ${lessonTopic}?`,
-      `Which detail from the uploaded material best supports ${mainConcept}?`,
-      concepts[1] ? `How is ${mainConcept} related to ${concepts[1]}?` : `What important detail should you remember about ${mainConcept}?`,
-    ];
+    : reviewQuestionsForLesson(lessonTopic, concepts);
+  const quizOptions = quizOptionsForLesson(lessonTopic, concepts);
   lesson.learningObjectives = [
-    `Explain ${lessonTopic} using concrete facts from the uploaded material.`,
-    `Connect ${mainConcept} to the other important source sections.`,
-    'Answer review questions using source details, not generic labels.',
+    `Explain ${lessonTopic} using source-grounded definitions and terminology.`,
+    `Connect ${mainConcept} to related operations, properties, or examples from the material.`,
+    'Answer practice questions with concept reasoning instead of document metadata.',
   ];
   lesson.prerequisites = [];
   lesson.studyGuide = {
@@ -978,22 +1014,22 @@ function generalMaterialLesson(topic, materialTitle, grounding, selectedChunkIds
     checkpoints: reviewQuizItems.slice(0, 3),
   };
   lesson.sections = [
-    section('hook', `Overview Of ${lessonTopic}`, overviewFacts.join(' ') || firstFact),
-    section('definition', 'Main Idea From The Source', firstFact),
-    section('deep_explanation', 'Key Concepts Explained', cards.map(card => `${card.title}: ${card.text}`).join(' ') || detailFacts.join(' ')),
-    section('deep_explanation', 'Important Details From The Source', detailFacts.join(' ') || examples.slice(0, 4).join(' ') || firstFact),
+    section('hook', 'Quick Summary', overviewFacts.join(' ') || firstFact),
+    section('definition', 'Core Concepts', firstFact, { cards: cards.slice(0, 4) }),
+    section('deep_explanation', 'Key Relationships', detailFacts.join(' ') || cards.map(card => `${card.title}: ${card.text}`).join(' ') || firstFact),
+    section('deep_explanation', 'Learning Order', sourcePath.length ? sourcePath.map((item, index) => `${index + 1}. ${item}`).join(' ') : `Start with ${mainConcept}, then connect it to ${concepts.slice(1, 4).join(', ') || lessonTopic}.`),
   ];
   if (classifications.length || cards.length >= 3) {
-    lesson.sections.push(section('deep_explanation', classifications.length ? 'Classifications And Groups' : 'Major Source Groups', classificationText || detailFacts.join(' '), {
+    lesson.sections.push(section('deep_explanation', classifications.length ? 'Concept Groups' : 'Major Ideas', classificationText || detailFacts.join(' '), {
       cards: cards.slice(0, 6),
     }));
   }
   if (processes.length) {
-    lesson.sections.push(section('deep_explanation', 'Processes And Steps', processText));
+    lesson.sections.push(section('code_walkthrough', 'Algorithms and Procedures', processText));
   }
   if (visualDecision.visualNeeded) {
     const visual = sourceVisualFromDecision(visualDecision, lessonTopic, cards, concepts);
-    lesson.sections.push(section('diagram', visualDecision.visualType.includes('table') ? 'Source Table' : 'Source Visual Review', classificationText || detailFacts.join(' ') || firstFact, {
+    lesson.sections.push(section('diagram', 'Source Structure', classificationText || detailFacts.join(' ') || firstFact, {
       diagram: visual,
     }));
   }
@@ -1005,16 +1041,16 @@ function generalMaterialLesson(topic, materialTitle, grounding, selectedChunkIds
         { title: 'Mixing separate source sections', text: sourcePath.length >= 2 ? `${sourcePath[0]} and ${sourcePath[1]} are related, but each section has its own terms and details.` : `Keep each detail tied to ${lessonTopic}.` },
       ],
     }),
-    section('checkpoint', 'Review Questions', reviewQuizItems.join(' '), {
+    section('checkpoint', 'Practice Questions', reviewQuizItems.join(' '), {
       quiz: reviewQuizItems.slice(0, 3).map((question, index) => ({
         question,
-        options: concepts.slice(0, 4).length >= 2 ? concepts.slice(0, 4) : [],
-        answer: concepts[index] || concepts[0] || lessonTopic,
+        options: quizOptions,
+        answer: quizOptions[index % Math.max(1, quizOptions.length)] || concepts[index] || concepts[0] || lessonTopic,
         explanation: detailFacts[index] || firstFact,
       })),
     }),
-    section('recap', 'Exam-Ready Summary', `${lessonTopic} includes ${concepts.slice(0, 5).join(', ') || mainConcept}. ${detailFacts.slice(0, 3).join(' ') || firstFact}`),
-    section('next_steps', 'Next Steps', `Review ${concepts.slice(0, 3).join(', ') || lessonTopic}, then generate quiz questions or flashcards from the same uploaded material.`),
+    section('recap', 'Final Review Checklist', `${lessonTopic} includes ${concepts.slice(0, 5).join(', ') || mainConcept}. Check that you can define the terms, explain the relationships, trace any listed procedures, and answer practice questions without relying on document labels. ${detailFacts.slice(0, 2).join(' ') || firstFact}`),
+    section('next_steps', 'Related Study Path', `Review ${concepts.slice(0, 3).join(', ') || lessonTopic} in order, then practice with flashcards or a quiz from the same material.`),
   );
   lesson.relatedTopics = concepts.slice(1, 6);
   return normalizeLesson(lesson, { topic: lessonTopic, skipEnsureFallback: true });
